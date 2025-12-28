@@ -1,0 +1,8 @@
+*.so
+*.a
+*.dylib
+*.dll
+*.lib
+build
+*.whl
+tmp
