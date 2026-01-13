@@ -82,6 +82,7 @@ __global__ void elementwise_add_operator_fp16x8_kernel(half *a, half *b, half *c
     }
 }
 
+// fp16x8 packed r/w
 __global__ void elementwise_add_operator_fp16x8_packed_kernel(half *a, half *b, half *c, int N) {
     int idx = 8 * (blockIdx.x * blockDim.x + threadIdx.x);
     alignas(16) half pack_a[8];
@@ -114,6 +115,7 @@ void elementwise_add_launcher(const torch::Tensor a, const torch::Tensor b, torc
         reinterpret_cast<scalar_t *>(c.data_ptr()), total_elements);
 }
 
+// func for binding
 void elementwise_add(torch::Tensor a, torch::Tensor b, torch::Tensor c) {
     AT_DISPATCH_SWITCH(a.scalar_type(), "elementwise_add", AT_DISPATCH_CASE(at::kFloat, [&] {
                            elementwise_add_launcher<float>(a, b, c);
@@ -156,6 +158,7 @@ void elementwise_add_fp16x8_packed(torch::Tensor a, torch::Tensor b, torch::Tens
         reinterpret_cast<half *>(c.data_ptr()), total_elements);
 }
 
+// binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
