@@ -31,6 +31,10 @@ This repo is for practicing CUDA programming.
   - [x] elu_fp16x8(fp16向量化, packeds r/w, half2 近两倍提升)
   - [x] pytorch op bindings && diff check
 
+## Samples
+
+- [deviceQuery](./samples/deviceQuery)
+
 ## Reference
 
 - [LeetCUDA](https://github.com/xlite-dev/LeetCUDA)
