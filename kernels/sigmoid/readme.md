@@ -7,7 +7,7 @@ sigmoid kernel
 - [x] sigmoid fp32/fp16 版
 - [x] sigmoid_fp16x2(fp16向量化)
 - [x] sigmoid_fp16x8(fp16向量化)
-- [x] sigmoid_fp16x8(fp16向量化, packeds r/add/w)
+- [x] sigmoid_fp16x8(fp16向量化, packed r/w)
 - [x] pytorch op bindings
 
 ## 测试

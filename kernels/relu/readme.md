@@ -7,7 +7,7 @@ relu kernel
 - [x] relu fp32/fp16 版
 - [x] relu_fp16x2(fp16向量化)
 - [x] relu_fp16x8(fp16向量化)
-- [x] relu_fp16x8(fp16向量化, packeds r/add/w)
+- [x] relu_fp16x8(fp16向量化, packed r/w)
 - [x] pytorch op bindings
 
 ## 测试
