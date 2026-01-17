@@ -8,7 +8,7 @@ elu kernel
 - [x] elu_fp16x2(fp16向量化)
 - [x] elu_fp16x8(fp16向量化)
 - [x] elu_fp16x8(fp16向量化, packed r/w, half2 近两倍提升)
-- [x] pytorch op bindings
+- [x] pytorch op bindings && diff check
 
 ## 测试
 
