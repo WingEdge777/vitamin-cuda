@@ -18,6 +18,12 @@ This repo is for practicing CUDA programming.
   - [x] sigmoid_fp16x8(fp16向量化)
   - [x] sigmoid_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings
+- [relu](./kernels/relu)
+  - [x] relu fp32/fp16 版
+  - [x] relu_fp16x2(fp16向量化)
+  - [x] relu_fp16x8(fp16向量化)
+  - [x] relu_fp16x8(fp16向量化, packed r/w)
+  - [x] pytorch op bindings
 
 ## Reference
 
