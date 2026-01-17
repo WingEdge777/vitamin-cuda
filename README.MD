@@ -11,25 +11,25 @@ This repo is for practicing CUDA programming.
   - [x] elementwise_add_fp16x2(fp16向量化)
   - [x] elementwise_add_fp16x8(fp16向量化)
   - [x] elementwise_add_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings
+  - [x] pytorch op bindings && diff check
 - [sigmoid](./kernels/sigmoid)
   - [x] sigmoid fp32/fp16 版
   - [x] sigmoid_fp16x2(fp16向量化)
   - [x] sigmoid_fp16x8(fp16向量化)
   - [x] sigmoid_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings
+  - [x] pytorch op bindings && diff check
 - [relu](./kernels/relu)
   - [x] relu fp32/fp16 版
   - [x] relu_fp16x2(fp16向量化)
   - [x] relu_fp16x8(fp16向量化)
   - [x] relu_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings
+  - [x] pytorch op bindings && diff check
 - [elu](./kernels/elu)
   - [x] elu fp32/fp16 版
   - [x] elu_fp16x2(fp16向量化)
   - [x] elu_fp16x8(fp16向量化)
   - [x] elu_fp16x8(fp16向量化, packeds r/w, half2 近两倍提升)
-  - [x] pytorch op bindings
+  - [x] pytorch op bindings && diff check
 
 ## Reference
 

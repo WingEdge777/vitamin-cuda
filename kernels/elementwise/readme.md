@@ -8,7 +8,7 @@
 - [x] elementwise_add_fp16x2(fp16向量化)
 - [x] elementwise_add_fp16x8(fp16向量化)
 - [x] elementwise_add_fp16x8(fp16向量化, packeds r/add/w)
-- [x] pytorch op bindings
+- [x] pytorch op bindings && diff check
 
 ## 测试
 
