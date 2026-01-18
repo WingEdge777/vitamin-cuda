@@ -18,6 +18,11 @@ __device__ float _sigmoid(float x) { return 1.0f / (1.0f + expf(-x)); }
 
 __device__ half _sigmoid(half x) { return __hdiv(__float2half(1.0f), __hadd(__float2half(1.0f), hexp(__hneg(x)))); }
 
+__device__ half2 _sigmoid(half2 x) {
+    const half2 kOne = __float2half2_rn(1.0f);
+    return __h2div(kOne, __hadd2(kOne, h2exp(__hneg2(x))));
+}
+
 // fp32
 
 __global__ void sigmoid_operator_kernel(float *a, float *b, int N) {
@@ -55,8 +60,7 @@ __global__ void sigmoid_operator_fp16x2_kernel(half *a, half *b, int N) {
     int idx = 2 * (blockIdx.x * blockDim.x + threadIdx.x);
     if (idx + 1 < N) {
         half2 a_val = HALF2(a[idx]);
-        half2 b_val = make_half2(_sigmoid(a_val.x), _sigmoid(a_val.y));
-        HALF2(b[idx]) = b_val;
+        HALF2(b[idx]) = _sigmoid(a_val);
     } else {
         b[idx] = _sigmoid(a[idx]);
     }
@@ -71,36 +75,37 @@ __global__ void sigmoid_operator_fp16x8_kernel(half *a, half *b, int N) {
     half2 a_val_3 = HALF2(a[idx + 6]);
 
     if (idx < N) {
-        HALF2(b[idx]) = make_half2(_sigmoid(a_val_0.x), _sigmoid(a_val_0.y));
+        HALF2(b[idx]) = _sigmoid(a_val_0);
     }
     if (idx + 2 < N) {
-        HALF2(b[idx + 2]) = make_half2(_sigmoid(a_val_1.x), _sigmoid(a_val_1.y));
+        HALF2(b[idx + 2]) = _sigmoid(a_val_1);
     }
     if (idx + 4 < N) {
-        HALF2(b[idx + 4]) = make_half2(_sigmoid(a_val_2.x), _sigmoid(a_val_2.y));
+        HALF2(b[idx + 4]) = _sigmoid(a_val_2);
     }
     if (idx + 6 < N) {
-        HALF2(b[idx + 6]) = make_half2(_sigmoid(a_val_3.x), _sigmoid(a_val_3.y));
+        HALF2(b[idx + 6]) = _sigmoid(a_val_3);
     }
 }
 
 // fp16x8 packed r/w
 __global__ void sigmoid_operator_fp16x8_packed_kernel(half *a, half *b, int N) {
     int idx = 8 * (blockIdx.x * blockDim.x + threadIdx.x);
-    alignas(16) half pack_a[8];
-    alignas(16) half pack_b[8];
-    LDST128BITS(pack_a[0]) = LDST128BITS(a[idx]);
-#pragma unroll
-    for (int i = 0; i < 8; i++) {
-        pack_b[i] = _sigmoid(pack_a[i]);
-    }
     if (idx + 7 < N) {
+        alignas(16) half pack_a[8];
+        alignas(16) half pack_b[8];
+        LDST128BITS(pack_a[0]) = LDST128BITS(a[idx]);
+#pragma unroll
+        for (int i = 0; i < 8; i += 2) {
+            HALF2(pack_b[i]) = _sigmoid(HALF2(pack_a[i]));
+        }
+
         LDST128BITS(b[idx]) = LDST128BITS(pack_b[0]);
     } else {
 #pragma unroll
         for (int i = 0; i < 8; i++) {
             if (idx + i < N)
-                b[idx + i] = pack_b[i];
+                b[idx + i] = _sigmoid(a[idx+i]);
         }
     }
 }
