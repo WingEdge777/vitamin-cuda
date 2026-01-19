@@ -22,92 +22,92 @@ python test.py
 ```bash
 ####################################################################################################
 n: 1024, m: 1024
-torch                          mean time: 0.029449 ms
-sigmoid                        mean time: 0.028635 ms
-sigmoid_fp32x4                 mean time: 0.010126 ms
-torch                          mean time: 0.016302 ms
-sigmoid_half                   mean time: 0.015223 ms
-sigmoid_fp16x2                 mean time: 0.015981 ms
-sigmoid_fp16x8                 mean time: 0.012098 ms
-sigmoid_fp16x8_packed          mean time: 0.015574 ms
+torch                          mean time: 0.011463 ms
+sigmoid                        mean time: 0.012771 ms
+sigmoid_fp32x4                 mean time: 0.027378 ms
+torch                          mean time: 0.009884 ms
+sigmoid_half                   mean time: 0.013853 ms
+sigmoid_fp16x2                 mean time: 0.013854 ms
+sigmoid_fp16x8                 mean time: 0.013738 ms
+sigmoid_fp16x8_packed          mean time: 0.010093 ms
 ####################################################################################################
 n: 1024, m: 2048
-torch                          mean time: 0.018414 ms
-sigmoid                        mean time: 0.029108 ms
-sigmoid_fp32x4                 mean time: 0.013150 ms
-torch                          mean time: 0.013879 ms
-sigmoid_half                   mean time: 0.031012 ms
-sigmoid_fp16x2                 mean time: 0.017127 ms
-sigmoid_fp16x8                 mean time: 0.028135 ms
-sigmoid_fp16x8_packed          mean time: 0.018357 ms
+torch                          mean time: 0.016591 ms
+sigmoid                        mean time: 0.025278 ms
+sigmoid_fp32x4                 mean time: 0.015882 ms
+torch                          mean time: 0.014177 ms
+sigmoid_half                   mean time: 0.029033 ms
+sigmoid_fp16x2                 mean time: 0.014602 ms
+sigmoid_fp16x8                 mean time: 0.028388 ms
+sigmoid_fp16x8_packed          mean time: 0.013160 ms
 ####################################################################################################
 n: 1024, m: 4096
-torch                          mean time: 0.038361 ms
-sigmoid                        mean time: 0.058420 ms
-sigmoid_fp32x4                 mean time: 0.038400 ms
-torch                          mean time: 0.026921 ms
-sigmoid_half                   mean time: 0.061567 ms
-sigmoid_fp16x2                 mean time: 0.034572 ms
-sigmoid_fp16x8                 mean time: 0.044389 ms
-sigmoid_fp16x8_packed          mean time: 0.026405 ms
+torch                          mean time: 0.037896 ms
+sigmoid                        mean time: 0.061904 ms
+sigmoid_fp32x4                 mean time: 0.037510 ms
+torch                          mean time: 0.021204 ms
+sigmoid_half                   mean time: 0.059834 ms
+sigmoid_fp16x2                 mean time: 0.030586 ms
+sigmoid_fp16x8                 mean time: 0.043520 ms
+sigmoid_fp16x8_packed          mean time: 0.018923 ms
 ####################################################################################################
 n: 2048, m: 1024
-torch                          mean time: 0.014946 ms
-sigmoid                        mean time: 0.028870 ms
-sigmoid_fp32x4                 mean time: 0.013629 ms
-torch                          mean time: 0.017595 ms
-sigmoid_half                   mean time: 0.029063 ms
-sigmoid_fp16x2                 mean time: 0.015894 ms
-sigmoid_fp16x8                 mean time: 0.026175 ms
-sigmoid_fp16x8_packed          mean time: 0.018562 ms
+torch                          mean time: 0.023421 ms
+sigmoid                        mean time: 0.028850 ms
+sigmoid_fp32x4                 mean time: 0.019954 ms
+torch                          mean time: 0.013055 ms
+sigmoid_half                   mean time: 0.023212 ms
+sigmoid_fp16x2                 mean time: 0.014874 ms
+sigmoid_fp16x8                 mean time: 0.028208 ms
+sigmoid_fp16x8_packed          mean time: 0.010952 ms
 ####################################################################################################
 n: 2048, m: 2048
-torch                          mean time: 0.025935 ms
-sigmoid                        mean time: 0.065047 ms
-sigmoid_fp32x4                 mean time: 0.034529 ms
-torch                          mean time: 0.021679 ms
-sigmoid_half                   mean time: 0.059793 ms
-sigmoid_fp16x2                 mean time: 0.029605 ms
-sigmoid_fp16x8                 mean time: 0.040708 ms
-sigmoid_fp16x8_packed          mean time: 0.027757 ms
+torch                          mean time: 0.039660 ms
+sigmoid                        mean time: 0.061244 ms
+sigmoid_fp32x4                 mean time: 0.037588 ms
+torch                          mean time: 0.026857 ms
+sigmoid_half                   mean time: 0.060812 ms
+sigmoid_fp16x2                 mean time: 0.031650 ms
+sigmoid_fp16x8                 mean time: 0.042678 ms
+sigmoid_fp16x8_packed          mean time: 0.019441 ms
 ####################################################################################################
 n: 2048, m: 4096
-torch                          mean time: 0.218718 ms
-sigmoid                        mean time: 0.218397 ms
-sigmoid_fp32x4                 mean time: 0.212876 ms
-torch                          mean time: 0.053832 ms
-sigmoid_half                   mean time: 0.164681 ms
-sigmoid_fp16x2                 mean time: 0.069732 ms
-sigmoid_fp16x8                 mean time: 0.106206 ms
-sigmoid_fp16x8_packed          mean time: 0.046554 ms
+torch                          mean time: 0.207171 ms
+sigmoid                        mean time: 0.214822 ms
+sigmoid_fp32x4                 mean time: 0.216711 ms
+torch                          mean time: 0.062839 ms
+sigmoid_half                   mean time: 0.149914 ms
+sigmoid_fp16x2                 mean time: 0.060020 ms
+sigmoid_fp16x8                 mean time: 0.108805 ms
+sigmoid_fp16x8_packed          mean time: 0.032530 ms
 ####################################################################################################
 n: 4096, m: 1024
-torch                          mean time: 0.037825 ms
-sigmoid                        mean time: 0.060588 ms
-sigmoid_fp32x4                 mean time: 0.040090 ms
-torch                          mean time: 0.026480 ms
-sigmoid_half                   mean time: 0.058943 ms
-sigmoid_fp16x2                 mean time: 0.031711 ms
-sigmoid_fp16x8                 mean time: 0.042393 ms
-sigmoid_fp16x8_packed          mean time: 0.020381 ms
+torch                          mean time: 0.043458 ms
+sigmoid                        mean time: 0.072198 ms
+sigmoid_fp32x4                 mean time: 0.039296 ms
+torch                          mean time: 0.043283 ms
+sigmoid_half                   mean time: 0.054822 ms
+sigmoid_fp16x2                 mean time: 0.030962 ms
+sigmoid_fp16x8                 mean time: 0.048095 ms
+sigmoid_fp16x8_packed          mean time: 0.014379 ms
 ####################################################################################################
 n: 4096, m: 2048
-torch                          mean time: 0.212433 ms
-sigmoid                        mean time: 0.215209 ms
-sigmoid_fp32x4                 mean time: 0.210652 ms
-torch                          mean time: 0.041770 ms
-sigmoid_half                   mean time: 0.135674 ms
-sigmoid_fp16x2                 mean time: 0.083758 ms
-sigmoid_fp16x8                 mean time: 0.105754 ms
-sigmoid_fp16x8_packed          mean time: 0.049772 ms
+torch                          mean time: 0.215525 ms
+sigmoid                        mean time: 0.228766 ms
+sigmoid_fp32x4                 mean time: 0.215321 ms
+torch                          mean time: 0.041380 ms
+sigmoid_half                   mean time: 0.145101 ms
+sigmoid_fp16x2                 mean time: 0.063049 ms
+sigmoid_fp16x8                 mean time: 0.128874 ms
+sigmoid_fp16x8_packed          mean time: 0.032434 ms
 ####################################################################################################
 n: 4096, m: 4096
-torch                          mean time: 0.429733 ms
-sigmoid                        mean time: 0.434803 ms
-sigmoid_fp32x4                 mean time: 0.414464 ms
-torch                          mean time: 0.211792 ms
-sigmoid_half                   mean time: 0.426866 ms
-sigmoid_fp16x2                 mean time: 0.241196 ms
-sigmoid_fp16x8                 mean time: 0.234643 ms
-sigmoid_fp16x8_packed          mean time: 0.211962 ms
+torch                          mean time: 0.403445 ms
+sigmoid                        mean time: 0.443679 ms
+sigmoid_fp32x4                 mean time: 0.410460 ms
+torch                          mean time: 0.214407 ms
+sigmoid_half                   mean time: 0.386082 ms
+sigmoid_fp16x2                 mean time: 0.221343 ms
+sigmoid_fp16x8                 mean time: 0.227966 ms
+sigmoid_fp16x8_packed          mean time: 0.213118 ms
 ```
