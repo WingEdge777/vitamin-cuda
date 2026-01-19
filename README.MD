@@ -18,6 +18,12 @@ This repo is for practicing CUDA programming.
   - [x] sigmoid_fp16x8(fp16向量化)
   - [x] sigmoid_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+- [swish](./kernels/swish)
+  - [x] swish fp32/fp16 版
+  - [x] swish_fp16x2(fp16向量化)
+  - [x] swish_fp16x8(fp16向量化)
+  - [x] swish_fp16x8(fp16向量化, packed r/w)
+  - [x] pytorch op bindings && diff check
 - [relu](./kernels/relu)
   - [x] relu fp32/fp16 版
   - [x] relu_fp16x2(fp16向量化)
@@ -35,7 +41,7 @@ This repo is for practicing CUDA programming.
   - [x] gelu_fp16x2(fp16向量化)
   - [x] gelu_fp16x8(fp16向量化)
   - [x] gelu_fp16x8(fp16向量化，packed r/w)
-- [x] pytorch op bindings && diff check
+  - [x] pytorch op bindings && diff check
 
 ## Samples
 

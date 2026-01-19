@@ -14,13 +14,13 @@
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
 
-__device__ float _sigmoid(float x) { return 1.0f / (1.0f + expf(-x)); }
+__device__ __forceinline__ float _sigmoid(float x) { return __frcp_rn(1.0f + expf(-x)); }
 
-__device__ half _sigmoid(half x) { return __hdiv(__float2half(1.0f), __hadd(__float2half(1.0f), hexp(__hneg(x)))); }
+__device__ __forceinline__ half _sigmoid(half x) { return hrcp(__hadd(__float2half(1.0f), hexp(__hneg(x)))); }
 
-__device__ half2 _sigmoid(half2 x) {
+__device__ __forceinline__ half2 _sigmoid(half2 x) {
     const half2 kOne = __float2half2_rn(1.0f);
-    return __h2div(kOne, __hadd2(kOne, h2exp(__hneg2(x))));
+    return h2rcp(__hadd2(kOne, h2exp(__hneg2(x))));
 }
 
 // fp32
