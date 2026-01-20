@@ -15,22 +15,18 @@
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
 
 __device__ __forceinline__ float _hardswish(float x) { 
-    if(x <= -3.0f) return 0.0f;
-    if(x >= 3.0f) return x;
-    return x * (x + 3.0f) / 6.0f;
+    float relu6 = fminf(fmaxf(x + 3.0f, 0.0f), 6.0f);
+    return x * relu6 * (1.0f / 6.0f);
  }
 
 __device__ __forceinline__ half _hardswish(half x) {
-    if ( x <= __float2half(-3.0f)) return __float2half(0.0f);
-    if ( x >= __float2half(3.0f)) return x;
-    return x * (x + __float2half(3.f)) / __float2half(6.f);
+    half relu6 = __hmin(__hmax(x + __float2half(3.0f), __float2half(0.0f)), __float2half(6.f));
+    return x * relu6 * __float2half(1.0f / 6.0f);
 }
 
 __device__ __forceinline__ half2 _hardswish(half2 x) {
-    half2 res;
-    res.x = _hardswish(x.x);
-    res.y = _hardswish(x.y);
-    return res;
+    half2 relu6 = __hmin2(__hmax2(x + __float2half2_rn(3.0f), __float2half2_rn(0.0f)), __float2half2_rn(6.f));
+    return x * relu6 * __float2half2_rn(1.0f / 6.0f);
 }
 
 // fp32
