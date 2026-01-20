@@ -6,11 +6,19 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 💊Let's get started and happy coding! 🧠
 
-## Sample
-  
+## Prerequisites 🛠️
+
+- NVIDIA GPU (Compute Capability 6.0+)
+- CUDA Toolkit 11.0+
+- C++ Compiler (GCC/Clang/MSVC)
+- CMake 3.18+ (Optional, but recommended)
+- PyTorch (For extension examples/python bingding and performence comparation)
+
+I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch>
+
 ## Kernels (40+ kernels)
 
-All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9.
+All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9
 
 ### Easy (🌟~🌟🌟)
 
