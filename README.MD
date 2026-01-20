@@ -1,12 +1,18 @@
-# CUDA Practices
+# Vitamin-CUDA
 
-This repo is for practicing CUDA programming.
+> **One Kernel a Day, Keeps High Latency Away.** 🚀
+
+Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated collection of hands-on CUDA practices, designed to take you from **Hello World** to **High Performance**. Whether you are a beginner looking to understand the grid-stride loop or an enthusiast diving into warp-level primitives, there's a kernel here for you.
+
+💊Let's get started and happy coding! 🧠
 
 ## Sample
   
-## Kernels (35+ kernels)
+## Kernels (40+ kernels)
 
 All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9.
+
+### Easy (🌟~🌟🌟)
 
 - [elementwise](./kernels/elementwise): elementwise add
   - [x] elementwise_add fp32/fp16 版
@@ -32,6 +38,12 @@ All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9.
   - [x] relu_fp16x8(fp16向量化)
   - [x] relu_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+- [relu6](./kernels/relu6)
+  - [x] relu6 fp32/fp16 版
+  - [x] relu6_fp16x2(fp16向量化)
+  - [x] relu6_fp16x8(fp16向量化)
+  - [x] relu6_fp16x8(fp16向量化, packed r/w)
+  - [x] pytorch op bindings && diff check
 - [elu](./kernels/elu)
   - [x] elu fp32/fp16 版
   - [x] elu_fp16x2(fp16向量化)
@@ -50,6 +62,14 @@ All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9.
   - [x] hardswish_fp16x8(fp16向量化)
   - [x] hardswish_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+
+### Medium (🌟🌟~🌟🌟🌟)
+
+To be continued...
+
+### Hard (🌟🌟🌟~🌟🌟🌟🌟)
+
+To be continued...
 
 ## Samples
 
