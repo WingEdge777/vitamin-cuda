@@ -4,7 +4,9 @@ This repo is for practicing CUDA programming.
 
 ## Sample
   
-## Kernels
+## Kernels (35+ kernels)
+
+All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9.
 
 - [elementwise](./kernels/elementwise): elementwise add
   - [x] elementwise_add fp32/fp16 版
@@ -36,11 +38,17 @@ This repo is for practicing CUDA programming.
   - [x] elu_fp16x8(fp16向量化)
   - [x] elu_fp16x8(fp16向量化, packed r/w, half2 近两倍提升)
   - [x] pytorch op bindings && diff check
-- [gelu](./kernels/gelu) : 打不过 pytorch...
+- [gelu](./kernels/gelu)
   - [x] gelu fp32/fp16 版
   - [x] gelu_fp16x2(fp16向量化)
   - [x] gelu_fp16x8(fp16向量化)
   - [x] gelu_fp16x8(fp16向量化，packed r/w)
+  - [x] pytorch op bindings && diff check
+- [hardswish](./kernels/hardswish)
+  - [x] hardswish fp32/fp16 版
+  - [x] hardswish_fp16x2(fp16向量化)
+  - [x] hardswish_fp16x8(fp16向量化)
+  - [x] hardswish_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
 
 ## Samples
