@@ -14,10 +14,10 @@
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
 
-__device__ __forceinline__ float _hardswish(float x) { 
+__device__ __forceinline__ float _hardswish(float x) {
     float relu6 = fminf(fmaxf(x + 3.0f, 0.0f), 6.0f);
     return x * relu6 * (1.0f / 6.0f);
- }
+}
 
 __device__ __forceinline__ half _hardswish(half x) {
     half relu6 = __hmin(__hmax(x + __float2half(3.0f), __float2half(0.0f)), __float2half(6.f));

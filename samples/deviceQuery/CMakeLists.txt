@@ -18,7 +18,7 @@ add_executable(deviceQuery deviceQuery.cpp)
 
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(deviceQuery PRIVATE 
+    target_compile_options(deviceQuery PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:-O3>
         $<$<COMPILE_LANGUAGE:CXX>:-O3>
     )
