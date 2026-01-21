@@ -111,7 +111,7 @@ __global__ void silu_operator_fp16x8_packed_kernel(half *a, half *b, int N) {
 }
 
 template <typename scalar_t>
-void silu_launcher(const torch::Tensor a, const torch::Tensor b) {
+void silu_launcher(const torch::Tensor a, torch::Tensor b) {
     const int total_elements = a.numel();
     const int threads_per_block = 256;
     const int blocks_per_grid = (total_elements + threads_per_block - 1) / threads_per_block;
