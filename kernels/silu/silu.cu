@@ -16,9 +16,7 @@
 
 __device__ __forceinline__ float _silu(float x) { return x * __frcp_rn(1.0f + expf(-x)); }
 
-__device__ __forceinline__ half _silu(half x) {
-    return __hmul(x, hrcp(__hadd( __float2half(1.0f), hexp(__hneg(x)))));
-}
+__device__ __forceinline__ half _silu(half x) { return __hmul(x, hrcp(__hadd(__float2half(1.0f), hexp(__hneg(x))))); }
 
 __device__ __forceinline__ half2 _silu(half2 x) {
     const half2 kOne = __float2half2_rn(1.0f);

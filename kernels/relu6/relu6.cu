@@ -18,7 +18,9 @@ __device__ __forceinline__ float _relu6(float x) { return fminf(fmaxf(x, 0.0f), 
 
 __device__ __forceinline__ half _relu6(half x) { return __hmin(__hmax(x, __float2half(0.0f)), __float2half(6.f)); }
 
-__device__ __forceinline__ half2 _relu6(half2 x) { return __hmin2(__hmax2(x, __float2half2_rn(0.0f)), __float2half2_rn(6.f)); }
+__device__ __forceinline__ half2 _relu6(half2 x) {
+    return __hmin2(__hmax2(x, __float2half2_rn(0.0f)), __float2half2_rn(6.f));
+}
 
 // fp32
 

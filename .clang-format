@@ -6,5 +6,3 @@ ColumnLimit: 120
 IndentPPDirectives: BeforeHash
 
 AlwaysBreakTemplateDeclarations: Yes
-
-

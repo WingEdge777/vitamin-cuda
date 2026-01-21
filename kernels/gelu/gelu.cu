@@ -106,7 +106,7 @@ __global__ void gelu_operator_fp16x8_packed_kernel(half *a, half *b, int N) {
         LDST128BITS(pack_a[0]) = LDST128BITS(a[idx]);
 
 #pragma unroll
-        for (int i = 0; i < 8; i ++) {
+        for (int i = 0; i < 8; i++) {
             pack_b[i] = _gelu(pack_a[i]);
         }
 

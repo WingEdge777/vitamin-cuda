@@ -37,7 +37,9 @@ def benchmark(op, a, b, c=None, warmup=10, rep=500, prefix="torch"):
         for i in range(rep):
             op(a, b, c)
         torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
+        print(
+            f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms"
+        )
     else:
         # warm up
         for i in range(10):
@@ -47,7 +49,9 @@ def benchmark(op, a, b, c=None, warmup=10, rep=500, prefix="torch"):
         for i in range(rep):
             op(a, b)
         torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
+        print(
+            f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms"
+        )
 
 
 def diff_check(a, b, prefix="torch"):
@@ -70,7 +74,13 @@ if __name__ == "__main__":
             c_my = torch.empty_like(a)
             benchmark(lib.elementwise_add, a, b, c_my, prefix="elementwise_add")
             diff_check(c, c_my, prefix="elementwise_add")
-            benchmark(lib.elementwise_add_fp32x4, a, b, c_my, prefix="elementwise_add_fp32x4")
+            benchmark(
+                lib.elementwise_add_fp32x4,
+                a,
+                b,
+                c_my,
+                prefix="elementwise_add_fp32x4",
+            )
             diff_check(c, c_my, prefix="elementwise_add_fp32x4")
 
             ################### half
@@ -82,11 +92,19 @@ if __name__ == "__main__":
             benchmark(lib.elementwise_add, a, b, c_my, prefix="ele_add_half")
             diff_check(c, c_my, prefix="ele_add_half")
             benchmark(
-                lib.elementwise_add_fp16x2, a, b, c_my, prefix="elementwise_add_fp16x2"
+                lib.elementwise_add_fp16x2,
+                a,
+                b,
+                c_my,
+                prefix="elementwise_add_fp16x2",
             )
             diff_check(c, c_my, prefix="elementwise_add_fp16x2")
             benchmark(
-                lib.elementwise_add_fp16x8, a, b, c_my, prefix="elementwise_add_fp16x8"
+                lib.elementwise_add_fp16x8,
+                a,
+                b,
+                c_my,
+                prefix="elementwise_add_fp16x8",
             )
             diff_check(c, c_my, prefix="elementwise_add_fp16x8")
             benchmark(

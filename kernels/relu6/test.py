@@ -38,7 +38,9 @@ def benchmark(op, a, b=None, warmup=10, rep=500, prefix="torch"):
         for i in range(rep):
             op(a, b)
         torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
+        print(
+            f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms"
+        )
     else:
         # warm up
         for i in range(warmup):
@@ -48,7 +50,9 @@ def benchmark(op, a, b=None, warmup=10, rep=500, prefix="torch"):
         for i in range(rep):
             op(a)
         torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
+        print(
+            f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms"
+        )
 
 
 def diff_check(a, b, prefix="torch", eps=1e-5):
@@ -86,14 +90,10 @@ if __name__ == "__main__":
             benchmark(lib.relu6, a, b_my, prefix="relu6_half")
             b = F.relu6(a)
             diff_check(b, b_my, prefix="relu6_half", eps=5e-3)
-            benchmark(
-                lib.relu6_fp16x2, a, b_my, prefix="relu6_fp16x2"
-            )
+            benchmark(lib.relu6_fp16x2, a, b_my, prefix="relu6_fp16x2")
             b = F.relu6(a)
             diff_check(b, b_my, prefix="relu6_fp16x2", eps=5e-3)
-            benchmark(
-                lib.relu6_fp16x8, a, b_my, prefix="relu6_fp16x8"
-            )
+            benchmark(lib.relu6_fp16x8, a, b_my, prefix="relu6_fp16x8")
             b = F.relu6(a)
             diff_check(b, b_my, prefix="relu6_fp16x8", eps=5e-3)
             benchmark(

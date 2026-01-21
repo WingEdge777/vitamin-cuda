@@ -105,7 +105,7 @@ __global__ void sigmoid_operator_fp16x8_packed_kernel(half *a, half *b, int N) {
 #pragma unroll
         for (int i = 0; i < 8; i++) {
             if (idx + i < N)
-                b[idx + i] = _sigmoid(a[idx+i]);
+                b[idx + i] = _sigmoid(a[idx + i]);
         }
     }
 }
