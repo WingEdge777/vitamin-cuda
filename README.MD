@@ -70,6 +70,14 @@ All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9
   - [x] hardswish_fp16x8(fp16向量化)
   - [x] hardswish_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+- [embedding](./kernels/embedding/)
+  - [x] embedding fp32/fp16 版
+  - [x] embedding_fp32x4(fp32向量化)
+  - [x] embedding_fp32x4(fp32向量化, packed r/w)
+  - [x] embedding_fp16x2(fp16向量化)
+  - [x] embedding_fp16x8(fp16向量化)
+  - [x] embedding_fp16x8(fp16向量化, packed r/w)
+  - [x] pytorch op bindings && diff check
 
 ### Medium (🌟🌟~🌟🌟🌟)
 

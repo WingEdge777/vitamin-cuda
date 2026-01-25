@@ -6,3 +6,8 @@ ColumnLimit: 120
 IndentPPDirectives: BeforeHash
 
 AlwaysBreakTemplateDeclarations: Yes
+AlignEscapedNewlines: Right
+
+BinPackParameters: false
+BinPackArguments: false
+AlignAfterOpenBracket: Align
