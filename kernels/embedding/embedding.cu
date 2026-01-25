@@ -81,14 +81,13 @@ __global__ void embedding_fp16x8_packed_kernel(int *a, half *b, half *c, int emd
 
 struct Generic {};
 
-#define binding_func(name, num, element_dtype)                                                                         \
+#define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
+
+#define binding_func_gen(name, num, element_dtype)                                                                     \
     void name(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                                     \
-        TORCH_CHECK(a.is_cuda(), #name " input a must be a CUDA tensor");                                              \
-        TORCH_CHECK(b.is_cuda(), #name " input b must be a CUDA tensor");                                              \
-        TORCH_CHECK(c.is_cuda(), #name " output c must be a CUDA tensor");                                             \
-        TORCH_CHECK(a.is_contiguous(), #name " input a must be contiguous");                                           \
-        TORCH_CHECK(b.is_contiguous(), #name " input b must be contiguous");                                           \
-        TORCH_CHECK(c.is_contiguous(), #name " output c must be contiguous");                                          \
+        CHECK_T(a);                                                                                                    \
+        CHECK_T(b);                                                                                                    \
+        CHECK_T(c);                                                                                                    \
         const int seq_len = a.size(0);                                                                                 \
         const int emd_dim = b.size(1);                                                                                 \
         const int threads_per_block = std::min(512, emd_dim) / num;                                                    \
@@ -97,17 +96,15 @@ struct Generic {};
                                                                                                                        \
         AT_DISPATCH_FLOATING_TYPES_AND_HALF(                                                                           \
             b.scalar_type(), #name, ([&] {                                                                             \
-                using dispatch_t =                                                                                     \
-                    typename std::conditional<std::is_same<scalar_t, at::Half>::value, half, scalar_t>::type;          \
+                using namespace std;                                                                                   \
+                using cuda_t = conditional_t<is_same_v<scalar_t, at::Half>, half, scalar_t>;                           \
+                using UserT = conditional_t<is_same_v<element_dtype, Generic>, cuda_t, element_dtype>;                 \
+                using CastT = conditional_t<is_same_v<UserT, double>, float, UserT>;                                   \
                                                                                                                        \
-                constexpr bool is_double = std::is_same<scalar_t, double>::value;                                      \
+                constexpr bool is_generic = is_same_v<element_dtype, Generic>;                                         \
+                constexpr bool is_match = is_same_v<cuda_t, element_dtype>;                                            \
+                constexpr bool is_double = is_same_v<scalar_t, double>;                                                \
                                                                                                                        \
-                using SafeT = typename std::conditional<is_double, float, dispatch_t>::type;                           \
-                                                                                                                       \
-                using CastT = typename std::                                                                           \
-                    conditional<std::is_same<element_dtype, Generic>::value, SafeT, element_dtype>::type;              \
-                constexpr bool is_generic = std::is_same<element_dtype, Generic>::value;                               \
-                constexpr bool is_match = std::is_same<dispatch_t, element_dtype>::value;                              \
                 if constexpr (!is_double && (is_generic || is_match)) {                                                \
                     name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                  \
                         reinterpret_cast<int *>(a.data_ptr()),                                                         \
@@ -115,16 +112,16 @@ struct Generic {};
                         reinterpret_cast<CastT *>(c.data_ptr()),                                                       \
                         emd_dim);                                                                                      \
                 } else {                                                                                               \
-                    TORCH_CHECK(false, #name " does not support this dtype");                                          \
+                    TORCH_CHECK(false, #name " does not support " + string(toString(b.scalar_type())));                \
                 }                                                                                                      \
             }));                                                                                                       \
     }
 
-binding_func(embedding, 1, Generic);
-binding_func(embedding_fp32x4, 4, float);
-binding_func(embedding_fp32x4_packed, 4, float);
-binding_func(embedding_fp16x8, 8, half);
-binding_func(embedding_fp16x8_packed, 8, half);
+binding_func_gen(embedding, 1, Generic);
+binding_func_gen(embedding_fp32x4, 4, float);
+binding_func_gen(embedding_fp32x4_packed, 4, float);
+binding_func_gen(embedding_fp16x8, 8, half);
+binding_func_gen(embedding_fp16x8_packed, 8, half);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
