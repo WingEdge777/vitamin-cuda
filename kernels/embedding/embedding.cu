@@ -81,7 +81,7 @@ __global__ void embedding_fp16x8_packed_kernel(int *a, half *b, half *c, int emd
 
 struct Generic {};
 
-#define binding_func(name, num, LIMIT_TYPE)                                                                            \
+#define binding_func(name, num, element_dtype)                                                                         \
     void name(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                                     \
         TORCH_CHECK(a.is_cuda(), #name " input a must be a CUDA tensor");                                              \
         TORCH_CHECK(b.is_cuda(), #name " input b must be a CUDA tensor");                                              \
@@ -104,10 +104,10 @@ struct Generic {};
                                                                                                                        \
                 using SafeT = typename std::conditional<is_double, float, dispatch_t>::type;                           \
                                                                                                                        \
-                using CastT =                                                                                          \
-                    typename std::conditional<std::is_same<LIMIT_TYPE, Generic>::value, SafeT, LIMIT_TYPE>::type;      \
-                constexpr bool is_generic = std::is_same<LIMIT_TYPE, Generic>::value;                                  \
-                constexpr bool is_match = std::is_same<dispatch_t, LIMIT_TYPE>::value;                                 \
+                using CastT = typename std::                                                                           \
+                    conditional<std::is_same<element_dtype, Generic>::value, SafeT, element_dtype>::type;              \
+                constexpr bool is_generic = std::is_same<element_dtype, Generic>::value;                               \
+                constexpr bool is_match = std::is_same<dispatch_t, element_dtype>::value;                              \
                 if constexpr (!is_double && (is_generic || is_match)) {                                                \
                     name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                  \
                         reinterpret_cast<int *>(a.data_ptr()),                                                         \
