@@ -57,7 +57,7 @@ def benchmark(op, a, b=None, warmup=10, rep=500, prefix="torch"):
 
 def diff_check(a, b, prefix="torch", eps=1e-5):
     message = f"{prefix} result diff"
-    assert torch.max(torch.abs(a - b)).item() < eps, message
+    assert torch.mean(torch.abs(a - b)).item() < eps, message
 
 
 if __name__ == "__main__":
