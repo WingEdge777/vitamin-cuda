@@ -78,6 +78,9 @@ All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9
   - [x] embedding_fp16x8(fp16向量化)
   - [x] embedding_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+- [reduce](./kernels/reduce/)
+  - [] reduce_sum fp32/fp16 版
+  - [] pytorch op bindings && diff check
 
 ### Medium (🌟🌟~🌟🌟🌟)
 
