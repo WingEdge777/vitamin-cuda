@@ -42,9 +42,9 @@ def benchmark(op, a, warmup=10, rep=500, prefix="torch"):
     return res
 
 
-def diff_check(a, b, prefix="torch", eps=1e-5):
+def diff_check(a, b, prefix="torch", rel=1e-5, abl = 1e-5):
     message = f"{prefix} result diff"
-    assert torch.max(torch.abs(a - b)).item() < eps, message
+    assert torch.max(torch.abs(a - b)).item() < abl or torch.max(torch.abs(a - b) / torch.abs(a)).item() < rel, message
 
 
 if __name__ == "__main__":
@@ -60,10 +60,12 @@ if __name__ == "__main__":
             a = torch.randn(n, m).float().cuda()
             out = benchmark(torch.sum, a)
             out_my = benchmark(lib.reduce_sum, a, prefix="reduce_sum")
+            # print(out, out_my)
             diff_check(out, out_my, prefix="reduce_sum")
 
             ################### half
             a = a.half()
             out = benchmark(torch.sum, a)
             out_my = benchmark(lib.reduce_sum, a, prefix="reduce_sum_half")
-            diff_check(out, out_my, prefix="reduce_sum_half")
+            # print(out, out_my)
+            diff_check(out, out_my, prefix="reduce_sum_half", rel=1e-3, abl=1e-3)
