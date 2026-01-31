@@ -8,6 +8,7 @@ IndentPPDirectives: BeforeHash
 AlwaysBreakTemplateDeclarations: Yes
 AlignEscapedNewlines: Right
 
+SpacesInAngles: false
 BinPackParameters: false
 BinPackArguments: false
 AlignAfterOpenBracket: Align
