@@ -95,8 +95,8 @@ __global__ void reduce_sum_fp16x2_kernel(half *a, float *b, int N) {
     float sum = 0.0f;
     half2 p;
     for (int i = idx * 2; i < N; i += gridDim.x * blockDim.x * 2) {
-        p = HALF2(a[i]);
-        sum += static_cast<float>(p.x) + static_cast<float>(p.y);
+        float2 p = __half22float2(HALF2(a[i]));
+        sum += p.x + p.y;
     }
 
     const int num_warp = (block_size + WARP_SIZE - 1) / WARP_SIZE;
@@ -125,12 +125,13 @@ __global__ void reduce_sum_fp16x8_packed_kernel(half *a, float *b, int N) {
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + tid;
     float sum = 0.0f;
-    alignas(16) half p[8];
+    alignas(16) half2 p[4];
     for (int i = idx * 8; i < N; i += gridDim.x * blockDim.x * 8) {
         LDST128BITS(p[0]) = LDST128BITS(a[i]);
 #pragma unroll
-        for (int t = 0; t < 8; t++) {
-            sum += static_cast<float>(p[t]);
+        for (int t = 0; t < 4; t++) {
+            float2 f = __half22float2(p[t]);
+            sum += f.x + f.y;
         }
     }
 
@@ -229,10 +230,10 @@ __global__ void reduce_sum_i8x16_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     int4 value;
     for (int i = idx * 16; i < N; i += gridDim.x * blockDim.x * 16) {
         LDST128BITS(value) = LDST128BITS(a[i]);
-        sum += __dp4a(value.x, beta, 0);
-        sum += __dp4a(value.y, beta, 0);
-        sum += __dp4a(value.z, beta, 0);
-        sum += __dp4a(value.w, beta, 0);
+        sum = __dp4a(value.x, beta, sum);
+        sum = __dp4a(value.y, beta, sum);
+        sum = __dp4a(value.z, beta, sum);
+        sum = __dp4a(value.w, beta, sum);
     }
 
     const int num_warp = (block_size + WARP_SIZE - 1) / WARP_SIZE;
@@ -265,8 +266,7 @@ struct Generic {};
         CHECK_T(a);                                                                                                    \
         const int total_elements = a.numel();                                                                          \
         const int threads_per_block = 256;                                                                             \
-        const int blocks_per_grid =                                                                                    \
-            std::min((total_elements / num + threads_per_block - 1) / threads_per_block, 1024);                        \
+        const int blocks_per_grid = std::min((total_elements / num + threads_per_block - 1) / threads_per_block, 512); \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         auto out = torch::zeros({1}, a.options().dtype(torch::kFloat32));                                              \
         AT_DISPATCH_FLOATING_TYPES_AND_HALF(                                                                           \
@@ -313,7 +313,6 @@ binding_func_gen(reduce_sum_fp16x8_packed, 8, half);
 binding_func_gen_int(reduce_sum_i8, 1, int);
 binding_func_gen_int(reduce_sum_i8x16_packed, 16, int);
 binding_func_gen_int(reduce_sum_i8x16_packed_dp4a, 16, int);
-binding_func_gen_int(reduce_sum_i8x16_packed_dp4a_tsum, 16, int);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
@@ -326,5 +325,4 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(reduce_sum_i8);
     torch_pybinding_func(reduce_sum_i8x16_packed);
     torch_pybinding_func(reduce_sum_i8x16_packed_dp4a);
-    torch_pybinding_func(reduce_sum_i8x16_packed_dp4a_tsum);
 }
