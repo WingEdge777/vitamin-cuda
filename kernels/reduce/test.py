@@ -27,7 +27,7 @@ lib = load(
 )
 
 
-def benchmark(op, a, warmup=10, rep=500, prefix="torch"):
+def benchmark(op, a, warmup=10, rep=1000, prefix="torch"):
     # warm up
     for i in range(warmup):
         res = op(a)
@@ -60,12 +60,26 @@ if __name__ == "__main__":
             a = torch.randn(n, m).float().cuda()
             out = benchmark(torch.sum, a)
             out_my = benchmark(lib.reduce_sum, a, prefix="reduce_sum")
-            # print(out, out_my)
             diff_check(out, out_my, prefix="reduce_sum")
+            out_my = benchmark(lib.reduce_sum_fp32x4, a, prefix="reduce_sum_fp32x4")
+            diff_check(out, out_my, prefix="reduce_sum_fp32x4")
 
             ################### half
             a = a.half()
             out = benchmark(torch.sum, a)
             out_my = benchmark(lib.reduce_sum, a, prefix="reduce_sum_half")
-            # print(out, out_my)
             diff_check(out, out_my, prefix="reduce_sum_half", rel=1e-3, abl=1e-3)
+            out_my = benchmark(lib.reduce_sum_fp16x2, a, prefix="reduce_sum_fp16x2")
+            diff_check(out, out_my, prefix="reduce_sum_fp16x2")
+            out_my = benchmark(lib.reduce_sum_fp16x8_packed, a, prefix="reduce_sum_fp16x8_packed")
+            diff_check(out, out_my, prefix="reduce_sum_fp16x8_packed")
+
+            ################## int8
+            a = torch.randint(-128, 127, (n, m) , dtype=torch.int8, device="cuda")
+            out = benchmark(torch.sum, a)
+            out_my = benchmark(lib.reduce_sum_i8, a, prefix="reduce_sum_i8")
+            diff_check(out, out_my, prefix="reduce_sum_i8")
+            out_my = benchmark(lib.reduce_sum_i8x16_packed, a, prefix="reduce_sum_i8x16_packed")
+            diff_check(out, out_my, prefix="reduce_sum_i8x16_packed")
+            out_my = benchmark(lib.reduce_sum_i8x16_packed_dp4a, a, prefix="reduce_sum_i8x16_packed_dp4a")
+            diff_check(out, out_my, prefix="reduce_sum_i8x16_packed_dp4a")

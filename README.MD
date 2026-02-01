@@ -16,9 +16,9 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch>
 
-## Kernels (40+ kernels)
+## Kernels (50+ kernels)
 
-All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9
+All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benchmarked against PyTorch 2.9
 
 ### Easy (🌟~🌟🌟)
 
@@ -78,8 +78,13 @@ All kernels were tested on an RTX 5060 GPU and benchmarked against PyTorch 2.9
   - [x] embedding_fp16x8(fp16向量化)
   - [x] embedding_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
-- [reduce](./kernels/reduce/)
+- [reduce](./kernels/reduce/) : 基于 warp shuffle add
   - [x] reduce_sum fp32/fp16 版
+  - [x] reduce_sum_fp16x2(fp16向量化)
+  - [x] reduce_sum_fp16x8_packed(fp16向量化, packed r/w)
+  - [x] reduce_sum int8 版
+  - [x] reduce_sum_i8x16_packed (int8向量化，packed r/w)
+  - [x] reduce_sum_i8x16_packed (int8向量化，packed r/w, dp4a, 相比torch朴素实现快几十倍)
   - [x] pytorch op bindings && diff check
 
 ### Medium (🌟🌟~🌟🌟🌟)
