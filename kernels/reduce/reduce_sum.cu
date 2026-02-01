@@ -175,7 +175,7 @@ __global__ void reduce_sum_i8_kernel(int8_t *a, int32_t *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+    sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
         sum = _warp_mask_reduce(sum);
@@ -210,7 +210,7 @@ __global__ void reduce_sum_i8x16_packed_kernel(int8_t *a, int32_t *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+    sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
         sum = _warp_mask_reduce(sum);
@@ -246,7 +246,7 @@ __global__ void reduce_sum_i8x16_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+    sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
         sum = _warp_mask_reduce(sum);
@@ -313,6 +313,7 @@ binding_func_gen(reduce_sum_fp16x8_packed, 8, half);
 binding_func_gen_int(reduce_sum_i8, 1, int);
 binding_func_gen_int(reduce_sum_i8x16_packed, 16, int);
 binding_func_gen_int(reduce_sum_i8x16_packed_dp4a, 16, int);
+binding_func_gen_int(reduce_sum_i8x16_packed_dp4a_tsum, 16, int);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
@@ -325,4 +326,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(reduce_sum_i8);
     torch_pybinding_func(reduce_sum_i8x16_packed);
     torch_pybinding_func(reduce_sum_i8x16_packed_dp4a);
+    torch_pybinding_func(reduce_sum_i8x16_packed_dp4a_tsum);
 }
