@@ -257,6 +257,53 @@ __global__ void reduce_sum_i8x16_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     }
 }
 
+__device__ __forceinline__ int _sum_i8x16(int4 value, int tsum) {
+    const int beta = 0x01010101;
+    tsum = __dp4a(value.x, beta, tsum);
+    tsum = __dp4a(value.y, beta, tsum);
+    tsum = __dp4a(value.z, beta, tsum);
+    tsum = __dp4a(value.w, beta, tsum);
+    return tsum;
+}
+
+template <const int block_size = 256>
+__global__ void reduce_sum_i8x64_packed_dp4a_kernel(int8_t *a, int32_t *b, int N) {
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+    int32_t tsum[4] = {0};
+    int4 value[4];
+    for (int i = idx * 64; i < N; i += gridDim.x * blockDim.x * 64) {
+        LDST128BITS(value[0]) = LDST128BITS(a[i]);
+        LDST128BITS(value[1]) = LDST128BITS(a[i + 16]);
+        LDST128BITS(value[2]) = LDST128BITS(a[i + 32]);
+        LDST128BITS(value[3]) = LDST128BITS(a[i + 48]);
+#pragma unroll
+        for (int j = 0; j < 4; j++)
+            tsum[j] = _sum_i8x16(value[j], tsum[j]);
+    }
+    int sum = tsum[0] + tsum[1] + tsum[2] + tsum[3];
+
+    const int num_warp = (block_size + WARP_SIZE - 1) / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+    int warp_id = tid / WARP_SIZE;
+    __shared__ int32_t smem[num_warp];
+
+    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    if (lane_id == 0) {
+        smem[warp_id] = sum;
+    }
+    __syncthreads();
+
+    sum = lane_id < num_warp ? smem[lane_id] : 0;
+
+    if (warp_id == 0) {
+        sum = _warp_mask_reduce(sum);
+        if (tid == 0) {
+            atomicAdd(b, sum);
+        }
+    }
+}
+
 struct Generic {};
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
@@ -313,6 +360,7 @@ binding_func_gen(reduce_sum_fp16x8_packed, 8, half);
 binding_func_gen_int(reduce_sum_i8, 1, int);
 binding_func_gen_int(reduce_sum_i8x16_packed, 16, int);
 binding_func_gen_int(reduce_sum_i8x16_packed_dp4a, 16, int);
+binding_func_gen_int(reduce_sum_i8x64_packed_dp4a, 64, int);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
@@ -325,4 +373,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(reduce_sum_i8);
     torch_pybinding_func(reduce_sum_i8x16_packed);
     torch_pybinding_func(reduce_sum_i8x16_packed_dp4a);
+    torch_pybinding_func(reduce_sum_i8x64_packed_dp4a);
 }

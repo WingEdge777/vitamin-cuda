@@ -83,3 +83,5 @@ if __name__ == "__main__":
             diff_check(out, out_my, prefix="reduce_sum_i8x16_packed")
             out_my = benchmark(lib.reduce_sum_i8x16_packed_dp4a, a, prefix="reduce_sum_i8x16_packed_dp4a")
             diff_check(out, out_my, prefix="reduce_sum_i8x16_packed_dp4a")
+            out_my = benchmark(lib.reduce_sum_i8x64_packed_dp4a, a, prefix="reduce_sum_i8x64_packed_dp4a")
+            diff_check(out, out_my, prefix="reduce_sum_i8x64_packed_dp4a")

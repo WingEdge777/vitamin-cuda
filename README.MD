@@ -85,6 +85,7 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] reduce_sum int8 版
   - [x] reduce_sum_i8x16_packed (int8向量化，packed r/w)
   - [x] reduce_sum_i8x16_packed (int8向量化，packed r/w, dp4a, 相比torch朴素实现快几十倍)
+  - [x] reduce_sum_i8x64_packed (int8向量化，packed r/w, dp4a)
   - [x] pytorch op bindings && diff check
 
 ### Medium (🌟🌟~🌟🌟🌟)
