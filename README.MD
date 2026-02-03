@@ -78,6 +78,9 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] embedding_fp16x8(fp16向量化)
   - [x] embedding_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+
+### Medium (🌟🌟~🌟🌟🌟)
+
 - [reduce](./kernels/reduce/) : 基于 warp shuffle add
   - [x] reduce_sum fp32/fp16 版
   - [x] reduce_sum_fp16x2(fp16向量化)
@@ -93,10 +96,6 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] dot_product_fp16x2(fp16向量化)
   - [x] dot_product_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
-
-### Medium (🌟🌟~🌟🌟🌟)
-
-To be continued...
 
 ### Hard (🌟🌟🌟~🌟🌟🌟🌟)
 
