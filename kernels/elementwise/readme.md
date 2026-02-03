@@ -2,12 +2,12 @@
 
 ## 说明
 
-涵盖了elementwise的加法kernel,
+涵盖了elementwise的加法kernel
 
 - [x] elementwise_add fp32/fp16 版
 - [x] elementwise_add_fp16x2(fp16向量化)
 - [x] elementwise_add_fp16x8(fp16向量化)
-- [x] elementwise_add_fp16x8(fp16向量化, packeds r/add/w)
+- [x] elementwise_add_fp16x8(fp16向量化, packed r/w)
 - [x] pytorch op bindings && diff check
 
 ## 测试
