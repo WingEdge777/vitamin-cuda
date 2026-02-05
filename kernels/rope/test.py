@@ -45,6 +45,7 @@ def apply_rotary_pos_emb(q, cos, sin):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     return q_embed
 
+# neo-x stype rope, single head single batch
 
 def rope(q):  # q shape: [seqlen, head_dim]
     inv_freq = compute_default_rope_parameters(q.shape[1])
