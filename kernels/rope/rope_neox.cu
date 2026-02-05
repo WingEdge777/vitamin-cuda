@@ -38,7 +38,34 @@ __global__ void rope_kernel(float *a, float *b, int head_dim) {
     b[idx + head_dim / 2] = y_new;
 }
 
-__global__ void rope_fp32x4_kernel(float *a, float *b, int head_dim) {}
+__global__ void rope_fp32x4_kernel(float *a, float *b, int head_dim) {
+    int pos = blockIdx.x * 4;
+    int tid = threadIdx.x;
+    pos += tid * 4 / (head_dim >> 1);
+    int f_idx = tid * 4 % (head_dim >> 1);
+    int idx = pos * head_dim + f_idx;
+    float4 x = LDST128BITS(a[idx]);
+    float4 y = LDST128BITS(a[idx + (head_dim >> 1)]);
+    float inv_freq[4], c[4], s[4];
+#pragma unroll
+    for (int i = 0; i < 4; i++) {
+        inv_freq[i] = 1.f / __powf(theta, (2.0f * (f_idx + i)) / head_dim);
+        __sincosf(pos * inv_freq[i], &s[i], &c[i]);
+    }
+
+    float4 x_new, y_new;
+    x_new.x = x.x * c[0] - y.x * s[0];
+    x_new.y = x.y * c[1] - y.y * s[1];
+    x_new.z = x.z * c[2] - y.z * s[2];
+    x_new.w = x.w * c[3] - y.w * s[3];
+    y_new.x = y.x * c[0] + x.x * s[0];
+    y_new.y = y.y * c[1] + x.y * s[1];
+    y_new.z = y.z * c[2] + x.z * s[2];
+    y_new.w = y.w * c[3] + x.w * s[3];
+
+    LDST128BITS(b[idx]) = x_new;
+    LDST128BITS(b[idx + head_dim / 2]) = y_new;
+}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
