@@ -22,52 +22,62 @@ python test.py
 ```bash
 ####################################################################################################
 n: 512, m: 128
-torch                          mean time: 0.338417 ms
-torch.rope_with_sin_cos_cache  mean time: 0.062025 ms
-rope                           mean time: 0.013051 ms
+torch                          mean time: 0.344705 ms
+torch.rope_with_sin_cos_cache  mean time: 0.074115 ms
+rope                           mean time: 0.015619 ms
+rope_fp32x4                    mean time: 0.008188 ms
 ####################################################################################################
 n: 512, m: 256
-torch                          mean time: 0.395294 ms
-torch.rope_with_sin_cos_cache  mean time: 0.060028 ms
-rope                           mean time: 0.010533 ms
+torch                          mean time: 0.383128 ms
+torch.rope_with_sin_cos_cache  mean time: 0.055858 ms
+rope                           mean time: 0.011565 ms
+rope_fp32x4                    mean time: 0.014199 ms
 ####################################################################################################
 n: 1024, m: 128
-torch                          mean time: 0.314019 ms
-torch.rope_with_sin_cos_cache  mean time: 0.075795 ms
-rope                           mean time: 0.014411 ms
+torch                          mean time: 0.261452 ms
+torch.rope_with_sin_cos_cache  mean time: 0.053360 ms
+rope                           mean time: 0.014579 ms
+rope_fp32x4                    mean time: 0.008430 ms
 ####################################################################################################
 n: 1024, m: 256
-torch                          mean time: 0.309554 ms
-torch.rope_with_sin_cos_cache  mean time: 0.067735 ms
-rope                           mean time: 0.012363 ms
+torch                          mean time: 0.248948 ms
+torch.rope_with_sin_cos_cache  mean time: 0.048255 ms
+rope                           mean time: 0.009767 ms
+rope_fp32x4                    mean time: 0.010090 ms
 ####################################################################################################
 n: 2048, m: 128
-torch                          mean time: 0.311622 ms
-torch.rope_with_sin_cos_cache  mean time: 0.072086 ms
-rope                           mean time: 0.020575 ms
+torch                          mean time: 0.285137 ms
+torch.rope_with_sin_cos_cache  mean time: 0.047323 ms
+rope                           mean time: 0.009408 ms
+rope_fp32x4                    mean time: 0.014790 ms
 ####################################################################################################
 n: 2048, m: 256
-torch                          mean time: 0.396738 ms
-torch.rope_with_sin_cos_cache  mean time: 0.068628 ms
-rope                           mean time: 0.011369 ms
+torch                          mean time: 0.292945 ms
+torch.rope_with_sin_cos_cache  mean time: 0.053592 ms
+rope                           mean time: 0.010897 ms
+rope_fp32x4                    mean time: 0.011582 ms
 ####################################################################################################
 n: 4096, m: 128
-torch                          mean time: 0.306962 ms
-torch.rope_with_sin_cos_cache  mean time: 0.058664 ms
-rope                           mean time: 0.021087 ms
+torch                          mean time: 0.286234 ms
+torch.rope_with_sin_cos_cache  mean time: 0.062171 ms
+rope                           mean time: 0.012274 ms
+rope_fp32x4                    mean time: 0.015684 ms
 ####################################################################################################
 n: 4096, m: 256
-torch                          mean time: 0.442126 ms
-torch.rope_with_sin_cos_cache  mean time: 0.086117 ms
-rope                           mean time: 0.015870 ms
+torch                          mean time: 0.283420 ms
+torch.rope_with_sin_cos_cache  mean time: 0.080113 ms
+rope                           mean time: 0.015868 ms
+rope_fp32x4                    mean time: 0.017967 ms
 ####################################################################################################
 n: 8192, m: 128
-torch                          mean time: 0.336158 ms
-torch.rope_with_sin_cos_cache  mean time: 0.111435 ms
-rope                           mean time: 0.022904 ms
+torch                          mean time: 0.455298 ms
+torch.rope_with_sin_cos_cache  mean time: 0.082223 ms
+rope                           mean time: 0.020271 ms
+rope_fp32x4                    mean time: 0.011539 ms
 ####################################################################################################
 n: 8192, m: 256
-torch                          mean time: 0.560861 ms
-torch.rope_with_sin_cos_cache  mean time: 0.284379 ms
-rope                           mean time: 0.025427 ms
+torch                          mean time: 0.565554 ms
+torch.rope_with_sin_cos_cache  mean time: 0.275599 ms
+rope                           mean time: 0.025792 ms
+rope_fp32x4                    mean time: 0.014390 ms
 ```

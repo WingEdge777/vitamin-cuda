@@ -82,7 +82,7 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] pytorch naive rope
   - [x] pytorch rope with cos/sin table
   - [x] rope fp32 版 (比pytorch naive 实现快一个数量级)
-  - [x] rope fp32x4 版 (fp32向量化，快几十倍)
+  - [x] rope fp32x4 版 (fp32向量化，稍大规模后快几十倍)
   - [x] pytorch op bindings && diff check
 
 ### Medium (🌟🌟~🌟🌟🌟)
