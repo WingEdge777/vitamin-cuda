@@ -146,5 +146,5 @@ if __name__ == "__main__":
             # print(b, b_my)
             diff_check(b, b_my, prefix="rope")
 
-            # b = benchmark(lib.rope_fp32x4, a, b_my, prefix="rope_fp32x4")
-            # diff_check(b, b_my, prefix="rope_fp32x4")
+            benchmark(lib.rope_fp32x4, a, b_my, prefix="rope_fp32x4")
+            diff_check(b, b_my, prefix="rope_fp32x4")
