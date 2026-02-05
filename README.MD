@@ -78,6 +78,9 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] embedding_fp16x8(fp16向量化)
   - [x] embedding_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
+- [rope](./kernels/rope)
+  - [x] rope fp32 版
+  - [x] pytorch op bindings && diff check
 
 ### Medium (🌟🌟~🌟🌟🌟)
 
