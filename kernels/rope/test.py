@@ -35,6 +35,24 @@ def compute_default_rope_parameters(head_dim):
     return inv_freq
 
 
+INV_FREQS = {
+    256: compute_default_rope_parameters(256),
+    128: compute_default_rope_parameters(128),
+}
+position_ids = torch.arange(8192).float().cuda()
+freqs = {
+    256:torch.cat([torch.outer(position_ids, INV_FREQS[256]), torch.outer(position_ids, INV_FREQS[256])], dim=-1),
+    128:torch.cat([torch.outer(position_ids, INV_FREQS[128]), torch.outer(position_ids, INV_FREQS[128])], dim=-1),
+}
+COS = {
+    256:torch.cos(freqs[256]),
+    128:torch.cos(freqs[128]),
+}
+SIN = {
+    256:torch.sin(freqs[256]),
+    128:torch.sin(freqs[128]),
+}
+
 def rotate_half(x):
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
@@ -45,8 +63,23 @@ def apply_rotary_pos_emb(q, cos, sin):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     return q_embed
 
-# neo-x stype rope, single head single batch
+def rope_with_sin_cos_cache(q):  # q shape: [seqlen, head_dim]
+    # inv_freq = compute_default_rope_parameters(q.shape[1])
+    # position_ids = torch.arange(q.shape[0], device=q.device).float()
 
+    # # [seq_len] outer [dim/2] -> [seq_len, dim/2]
+    # freqs = torch.outer(position_ids, inv_freq)
+
+    # # [seq_len, dim/2] -> [seq_len, dim]
+    # freqs = torch.cat([freqs, freqs], dim=-1)
+
+    # cos, sin = torch.cos(freqs), torch.sin(freqs)
+    cos = COS[q.shape[1]][:q.shape[0], :q.shape[1]]
+    sin = SIN[q.shape[1]][:q.shape[0], :q.shape[1]]
+
+    return apply_rotary_pos_emb(q, cos, sin)
+
+# neo-x stype rope, single head single batch
 def rope(q):  # q shape: [seqlen, head_dim]
     inv_freq = compute_default_rope_parameters(q.shape[1])
     position_ids = torch.arange(q.shape[0], device=q.device).float()
@@ -58,6 +91,8 @@ def rope(q):  # q shape: [seqlen, head_dim]
     freqs = torch.cat([freqs, freqs], dim=-1)
 
     cos, sin = torch.cos(freqs), torch.sin(freqs)
+    cos = COS[q.shape[1]][:q.shape[0], :q.shape[1]]
+    sin = SIN[q.shape[1]][:q.shape[0], :q.shape[1]]
 
     return apply_rotary_pos_emb(q, cos, sin)
 
@@ -104,6 +139,8 @@ if __name__ == "__main__":
             a = torch.randn(n, m).float().cuda()
 
             b = benchmark(rope, a)
+            c = benchmark(rope_with_sin_cos_cache, a, prefix="torch.rope_with_sin_cos_cache")
+            diff_check(b, c, prefix="rope_with_sin_cos_cache")
             b_my = torch.empty_like(a)
             benchmark(lib.rope, a, b_my, prefix="rope")
             # print(b, b_my)
