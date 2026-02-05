@@ -4,7 +4,7 @@
 
 rope kernel
 
-- [x] rope fp32 版
+- [x] rope fp32 版 (比pytorch naive 实现快一个数量级)
 - [x] pytorch op bindings && diff check
 
 ## 测试
