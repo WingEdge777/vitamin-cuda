@@ -94,7 +94,7 @@ def diff_check(a, b, prefix="torch", eps=1e-4):
 if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
-    seq_lens = [512, 1024, 2048, 4096]
+    seq_lens = [512, 1024, 2048, 4096, 8192]
     head_dim = [128, 256]
     torch.manual_seed(42)
     for n in seq_lens:
