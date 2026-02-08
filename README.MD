@@ -16,7 +16,7 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch>
 
-## Kernels (50+ kernels)
+## Kernels (60+ kernels)
 
 All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benchmarked against PyTorch 2.9
 
