@@ -46,10 +46,9 @@ __global__ void reduce_sum_kernel(T *a, float *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -78,10 +77,9 @@ __global__ void reduce_sum_fp32x4_kernel(float *a, float *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -93,7 +91,6 @@ __global__ void reduce_sum_fp16x2_kernel(half *a, float *b, int N) {
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + tid;
     float sum = 0.0f;
-    half2 p;
     for (int i = idx * 2; i < N; i += gridDim.x * blockDim.x * 2) {
         float2 p = __half22float2(HALF2(a[i]));
         sum += p.x + p.y;
@@ -110,10 +107,9 @@ __global__ void reduce_sum_fp16x2_kernel(half *a, float *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -146,10 +142,9 @@ __global__ void reduce_sum_fp16x8_packed_kernel(half *a, float *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0.f;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0.f;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -176,10 +171,9 @@ __global__ void reduce_sum_i8_kernel(int8_t *a, int32_t *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -211,10 +205,9 @@ __global__ void reduce_sum_i8x16_packed_kernel(int8_t *a, int32_t *b, int N) {
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -247,10 +240,9 @@ __global__ void reduce_sum_i8x16_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -294,10 +286,9 @@ __global__ void reduce_sum_i8x64_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     }
     __syncthreads();
 
-    sum = lane_id < num_warp ? smem[lane_id] : 0;
-
     if (warp_id == 0) {
-        sum = _warp_shuffle_reduce(sum);
+        sum = lane_id < num_warp ? smem[lane_id] : 0;
+        sum = _warp_shuffle_reduce<num_warp>(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
