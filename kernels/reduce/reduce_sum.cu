@@ -17,7 +17,7 @@
 const int WARP_SIZE = 32;
 
 template <const int warp_size = WARP_SIZE, typename T>
-__device__ __forceinline__ T _warp_mask_reduce(T x) {
+__device__ __forceinline__ T _warp_shuffle_reduce(T x) {
 #pragma unroll
     for (int mask = warp_size >> 1; mask > 0; mask >>= 1) {
         x += __shfl_xor_sync(0xffffffff, x, mask);
@@ -40,7 +40,7 @@ __global__ void reduce_sum_kernel(T *a, float *b, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -49,7 +49,7 @@ __global__ void reduce_sum_kernel(T *a, float *b, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -72,7 +72,7 @@ __global__ void reduce_sum_fp32x4_kernel(float *a, float *b, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -81,7 +81,7 @@ __global__ void reduce_sum_fp32x4_kernel(float *a, float *b, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -104,7 +104,7 @@ __global__ void reduce_sum_fp16x2_kernel(half *a, float *b, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -113,7 +113,7 @@ __global__ void reduce_sum_fp16x2_kernel(half *a, float *b, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -140,7 +140,7 @@ __global__ void reduce_sum_fp16x8_packed_kernel(half *a, float *b, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -149,7 +149,7 @@ __global__ void reduce_sum_fp16x8_packed_kernel(half *a, float *b, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -170,7 +170,7 @@ __global__ void reduce_sum_i8_kernel(int8_t *a, int32_t *b, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ int smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -179,7 +179,7 @@ __global__ void reduce_sum_i8_kernel(int8_t *a, int32_t *b, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -205,7 +205,7 @@ __global__ void reduce_sum_i8x16_packed_kernel(int8_t *a, int32_t *b, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ int32_t smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -214,7 +214,7 @@ __global__ void reduce_sum_i8x16_packed_kernel(int8_t *a, int32_t *b, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -241,7 +241,7 @@ __global__ void reduce_sum_i8x16_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     int warp_id = tid / WARP_SIZE;
     __shared__ int32_t smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -250,7 +250,7 @@ __global__ void reduce_sum_i8x16_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }
@@ -288,7 +288,7 @@ __global__ void reduce_sum_i8x64_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     int warp_id = tid / WARP_SIZE;
     __shared__ int32_t smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -297,7 +297,7 @@ __global__ void reduce_sum_i8x64_packed_dp4a_kernel(int8_t *a, int32_t *b, int N
     sum = lane_id < num_warp ? smem[lane_id] : 0;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(b, sum);
         }

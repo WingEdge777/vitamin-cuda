@@ -17,7 +17,7 @@
 const int WARP_SIZE = 32;
 
 template <const int warp_size = WARP_SIZE, typename T>
-__device__ __forceinline__ T _warp_mask_reduce(T x) {
+__device__ __forceinline__ T _warp_shuffle_reduce(T x) {
 #pragma unroll
     for (int mask = warp_size >> 1; mask > 0; mask >>= 1) {
         x += __shfl_xor_sync(0xffffffff, x, mask);
@@ -41,7 +41,7 @@ __global__ void dot_product_kernel(T *a, T *b, float *c, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -50,7 +50,7 @@ __global__ void dot_product_kernel(T *a, T *b, float *c, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(c, sum);
         }
@@ -74,7 +74,7 @@ __global__ void dot_product_fp32x4_kernel(float *a, float *b, float *c, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -83,7 +83,7 @@ __global__ void dot_product_fp32x4_kernel(float *a, float *b, float *c, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(c, sum);
         }
@@ -107,7 +107,7 @@ __global__ void dot_product_fp16x2_kernel(half *a, half *b, float *c, int N) {
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -116,7 +116,7 @@ __global__ void dot_product_fp16x2_kernel(half *a, half *b, float *c, int N) {
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(c, sum);
         }
@@ -144,7 +144,7 @@ __global__ void dot_product_fp16x8_packed_kernel(half *a, half *b, float *c, int
     int warp_id = tid / WARP_SIZE;
     __shared__ float smem[num_warp];
 
-    sum = _warp_mask_reduce<WARP_SIZE>(sum);
+    sum = _warp_shuffle_reduce<WARP_SIZE>(sum);
     if (lane_id == 0) {
         smem[warp_id] = sum;
     }
@@ -153,7 +153,7 @@ __global__ void dot_product_fp16x8_packed_kernel(half *a, half *b, float *c, int
     sum = lane_id < num_warp ? smem[lane_id] : 0.f;
 
     if (warp_id == 0) {
-        sum = _warp_mask_reduce(sum);
+        sum = _warp_shuffle_reduce(sum);
         if (tid == 0) {
             atomicAdd(c, sum);
         }

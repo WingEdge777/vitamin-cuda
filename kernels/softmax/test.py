@@ -59,16 +59,17 @@ def diff_check(a, b, prefix="torch", eps=1e-4):
 if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
-    sz = [1024, 2048, 4096, 8192]
+    bs = [256, 1024, 2048, 4096]
+    sz = [2048, 4096, 8192]
     torch.manual_seed(42)
-    for n in sz:
+    for n in bs:
         for m in sz:
             print("#" * 100)
             print(f"n: {n}, m: {m}")
             a = torch.randn(n, m).float().cuda()
             b = torch.empty(n, m).float().cuda()
 
-            benchmark(partial(torch.softmax, dim=1, out=b),a)
+            benchmark(partial(torch.softmax, dim=1, out=b), a)
             b_my = torch.empty_like(a)
             benchmark(lib.softmax, a, b_my, prefix="softmax")
             # print(b, b_my)
@@ -77,3 +78,13 @@ if __name__ == "__main__":
             benchmark(lib.softmax_fp32x4, a, b_my, prefix="softmax_fp32x4")
             # print(b, b_my)
             diff_check(b, b_my, prefix="softmax_fp32x4")
+
+            a = a.half()
+            b = b.half()
+            b_my = b_my.half()
+            benchmark(partial(torch.softmax, dim=1, out=b), a)
+            benchmark(lib.softmax, a, b_my, prefix="softmax_fp16")
+            diff_check(b, b_my, prefix="softmax_fp16")
+
+            benchmark(lib.softmax_fp16x8_packed, a, b_my, prefix="softmax_fp16x8_packed")
+            diff_check(b, b_my, prefix="softmax_fp16x8_packed")
