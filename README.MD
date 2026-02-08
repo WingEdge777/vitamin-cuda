@@ -103,8 +103,9 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] dot_product_fp16x8(fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
 - [softmax](./kernels/softmax/)
-  - [x] safe online softmax fp32 版
-  - [x] safe online softmax fp32x4 版
+  - [x] safe online softmax fp32/fp16 版
+  - [x] safe online softmax fp32x4 版 (fp32向量化)
+  - [x] safe online softmax fp16x8 版 (fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
 
 ### Hard (🌟🌟🌟~🌟🌟🌟🌟)
