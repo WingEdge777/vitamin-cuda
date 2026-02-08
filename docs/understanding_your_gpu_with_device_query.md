@@ -92,7 +92,7 @@ cd samples/deviceQuery && bash run.sh
   - 编程建议：绝对不要在 Kernel 里写复杂的串行逻辑或深层 if/else 嵌套。
 - 显存频率：12001 MHz
   - 这个频率是等效频率，实际频率计算比较复杂（涉及 Command Clock, Write Clock, Double Data Rate 等），我们开发时只需关注它计算出的带宽吞吐。
-  - Latency vs Throughput：这个频率高不代表延迟低。单次显存读取的延迟可能高达几百个 GPU 时钟周期。所以 CUDA 程序通常都是 Memory Bound，优化的核心永远是掩盖这些延迟。
+  - Latency vs Throughput：这个频率高不代表延迟低，单次显存读取的延迟可能高达几百个 GPU 时钟周期，所以 CUDA 程序往往都是 Memory Bound（尤其这张卡），优化的核心永远是掩盖这些延迟。
 
 ### 2.4 内存子系统（性能瓶颈之源）
 
