@@ -12,3 +12,8 @@ SpacesInAngles: false
 BinPackParameters: false
 BinPackArguments: false
 AlignAfterOpenBracket: Align
+
+IndentCaseLabels: true
+IndentCaseBlocks: false
+
+AllowShortCaseLabelsOnASingleLine: true
