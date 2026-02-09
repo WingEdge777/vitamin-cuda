@@ -127,7 +127,7 @@ cd samples/deviceQuery && bash run.sh
 - warp size：32
   - warp 是 gpu 调度的最小单位，每个 warp 包含 32 个线程，这些线程必须同时执行相同的指令，这是 gpu 并行计算的基础
     - 指定的线程组 block 大小为比如 256 个，他们是每 32 个一组一组的被调度到 SM 上运行
-  - Warp Divergence：这个也要讲烂了，因为是 SIMD mode，如果有 if/else 分支，那么两个分支都串行执行，只是在对应阶段会屏蔽条件外的线程。
+  - Warp Divergence：这个也要讲烂了，因为是 SIMT model，如果有 if/else 分支，那么两个分支都串行执行，只是在对应阶段会屏蔽条件外的线程。
 - block 的最大 shape (x,y,z): (1024, 1024, 64)
   - 是的，block 的纬度是有大小限制的，毕竟上面也写了，每个 block 最多 1024 个线程；
   - 多维只是为了在特别情况下，索引数据方便多维读取和理解
