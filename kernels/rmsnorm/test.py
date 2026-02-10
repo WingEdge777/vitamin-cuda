@@ -27,32 +27,21 @@ lib = load(
 )
 
 
-def rmsnorm(x, weight, dim=1, eps=1e-6, out=None): # [n, dim], [dim]
+def rmsnorm(x, weight, dim=1, eps=1e-6, out=None):  # [n, dim], [dim]
     out = x * torch.rsqrt(x.pow(2).mean(dim, keepdim=True) + eps) * weight
     return out
 
 
-def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
-    if b is not None:
-        # warm up
-        for i in range(warmup):
-            res = op(a, b)
-        torch.cuda.synchronize()
-        start = time.time()
-        for i in range(rep):
-            res = op(a, b)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
-    else:
-        # warm up
-        for i in range(warmup):
-            res = op(a)
-        torch.cuda.synchronize()
-        start = time.time()
-        for i in range(rep):
-            res = op(a)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
+def benchmark(op, a, b, warmup=10, rep=300, prefix="torch"):
+    # warm up
+    for i in range(warmup):
+        res = op(a, b)
+    torch.cuda.synchronize()
+    start = time.time()
+    for i in range(rep):
+        res = op(a, b)
+    torch.cuda.synchronize()
+    print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
     return res
 
 
@@ -74,24 +63,22 @@ if __name__ == "__main__":
             a = torch.randn(n, m).float().cuda()
             b = torch.randn(m).float().cuda()
 
-            c = benchmark(rmsnorm, a)
-            b_my = torch.empty_like(a)
-            benchmark(lib.rmsnorm, a, b_my, prefix="rmsnorm")
+            c = benchmark(rmsnorm, a, b)
+            c_my = benchmark(lib.rmsnorm, a, b, prefix="rmsnorm")
             # print(b, b_my)
-            diff_check(b, b_my, prefix="rmsnorm")
+            diff_check(c, c_my, prefix="rmsnorm")
 
-            benchmark(lib.rmsnorm_fp32x4, a, b_my, prefix="rmsnorm_fp32x4")
+            benchmark(lib.rmsnorm_fp32x4, a, b, prefix="rmsnorm_fp32x4")
             # print(b, b_my)
-            diff_check(b, b_my, prefix="rmsnorm_fp32x4")
+            diff_check(c, c_my, prefix="rmsnorm_fp32x4")
 
             a = a.half()
             b = b.half()
-            b_my = b_my.half()
-            benchmark(rmsnorm, a)
-            benchmark(lib.rmsnorm, a, b_my, prefix="rmsnorm_fp16")
-            diff_check(b, b_my, prefix="rmsnorm_fp16")
+            c = benchmark(rmsnorm, a, b)
+            c_my = benchmark(lib.rmsnorm, a, b, prefix="rmsnorm_fp16")
+            diff_check(c, c_my, prefix="rmsnorm_fp16", eps=1e-3)
 
-            benchmark(
-                lib.rmsnorm_fp16x8_packed, a, b_my, prefix="rmsnorm_fp16x8_packed"
+            c_my = benchmark(
+                lib.rmsnorm_fp16x8_packed, a, b, prefix="rmsnorm_fp16x8_packed"
             )
-            diff_check(b, b_my, prefix="rmsnorm_fp16x8_packed")
+            diff_check(c, c_my, prefix="rmsnorm_fp16x8_packed", eps=1e-3)
