@@ -14,12 +14,13 @@
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
+
 const int naive_tiling_size = 16;
 
 const int tiling_size = 32;
 const int tiling_row = 8;
 
-// coalesced transpose
+// naive coalesced read transpose
 __global__ void transpose_coalesced_read_kernel(float *a, float *b, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -28,15 +29,16 @@ __global__ void transpose_coalesced_read_kernel(float *a, float *b, int width, i
     }
 }
 
+// naive coalesced write transpose
 __global__ void transpose_coalesced_write_kernel(float *a, float *b, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x < width && y < height) {
+    if (x < height && y < width) {
         b[y * height + x] = a[x * width + y];
     }
 }
 
-// transpose
+// transpose with smem
 __global__ void transpose_smem_kernel(float *a, float *b, int width, int height) {
     __shared__ float tile[tiling_size][tiling_size];
     int tx = threadIdx.x;
@@ -89,23 +91,38 @@ __global__ void transpose_smem_kernel(float *a, float *b, int width, int height)
     }
 }
 
-__global__ void transpose_fp32x4_kernel(float *a, float *b, int width, int height) {}
+// bank conflict free
+__global__ void transpose_smem_bcf_kernel(float *a, float *b, int width, int height) {}
+
+// bcf + float4
+__global__ void transpose_smem_bcf_packed_kernel(float *a, float *b, int width, int height) {}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
-#define binding_coalesced_gen(name, num, element_dtype)                                                                \
-    void name(torch::Tensor a, torch::Tensor b) {                                                                      \
-        CHECK_T(a);                                                                                                    \
-        CHECK_T(b);                                                                                                    \
-        const int height = a.size(0);                                                                                  \
-        const int width = a.size(1);                                                                                   \
-        const dim3 threads_per_block(naive_tiling_size, naive_tiling_size);                                            \
-        const dim3 blocks_per_grid((width + naive_tiling_size - 1) / naive_tiling_size,                                \
-                                   (height + naive_tiling_size - 1) / naive_tiling_size);                              \
-        cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-                                                                                                                       \
-        name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
-            reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);          \
-    }
+
+void transpose_coalesced_read(torch::Tensor a, torch::Tensor b) {
+    CHECK_T(a);
+    CHECK_T(b);
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    const int height = a.size(0);
+    const int width = a.size(1);
+    const dim3 threads_per_block(naive_tiling_size, naive_tiling_size);
+    const dim3 blocks_per_grid((width + naive_tiling_size - 1) / naive_tiling_size,
+                               (height + naive_tiling_size - 1) / naive_tiling_size);
+    transpose_coalesced_read_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
+        reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);
+}
+void transpose_coalesced_write(torch::Tensor a, torch::Tensor b) {
+    CHECK_T(a);
+    CHECK_T(b);
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    const int height = a.size(0);
+    const int width = a.size(1);
+    const dim3 threads_per_block(naive_tiling_size, naive_tiling_size);
+    const dim3 blocks_per_grid((height + naive_tiling_size - 1) / naive_tiling_size,
+                               (width + naive_tiling_size - 1) / naive_tiling_size);
+    transpose_coalesced_write_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
+        reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);
+}
 
 #define binding_func_gen(name, num, element_dtype)                                                                     \
     void name(torch::Tensor a, torch::Tensor b) {                                                                      \
@@ -114,17 +131,17 @@ __global__ void transpose_fp32x4_kernel(float *a, float *b, int width, int heigh
         const int height = a.size(0);                                                                                  \
         const int width = a.size(1);                                                                                   \
         const dim3 threads_per_block(tiling_size, tiling_row);                                                         \
-        const dim3 blocks_per_grid((width + tiling_size - 1) / tiling_size, (height + tiling_row - 1) / tiling_row);   \
+        const dim3 blocks_per_grid((width + tiling_size - 1) / tiling_size,                                            \
+                                   (height + tiling_row - 1) / (tiling_row * num));                                    \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
             reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);          \
     }
-binding_coalesced_gen(transpose_coalesced_read, 1, float);
-binding_coalesced_gen(transpose_coalesced_write, 1, float);
+
 binding_func_gen(transpose_smem, 1, float);
 binding_func_gen(transpose_smem_bcf, 1, float);
-binding_func_gen(transpose_smem_bcf_packed, 1, float);
+binding_func_gen(transpose_smem_bcf_packed, 4, float);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)

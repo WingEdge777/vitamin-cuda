@@ -26,58 +26,58 @@ lib = load(
     verbose=True,
 )
 
-
+@torch.compile()
 def transpose(a, b):
     return torch.transpose_copy(a, dim0=0, dim1=1, out=b)
 
+baseline = None
 
-def benchmark(op, a, b=None, warmup=10, rep=500, prefix="torch"):
-    if b is not None:
-        # warm up
-        for i in range(warmup):
-            res = op(a, b)
-        torch.cuda.synchronize()
-        start = time.time()
-        for i in range(rep):
-            res = op(a, b)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
+def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
+    # warm up
+    for i in range(warmup):
+        op(a, b)
+    torch.cuda.synchronize()
+    start = time.perf_counter()
+    for i in range(rep):
+        op(a, b)
+    torch.cuda.synchronize()
+    if prefix == "torch":
+        global baseline
+        duration = time.perf_counter() - start
+        baseline = duration
+        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms")
     else:
-        # warm up
-        for i in range(warmup):
-            res = op(a)
-        torch.cuda.synchronize()
-        start = time.time()
-        for i in range(rep):
-            res = op(a)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms")
-    return res
+        duration = time.perf_counter() - start
+        speedup = baseline / duration
+        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms, speedup: {speedup:.2f}")
 
 
-def diff_check(a, b, prefix="torch", eps=1e-4):
-    message = f"{prefix} result diff"
-    assert torch.mean(torch.abs(a - b)).item() < eps, message
+def diff_check(a, b, prefix="torch", eps=1e-6):
+    if not torch.allclose(a, b, atol=eps, rtol=eps):
+        print(f"{prefix} result diff: {torch.mean(torch.abs(a - b)).item()}")
+    assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
 
 
 if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
-    seq_lens = [512, 1024, 2048, 4096, 8192]
-    head_dim = [128, 256]
+    sz = [512, 1024, 2048, 4096, 8192]
     torch.manual_seed(42)
-    for n in seq_lens:
-        for m in head_dim:
+    for n in sz:
+        for m in sz:
             print("#" * 100)
             print(f"n: {n}, m: {m}")
-            a = torch.randn(n, m).float().cuda()
+            a = torch.arange(n * m).reshape(n, m).contiguous().float().cuda()
             b = torch.randn(m, n).float().cuda()
 
             benchmark(transpose, a, b)
             b_my = torch.empty_like(b)
-            benchmark(lib.transpose, a, b_my, prefix="transpose")
+            benchmark(lib.transpose_coalesced_read, a, b_my, prefix="transpose_coalesced_read")
             # print(b, b_my)
-            diff_check(b, b_my, prefix="transpose")
+            diff_check(b, b_my, prefix="transpose_coalesced_read")
+            benchmark(lib.transpose_coalesced_write, a, b_my, prefix="transpose_coalesced_write")
+            # print(b, b_my)
+            diff_check(b, b_my, prefix="transpose_coalesced_write")
 
-            benchmark(lib.transpose_fp32x4, a, b_my, prefix="transpose_fp32x4")
-            diff_check(b, b_my, prefix="transpose_fp32x4")
+            # benchmark(lib.transpose_fp32x4, a, b_my, prefix="transpose_fp32x4")
+            # diff_check(b, b_my, prefix="transpose_fp32x4")
