@@ -111,7 +111,9 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] naive torch rmsnorm
   - [x] rmsnorm fp32/fp16 版
   - [x] rmsnorm fp32x4 版 (fp32向量化)
+  - [x] rmsnorm_fp32x4_smem
   - [x] rmsnorm fp16x8 版 (fp16向量化, packed r/w)
+  - [x] rmsnorm_fp16x8_smem 版 (fp16向量化, packed r/w)
   - [x] pytorch op bindings && diff check
 - [transpose](./kernels/mat_transpose/)
   - [x] transpose_coalesced_read (input视角，合并读)
