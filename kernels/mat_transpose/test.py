@@ -61,7 +61,7 @@ def diff_check(a, b, prefix="torch", eps=1e-6):
 if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
-    sz = [512, 1024, 2048, 4096, 8192]
+    sz = [256, 512, 1024, 2048, 4096, 8192]
     torch.manual_seed(42)
     for n in sz:
         for m in sz:
@@ -76,12 +76,13 @@ if __name__ == "__main__":
             # print(b, b_my)
             diff_check(b, b_my, prefix="transpose_coalesced_read")
             benchmark(lib.transpose_coalesced_write, a, b_my, prefix="transpose_coalesced_write")
-            # print(b, b_my)
             diff_check(b, b_my, prefix="transpose_coalesced_write")
 
             benchmark(lib.transpose_smem, a, b_my, prefix="transpose_smem")
             diff_check(b, b_my, prefix="transpose_smem")
             benchmark(lib.transpose_smem_bcf, a, b_my, prefix="transpose_smem_bcf")
             diff_check(b, b_my, prefix="transpose_smem_bcf")
-            benchmark(lib.transpose_smem_bcf_packed, a, b_my, prefix="transpose_smem_bcf_packed")
-            diff_check(b, b_my, prefix="transpose_smem_bcf_packed")
+            benchmark(lib.transpose_smem_packed, a, b_my, prefix="transpose_smem_packed")
+            diff_check(b, b_my, prefix="transpose_smem_packed")
+            benchmark(lib.transpose_smem_swizzled_packed, a, b_my, prefix="transpose_smem_swizzled_packed")
+            diff_check(b, b_my, prefix="transpose_smem_swizzled_bcf_packed")
