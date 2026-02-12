@@ -144,8 +144,8 @@ __global__ void transpose_smem_bcf_kernel(float *a, float *b, int width, int hei
     }
 }
 
-// bcf + float4 r/w
-__global__ void transpose_smem_bcf_packed_kernel(float *a, float *b, int width, int height) {
+// smem + float4 r/w
+__global__ void transpose_smem_packed_kernel(float *a, float *b, int width, int height) {
     __shared__ float tile[tiling_size][tiling_size + 1];
     int tid = threadIdx.x + threadIdx.y * blockDim.x; // [0, 256]
 
@@ -172,6 +172,40 @@ __global__ void transpose_smem_bcf_packed_kernel(float *a, float *b, int width, 
         vb.y = tile[sx * 4 + 1][sy];
         vb.z = tile[sx * 4 + 2][sy];
         vb.w = tile[sx * 4 + 3][sy];
+        LDST128BITS(b[b_y * height + b_x]) = vb;
+    }
+}
+
+// smem swizzle bcf + float4 r/w
+__global__ void transpose_smem_swizzled_packed_kernel(float *a, float *b, int width, int height) {
+    __shared__ float tile[tiling_size][tiling_size];
+    int tid = threadIdx.x + threadIdx.y * blockDim.x; // [0, 256]
+
+    int sx = tid % 8;
+    int sy = tid / 8;
+    int a_x = blockIdx.x * tiling_size + sx * 4;
+    int a_y = blockIdx.y * tiling_size + sy;
+    if (a_x < width && a_y < height) {
+        float4 va = LDST128BITS(a[a_y * width + a_x]);
+
+        tile[sy][(sx * 4 + 0) ^ sy] = va.x;
+        tile[sy][(sx * 4 + 1) ^ sy] = va.y;
+        tile[sy][(sx * 4 + 2) ^ sy] = va.z;
+        tile[sy][(sx * 4 + 3) ^ sy] = va.w;
+    }
+
+    __syncthreads();
+
+    int b_x = blockIdx.y * tiling_size + sx * 4;
+    int b_y = blockIdx.x * tiling_size + sy;
+    if (b_x < height && b_y < width) {
+        float4 vb;
+
+        vb.x = tile[sx * 4 + 0][sy ^ (sx * 4 + 0)];
+        vb.y = tile[sx * 4 + 1][sy ^ (sx * 4 + 1)];
+        vb.z = tile[sx * 4 + 2][sy ^ (sx * 4 + 2)];
+        vb.w = tile[sx * 4 + 3][sy ^ (sx * 4 + 3)];
+
         LDST128BITS(b[b_y * height + b_x]) = vb;
     }
 }
@@ -219,7 +253,8 @@ void transpose_coalesced_write(torch::Tensor a, torch::Tensor b) {
 
 binding_func_gen(transpose_smem, 1, float);
 binding_func_gen(transpose_smem_bcf, 1, float);
-binding_func_gen(transpose_smem_bcf_packed, 4, float);
+binding_func_gen(transpose_smem_packed, 4, float);
+binding_func_gen(transpose_smem_swizzled_packed, 4, float);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
@@ -229,5 +264,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(transpose_coalesced_write);
     torch_pybinding_func(transpose_smem);
     torch_pybinding_func(transpose_smem_bcf);
-    torch_pybinding_func(transpose_smem_bcf_packed);
+    torch_pybinding_func(transpose_smem_packed);
+    torch_pybinding_func(transpose_smem_swizzled_packed);
 }
