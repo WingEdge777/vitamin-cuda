@@ -26,7 +26,7 @@ lib = load(
     verbose=True,
 )
 
-@torch.compile()
+# @torch.compile()
 def transpose(a, b):
     return torch.transpose_copy(a, dim0=0, dim1=1, out=b)
 
@@ -71,7 +71,7 @@ if __name__ == "__main__":
             b = torch.randn(m, n).float().cuda()
 
             benchmark(transpose, a, b)
-            b_my = torch.empty_like(b)
+            b_my = torch.zeros_like(b)
             benchmark(lib.transpose_coalesced_read, a, b_my, prefix="transpose_coalesced_read")
             # print(b, b_my)
             diff_check(b, b_my, prefix="transpose_coalesced_read")
@@ -79,5 +79,9 @@ if __name__ == "__main__":
             # print(b, b_my)
             diff_check(b, b_my, prefix="transpose_coalesced_write")
 
-            # benchmark(lib.transpose_fp32x4, a, b_my, prefix="transpose_fp32x4")
-            # diff_check(b, b_my, prefix="transpose_fp32x4")
+            benchmark(lib.transpose_smem, a, b_my, prefix="transpose_smem")
+            diff_check(b, b_my, prefix="transpose_smem")
+            benchmark(lib.transpose_smem_bcf, a, b_my, prefix="transpose_smem_bcf")
+            diff_check(b, b_my, prefix="transpose_smem_bcf")
+            benchmark(lib.transpose_smem_bcf_packed, a, b_my, prefix="transpose_smem_bcf_packed")
+            diff_check(b, b_my, prefix="transpose_smem_bcf_packed")

@@ -92,10 +92,89 @@ __global__ void transpose_smem_kernel(float *a, float *b, int width, int height)
 }
 
 // bank conflict free
-__global__ void transpose_smem_bcf_kernel(float *a, float *b, int width, int height) {}
+__global__ void transpose_smem_bcf_kernel(float *a, float *b, int width, int height) {
+    __shared__ float tile[tiling_size][tiling_size + 1];
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
 
-// bcf + float4
-__global__ void transpose_smem_bcf_packed_kernel(float *a, float *b, int width, int height) {}
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+
+    int x = bx * tiling_size + tx;
+    int y = by * tiling_size + ty;
+
+    bool x_full = (bx + 1) * tiling_size <= width;
+    bool y_full = (by + 1) * tiling_size <= height;
+
+    if (x_full && y_full) {
+#pragma unroll
+        for (int j = 0; j < tiling_size; j += tiling_row) {
+            tile[ty + j][tx] = a[(y + j) * width + x];
+        }
+    } else {
+#pragma unroll
+        for (int j = 0; j < tiling_size; j += tiling_row) {
+            if (x < width && (y + j) < height) {
+                tile[ty + j][tx] = a[(y + j) * width + x];
+            }
+        }
+    }
+
+    __syncthreads();
+    x = by * tiling_size + tx;
+    y = bx * tiling_size + ty;
+
+    bool write_x_full = (by + 1) * tiling_size <= height;
+    bool write_y_full = (bx + 1) * tiling_size <= width;
+
+    if (write_x_full && write_y_full) {
+// Fast Path
+#pragma unroll
+        for (int j = 0; j < tiling_size; j += tiling_row) {
+            b[(y + j) * height + x] = tile[tx][ty + j];
+        }
+    } else {
+// Slow Path
+#pragma unroll
+        for (int j = 0; j < tiling_size; j += tiling_row) {
+            if (x < height && (y + j) < width) {
+                b[(y + j) * height + x] = tile[tx][ty + j];
+            }
+        }
+    }
+}
+
+// bcf + float4 r/w
+__global__ void transpose_smem_bcf_packed_kernel(float *a, float *b, int width, int height) {
+    __shared__ float tile[tiling_size][tiling_size + 1];
+    int tid = threadIdx.x + threadIdx.y * blockDim.x; // [0, 256]
+
+    int sx = tid % 8;
+    int sy = tid / 8;
+
+    int a_x = blockIdx.x * tiling_size + sx * 4;
+    int a_y = blockIdx.y * tiling_size + sy;
+    if (a_x < width && a_y < height) {
+        float4 va = LDST128BITS(a[a_y * width + a_x]);
+        tile[sy][sx * 4 + 0] = va.x;
+        tile[sy][sx * 4 + 1] = va.y;
+        tile[sy][sx * 4 + 2] = va.z;
+        tile[sy][sx * 4 + 3] = va.w;
+    }
+
+    __syncthreads();
+
+    int b_x = blockIdx.y * tiling_size + sx * 4;
+    int b_y = blockIdx.x * tiling_size + sy;
+    if (b_x < height && b_y < width) {
+        float4 vb;
+        vb.x = tile[sx * 4 + 0][sy];
+        vb.y = tile[sx * 4 + 1][sy];
+        vb.z = tile[sx * 4 + 2][sy];
+        vb.w = tile[sx * 4 + 3][sy];
+        LDST128BITS(b[b_y * height + b_x]) = vb;
+    }
+}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
@@ -131,8 +210,7 @@ void transpose_coalesced_write(torch::Tensor a, torch::Tensor b) {
         const int height = a.size(0);                                                                                  \
         const int width = a.size(1);                                                                                   \
         const dim3 threads_per_block(tiling_size, tiling_row);                                                         \
-        const dim3 blocks_per_grid((width + tiling_size - 1) / tiling_size,                                            \
-                                   (height + tiling_row - 1) / (tiling_row * num));                                    \
+        const dim3 blocks_per_grid((width + tiling_size - 1) / tiling_size, (height + tiling_size - 1) / tiling_size); \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
