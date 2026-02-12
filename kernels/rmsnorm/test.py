@@ -65,11 +65,13 @@ if __name__ == "__main__":
 
             c = benchmark(rmsnorm, a, b)
             c_my = benchmark(lib.rmsnorm, a, b, prefix="rmsnorm")
-            # print(b, b_my)
+
             diff_check(c, c_my, prefix="rmsnorm")
 
-            benchmark(lib.rmsnorm_fp32x4, a, b, prefix="rmsnorm_fp32x4")
-            # print(b, b_my)
+            c_my = benchmark(lib.rmsnorm_fp32x4, a, b, prefix="rmsnorm_fp32x4")
+            diff_check(c, c_my, prefix="rmsnorm_fp32x4")
+
+            c_my = benchmark(lib.rmsnorm_fp32x4_smem, a, b, prefix="rmsnorm_fp32x4_smem")
             diff_check(c, c_my, prefix="rmsnorm_fp32x4")
 
             a = a.half()
@@ -82,3 +84,9 @@ if __name__ == "__main__":
                 lib.rmsnorm_fp16x8_packed, a, b, prefix="rmsnorm_fp16x8_packed"
             )
             diff_check(c, c_my, prefix="rmsnorm_fp16x8_packed", eps=1e-3)
+
+            c_my = benchmark(
+                lib.rmsnorm_fp16x8_packed_smem, a, b, prefix="rmsnorm_fp16x8_packed_smem"
+            )
+            # print(c, c_my)
+            diff_check(c, c_my, prefix="rmsnorm_fp16x8_packed_smem", eps=1e-3)
