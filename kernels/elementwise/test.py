@@ -33,24 +33,24 @@ def benchmark(op, a, b, c=None, warmup=10, rep=500, prefix="torch"):
         for i in range(10):
             op(a, b, c)
         torch.cuda.synchronize()
-        start = time.time()
+        start = time.perf_counter()
         for i in range(rep):
             op(a, b, c)
         torch.cuda.synchronize()
         print(
-            f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms"
+            f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms"
         )
     else:
         # warm up
         for i in range(10):
             op(a, b)
         torch.cuda.synchronize()
-        start = time.time()
+        start = time.perf_counter()
         for i in range(rep):
             op(a, b)
         torch.cuda.synchronize()
         print(
-            f"{prefix:30s} mean time: {(time.time() - start) / rep * 1000:.6f} ms"
+            f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms"
         )
 
 
