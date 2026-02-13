@@ -54,11 +54,13 @@ __global__ void transpose_smem_kernel(float *a, float *b, int width, int height)
     bool y_full = (by + 1) * tiling_size <= height;
 
     if (x_full && y_full) {
+// Fast Path
 #pragma unroll
         for (int j = 0; j < tiling_size; j += tiling_row) {
             tile[ty + j][tx] = a[(y + j) * width + x];
         }
     } else {
+// Slow Path
 #pragma unroll
         for (int j = 0; j < tiling_size; j += tiling_row) {
             if (x < width && (y + j) < height) {
@@ -144,8 +146,8 @@ __global__ void transpose_smem_bcf_kernel(float *a, float *b, int width, int hei
     }
 }
 
-// smem + float4 r/w
-__global__ void transpose_smem_packed_kernel(float *a, float *b, int width, int height) {
+// smem bcf + float4 r/w
+__global__ void transpose_smem_packed_bcf_kernel(float *a, float *b, int width, int height) {
     __shared__ float tile[tiling_size][tiling_size + 1];
     int tid = threadIdx.x + threadIdx.y * blockDim.x; // [0, 256]
 
@@ -253,7 +255,7 @@ void transpose_coalesced_write(torch::Tensor a, torch::Tensor b) {
 
 binding_func_gen(transpose_smem, 1, float);
 binding_func_gen(transpose_smem_bcf, 1, float);
-binding_func_gen(transpose_smem_packed, 4, float);
+binding_func_gen(transpose_smem_packed_bcf, 4, float);
 binding_func_gen(transpose_smem_swizzled_packed, 4, float);
 
 // binding
@@ -264,6 +266,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(transpose_coalesced_write);
     torch_pybinding_func(transpose_smem);
     torch_pybinding_func(transpose_smem_bcf);
-    torch_pybinding_func(transpose_smem_packed);
+    torch_pybinding_func(transpose_smem_packed_bcf);
     torch_pybinding_func(transpose_smem_swizzled_packed);
 }
