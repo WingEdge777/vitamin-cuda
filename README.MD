@@ -120,8 +120,8 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] transpose_coalesced_write (output视角，合并写)
   - [x] transpose_smem (共享内存缓存，块状读写)
   - [x] transpose_smem_bcf (共享内存无冲突版)
-  - [x] transpose_smem_packed (共享内存缓存，float4向量化读写)
-  - [x] transpose_smem_packed (共享内存无冲突版，float4向量化读写)
+  - [x] transpose_smem_packed_bcf (共享内存缓存，float4向量化读写)
+  - [x] transpose_smem_packed_bcf (共享内存无冲突版，float4向量化读写)
   - [x] pytorch op bindings && diff check
 
 ### Hard (🌟🌟🌟~🌟🌟🌟🌟)
