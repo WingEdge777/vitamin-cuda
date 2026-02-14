@@ -6,7 +6,7 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 💊Let's get started and happy coding! 🧠
 
-## Contents
+## Contents 📖
 
 - [Easy 🌟~🌟🌟](#easy)
 - [Medium 🌟🌟~🌟🌟🌟](#medium)
