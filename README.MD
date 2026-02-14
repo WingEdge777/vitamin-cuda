@@ -6,6 +6,12 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 💊Let's get started and happy coding! 🧠
 
+## Contents
+
+- [x] [Easy 🌟~🌟🌟](#easy)
+- [x] [Medium 🌟🌟~🌟🌟🌟](#medium)
+- [x] [Hard 🌟🌟🌟~🌟🌟🌟🌟](#hard)
+
 ## Prerequisites 🛠️
 
 - NVIDIA GPU (Compute Capability 6.0+)
@@ -19,6 +25,8 @@ I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <
 ## Kernels (80+ kernels)
 
 All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benchmarked against PyTorch 2.9
+
+<div id="easy"></div>
 
 ### Easy (🌟~🌟🌟)
 
@@ -85,6 +93,8 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] rope fp32x4 版 (fp32向量化，稍大规模后快几十倍)
   - [x] pytorch op bindings && diff check
 
+<div id="medium"></div>
+
 ### Medium (🌟🌟~🌟🌟🌟)
 
 - [reduce](./kernels/reduce/) : 基于 warp shuffle add
@@ -123,6 +133,8 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] transpose_smem_packed_bcf (共享内存无冲突版，float4向量化读写)
   - [x] transpose_smem_swizzled_packed (共享内存无冲突版，float4向量化读写)
   - [x] pytorch op bindings && diff check
+
+<div id="hard"></div>
 
 ### Hard (🌟🌟🌟~🌟🌟🌟🌟)
 
