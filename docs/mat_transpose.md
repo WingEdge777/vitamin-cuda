@@ -524,7 +524,7 @@ transpose_Smem_swizzled_packed   0.414753 ms       2.73x      323.6 GB/s
 
 因此，这里的 323.6 GB/s 实际上反映的是 L2 Cache + DRAM 的混合吞吐能力。这也侧面印证了我们的优化策略（Tiling + Coalesced Access）极大地提升了数据的局部性（Data Locality），使得 Cache 命中率大幅提高。
 
-### 5.2 优化手段的收益阶梯
+### 5.2 优化手段的总结
 
 从本文，我们学到了 CUDA 优化的核心路径：
 
