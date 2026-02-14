@@ -1,4 +1,4 @@
-# Vitamin-CUDA
+# Vitamin-CUDA 🧠
 
 > **One Kernel a Day, Keeps High Latency Away.** 🚀
 
