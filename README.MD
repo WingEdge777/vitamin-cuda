@@ -8,9 +8,9 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 ## Contents
 
-- [x] [Easy 🌟~🌟🌟](#easy)
-- [x] [Medium 🌟🌟~🌟🌟🌟](#medium)
-- [x] [Hard 🌟🌟🌟~🌟🌟🌟🌟](#hard)
+- [Easy 🌟~🌟🌟](#easy)
+- [Medium 🌟🌟~🌟🌟🌟](#medium)
+- [Hard 🌟🌟🌟~🌟🌟🌟🌟](#hard)
 
 ## Prerequisites 🛠️
 
