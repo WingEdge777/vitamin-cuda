@@ -18,7 +18,7 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 - CUDA Toolkit 11.0+
 - C++ Compiler (GCC/Clang/MSVC)
 - CMake 3.18+ (Optional, but recommended)
-- PyTorch (For extension examples/python bingding and performence comparation)
+- PyTorch (For extension examples/python binding and performence comparation)
 
 I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch>
 
