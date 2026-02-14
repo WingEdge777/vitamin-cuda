@@ -126,7 +126,12 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
 
 ### Hard (🌟🌟🌟~🌟🌟🌟🌟)
 
-To be continued...
+- [sgemv](./kernels/sgemv/)
+  - [x] gemv fp32版
+  - [x] gemv fp32x4（向量化读取）
+  - [x] pytorch op bindings && diff check
+- [sgemm](./kernels/sgemm/)
+  - [] sgemm fp32版
 
 ## Samples
 
