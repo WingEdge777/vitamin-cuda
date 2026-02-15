@@ -96,7 +96,7 @@ const int tiling_size = 32;
 const int tiling_row = 8;
 
 // transpose with Smem
-__global__ void transpose_Smem_kernel(float *a, float *b, int width, int height) {
+__global__ void transpose_smem_kernel(float *a, float *b, int width, int height) {
     __shared__ float tile[tiling_size][tiling_size];
     int tx = threadIdx.x;
     int ty = threadIdx.y;
@@ -241,7 +241,7 @@ __global__ void transpose_Smem_kernel(float *a, float *b, int width, int height)
 #define LDST128BITS(x) (*reinterpret_cast<float4*>(&(x)))
 
 // Smem bcf + float4 r/w
-__global__ void transpose_Smem_packed_bcf_kernel(float *a, float *b, int width, int height) {
+__global__ void transpose_smem_packed_bcf_kernel(float *a, float *b, int width, int height) {
     __shared__ float tile[tiling_size][tiling_size + 1];
     int tid = threadIdx.x + threadIdx.y * blockDim.x; // [0, 256]
 
@@ -294,7 +294,7 @@ __global__ void transpose_Smem_packed_bcf_kernel(float *a, float *b, int width, 
 
 ```cpp
 // Smem swizzle bcf + float4 r/w
-__global__ void transpose_Smem_swizzled_packed_kernel(float *a, float *b, int width, int height) {
+__global__ void transpose_smem_swizzled_packed_kernel(float *a, float *b, int width, int height) {
     __shared__ float tile[tiling_size][tiling_size];
     int tid = threadIdx.x + threadIdx.y * blockDim.x; // [0, 256]
 
