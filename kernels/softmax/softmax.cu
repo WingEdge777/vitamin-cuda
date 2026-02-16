@@ -147,7 +147,6 @@ __global__ void softmax_fp16x8_packed_kernel(half *a, half *b, int hidden_size) 
     MD val{-INFINITY, 0.f};
 
     int i = 0;
-    int items_per_iter = BLOCK_SIZE * 8;
     for (; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
         LDST128BITS(pack[i * 4]) = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
 
