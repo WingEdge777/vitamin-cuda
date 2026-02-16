@@ -3,6 +3,8 @@ from functools import partial
 from typing import Optional
 
 import torch
+
+print(torch.randn(2, 2).cuda())
 from torch.utils.cpp_extension import load
 
 torch.set_grad_enabled(False)

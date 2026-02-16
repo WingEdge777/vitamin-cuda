@@ -26,6 +26,7 @@ lib = load(
     verbose=True,
 )
 
+baseline = None
 
 def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
     if b is not None:
@@ -36,8 +37,6 @@ def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
         start = time.perf_counter()
         for i in range(rep):
             res = op(a, b)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms")
     else:
         # warm up
         for i in range(warmup):
@@ -46,8 +45,16 @@ def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
         start = time.perf_counter()
         for i in range(rep):
             res = op(a)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms")
+    torch.cuda.synchronize()
+    if prefix == "torch":
+        global baseline
+        duration = time.perf_counter() - start
+        baseline = duration
+        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms")
+    else:
+        duration = time.perf_counter() - start
+        speedup = baseline / duration
+        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms, speedup: {speedup:.2f}")
     return res
 
 
