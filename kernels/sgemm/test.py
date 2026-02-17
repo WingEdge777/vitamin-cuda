@@ -10,8 +10,8 @@ torch.set_grad_enabled(False)
 common_flags = ["-O3", "-std=c++17"]
 # Load the CUDA kernel as a python module
 lib = load(
-    name="gemv_lib",
-    sources=["sgemv.cu"],
+    name="gemm_lib",
+    sources=["sgemm.cu", "cublas.cu"],
     extra_cuda_cflags=common_flags
     + [
         "-U__CUDA_NO_HALF_OPERATORS__",
@@ -29,7 +29,7 @@ lib = load(
 baseline = None
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=300, prefix="torch"):
+def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
     if c is not None:
         # warm up
         for i in range(warmup):
@@ -62,7 +62,9 @@ def benchmark(op, a, b, c=None, warmup=10, rep=300, prefix="torch"):
         )
 
 
-def diff_check(a, b, prefix="torch", eps=1e-4):
+def diff_check(a, b, prefix="torch", eps=1e-3):
+    if "tf32" in prefix:
+        eps = 0.1
     if not torch.allclose(a, b, atol=eps, rtol=eps):
         print(f"{prefix} result diff: {torch.mean(torch.abs(a - b)).item()}")
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
@@ -70,22 +72,28 @@ def diff_check(a, b, prefix="torch", eps=1e-4):
 
 if __name__ == "__main__":
     # test the kernel
-    nm = [512, 1024, 2048, 4096, 8192]
+    nmk = [512, 1024, 2048, 4096, 8192]
     torch.manual_seed(42)
-    for n in nm:
-        for m in nm:
-            print("#" * 100)
-            print(f"n: {n}, m: {m}")
-            # a dot b = c
-            a = torch.randn(n, m).float().cuda()
-            b = torch.randn(m, 1).float().cuda()
-            c = torch.zeros(n, 1).cuda()
+    for n in nmk:
+        for m in nmk:
+            for k in nmk:
+                print("#" * 100)
+                print(f"n: {n}, m: {m}")
+                # a dot b = c
+                a = torch.randn(n, m).float().cuda()
+                b = torch.randn(m, k).float().cuda()
+                c = torch.zeros(n, k).float().cuda()
 
-            benchmark(partial(torch.matmul, out=c), a, b)
-            c_my = torch.zeros_like(c)
+                benchmark(partial(torch.matmul, out=c), a, b)
+                c_cublas = torch.zeros_like(c)
 
-            benchmark(lib.gemv, a, b, c_my, prefix="gemv")
-            diff_check(c, c_my, prefix="gemv")
-            benchmark(lib.gemv_fp32x4, a, b, c_my, prefix="gemv_fp32x4")
-            # print(c.flatten(), c_my.flatten())
-            diff_check(c, c_my, prefix="gemv_fp32x4")
+                benchmark(lib.sgemm_cublas, a, b, c_cublas, prefix="sgemm_cublas")
+                diff_check(c, c_cublas, prefix="sgemm_cublas")
+                benchmark(
+                    lib.sgemm_cublas_tf32,
+                    a,
+                    b,
+                    c_cublas,
+                    prefix="sgemm_cublas_tf32",
+                )
+                diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
