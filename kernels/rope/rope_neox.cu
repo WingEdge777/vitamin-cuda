@@ -80,7 +80,7 @@ __global__ void rope_fp32x4_kernel(float *a, float *b, int head_dim) {
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
-            reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), head_dim);               \
+            a.data_ptr<float>(), b.data_ptr<float>(), head_dim);                                                       \
     }
 
 binding_func_gen(rope, 1, float);

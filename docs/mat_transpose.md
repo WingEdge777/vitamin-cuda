@@ -43,7 +43,7 @@ void transpose_coalesced_read(torch::Tensor a, torch::Tensor b) {
     const dim3 blocks_per_grid((width + naive_tiling_size - 1) / naive_tiling_size,
                                (height + naive_tiling_size - 1) / naive_tiling_size);
     transpose_coalesced_read_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
-        reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);
+        a.data_ptr<float>(), b.data_ptr<float>(), width, height);
 }
 
 // naive coalesced write transpose
@@ -65,7 +65,7 @@ void transpose_coalesced_write(torch::Tensor a, torch::Tensor b) {
     const dim3 blocks_per_grid((height + naive_tiling_size - 1) / naive_tiling_size,
                                (width + naive_tiling_size - 1) / naive_tiling_size);
     transpose_coalesced_write_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
-        reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);
+        a.data_ptr<float>(), b.data_ptr<float>(), width, height);
 }
 ```
 
@@ -163,7 +163,7 @@ __global__ void transpose_smem_kernel(float *a, float *b, int width, int height)
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
-            reinterpret_cast<float *>(a.data_ptr()), reinterpret_cast<float *>(b.data_ptr()), width, height);          \
+            a.data_ptr<float>(), b.data_ptr<float>(), width, height);          \
     }
 ```
 
