@@ -64,11 +64,8 @@ __global__ void gemm_kernel(float *a, float *b, float *c, int out_channels, int 
         const int blocks_per_grid = (out_channels + num - 1) / num;                                                    \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
-        name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(reinterpret_cast<float *>(a.data_ptr()),      \
-                                                                         reinterpret_cast<float *>(b.data_ptr()),      \
-                                                                         reinterpret_cast<float *>(c.data_ptr()),      \
-                                                                         out_channels,                                 \
-                                                                         in_channels);                                 \
+        name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
+            a.data_ptr<float>(), b.data_ptr<float>(), c.data_ptr<float>(), out_channels, in_channels);                 \
     }
 extern void sgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_cublas_tf32(torch::Tensor a, torch::Tensor b, torch::Tensor c);
