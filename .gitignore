@@ -6,3 +6,5 @@
 build
 *.whl
 tmp
+*.ncu-rep
+test_.py
