@@ -50,7 +50,7 @@ __device__ __forceinline__ float _block_reduce_sum(float val) {
 
 // gemm fp32
 template <const int BLOCK_SIZE = 128>
-__global__ void gemm_kernel(float *a, float *b, float *c, int out_channels, int in_channels) {}
+__global__ void gemm_naive_kernel(float *a, float *b, float *c, int out_channels, int in_channels) {}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
@@ -58,18 +58,19 @@ __global__ void gemm_kernel(float *a, float *b, float *c, int out_channels, int 
     void name(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                                     \
         CHECK_T(a);                                                                                                    \
         CHECK_T(b);                                                                                                    \
-        const int out_channels = a.size(0);                                                                            \
-        const int in_channels = a.size(1);                                                                             \
-        const int threads_per_block = 128;                                                                             \
+        CHECK_T(c);                                                                                                    \
+        const int M = a.size(0);                                                                                       \
+        const int K = a.size(1);                                                                                       \
+        const int N = b.size(1);                                                                                       \
         const int blocks_per_grid = (out_channels + num - 1) / num;                                                    \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
-            a.data_ptr<float>(), b.data_ptr<float>(), c.data_ptr<float>(), out_channels, in_channels);                 \
+            a.data_ptr<float>(), b.data_ptr<float>(), c.data_ptr<float>(), N, k);                                      \
     }
 extern void sgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_cublas_tf32(torch::Tensor a, torch::Tensor b, torch::Tensor c);
-binding_func_gen(gemm, 1, float);
+binding_func_gen(gemm_naive, 1, float);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
@@ -77,5 +78,5 @@ binding_func_gen(gemm, 1, float);
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(sgemm_cublas);
     torch_pybinding_func(sgemm_cublas_tf32);
-    torch_pybinding_func(gemm);
+    torch_pybinding_func(gemm_naive);
 }
