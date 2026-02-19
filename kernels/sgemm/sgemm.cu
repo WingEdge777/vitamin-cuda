@@ -49,8 +49,18 @@ __device__ __forceinline__ float _block_reduce_sum(float val) {
 }
 
 // gemm fp32
-template <const int BLOCK_SIZE = 128>
-__global__ void gemm_naive_kernel(float *a, float *b, float *c, int out_channels, int in_channels) {}
+__global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, int k) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float sum = 0.f;
+    if (row < m && col < n) {
+        for (int i = 0; i < k; i++) {
+            sum += a[row * k + i] * b[i * n + col];
+        }
+        c[row * n + col] = sum;
+    }
+}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
@@ -62,15 +72,16 @@ __global__ void gemm_naive_kernel(float *a, float *b, float *c, int out_channels
         const int M = a.size(0);                                                                                       \
         const int K = a.size(1);                                                                                       \
         const int N = b.size(1);                                                                                       \
-        const int blocks_per_grid = (out_channels + num - 1) / num;                                                    \
+        const dim3 threads_per_block(16, 16);                                                                          \
+        const dim3 blocks_per_grid((N + 15) / 16, (M + 15) / 16);                                                      \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
-            a.data_ptr<float>(), b.data_ptr<float>(), c.data_ptr<float>(), N, k);                                      \
+            a.data_ptr<float>(), b.data_ptr<float>(), c.data_ptr<float>(), M, N, K);                                   \
     }
 extern void sgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_cublas_tf32(torch::Tensor a, torch::Tensor b, torch::Tensor c);
-binding_func_gen(gemm_naive, 1, float);
+binding_func_gen(sgemm_naive, 1, float);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
@@ -78,5 +89,5 @@ binding_func_gen(gemm_naive, 1, float);
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(sgemm_cublas);
     torch_pybinding_func(sgemm_cublas_tf32);
-    torch_pybinding_func(gemm_naive);
+    torch_pybinding_func(sgemm_naive);
 }
