@@ -1,10 +1,29 @@
-# [CUDA 优化实战] RoPE - 手写算子的作用之kernel fusion：减少访存、摊薄启动开销的优化技巧
+# [CUDA 优化实战] RoPE - 手写算子的作用之 kernel fusion：减少访存、摊薄启动开销的优化技巧
 
-本文直接聚焦一个核心命题：在 RoPE 这种算子上，为什么“手写算子（hand-written operator）”与“内核融合（kernel fusion）”是最重要的性能杠杆？仓库实现见 `kernels/rope/rope_neox.cu` 与 `kernels/rope/test.py`，本文基于这些实现给出工程化结论与可复现建议。
+本文直接聚焦一个核心命题：为什么“手写算子（hand-written operator）”与“内核融合（kernel fusion）”能够带来大幅度的性能提升？本文基于 RoPE kernel 的经典的 pytorch naive 实现（neo-x style），pytorch cos/sin 表cache实现、单个 CUDA kernel 实现说明工程化结论和优化点。
 
-简短结论：单纯在 PyTorch 层做表缓存（cos/sin）可以减掉一部分开销，但核心的、不可替代的提速来自于手写内核的三大能力——向量化 load/store（减少访存次数）、把读/算/写合并到同一个内核（摊薄 kernel-launch 开销）、以及在内核中充分利用寄存器与对齐策略（提升带宽利用与并行效率）。
+简短结论：
 
-## 0. 为什么手写算子优先级更高
+- 单纯在 PyTorch 层做表缓存（cos/sin）可以 F 减掉一部分开销
+- 但手写内核有核心的、不可替代的提速，分别来自于的
+  - 减少对特征向量读取次数
+  - 带框瓶颈，以算代读，降低空间复杂度，提高 kernel 执行速度
+  - 读/算/写操作融合在一个 kernel 内部，减少 kernel lauch 开销（一般 2~5 ns，但现在都不提这个了，因为 CUDA graph 基本解决了这个问题且CUDA graph已经成为推理框架标配）
+
+## 0. 分析 pytorch naive 实现
+
+上代码
+```python
+def rotate_half(x):
+    x1 = x[..., : x.shape[-1] // 2
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+
+def apply_rotary_pos_emb(q, cos, sin):
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    return q_embed
+```
 
 框架层实现（例如 PyTorch 的按元素实现）追求通用性，会将操作拆为许多小步，产生大量小 kernel 与频繁的显存往返。相比之下，手写算子可以在实现层面对数据布局、线程映射、对齐与载入/存储粒度进行逐字节优化：
 
