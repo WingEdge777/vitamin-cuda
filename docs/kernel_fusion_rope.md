@@ -13,9 +13,23 @@
 ## 0. 分析 pytorch naive 实现
 
 上代码
+
 ```python
+
+def compute_default_rope_parameters(head_dim):
+    inv_freq = 1.0 / (
+        base ** (torch.arange(0, head_dim, 2).float().cuda() / head_dim)
+    )  # 64
+    return inv_freq
+
+
+INV_FREQS = {
+    256: compute_default_rope_parameters(256),
+    128: compute_default_rope_parameters(128),
+}
+
 def rotate_half(x):
-    x1 = x[..., : x.shape[-1] // 2
+    x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
 
@@ -23,6 +37,24 @@ def rotate_half(x):
 def apply_rotary_pos_emb(q, cos, sin):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     return q_embed
+
+# neo-x stype rope, single head single batch
+def rope(q):  # q shape: [seqlen, head_dim]
+    inv_freq = compute_default_rope_parameters(q.shape[1])
+    position_ids = torch.arange(q.shape[0], device=q.device).float()
+
+    # [seq_len] outer [dim/2] -> [seq_len, dim/2]
+    freqs = torch.outer(position_ids, inv_freq)
+
+    # [seq_len, dim/2] -> [seq_len, dim]
+    freqs = torch.cat([freqs, freqs], dim=-1)
+
+    cos, sin = torch.cos(freqs), torch.sin(freqs)
+    cos = COS[q.shape[1]][:q.shape[0], :q.shape[1]]
+    sin = SIN[q.shape[1]][:q.shape[0], :q.shape[1]]
+
+    return apply_rotary_pos_emb(q, cos, sin)
+
 ```
 
 框架层实现（例如 PyTorch 的按元素实现）追求通用性，会将操作拆为许多小步，产生大量小 kernel 与频繁的显存往返。相比之下，手写算子可以在实现层面对数据布局、线程映射、对齐与载入/存储粒度进行逐字节优化：
@@ -48,12 +80,12 @@ def apply_rotary_pos_emb(q, cos, sin):
 - 把连续分量用 `float4` 一次性读取：4 次访问 → 1 次访问；在寄存器中完成 4 个旋转后一次性写回。
 - 要点：保证数据对齐（16 字节），处理好 tail 情况。
 
-2) 内核融合（Kernel Fusion）
+1) 内核融合（Kernel Fusion）
 
 - 把读取、旋转、写回放在同一个 kernel，避免中间写回显存；
 - 减少 kernel 启动次数，摊薄每次 launch 的固定延迟。
 
-3) 寄存器与线程组织优化
+1) 寄存器与线程组织优化
 
 - 在线程层面做局部复用：在寄存器里保存已加载向量并复用，减少对 L2/DRAM 的重复访问；
 - 选择合理的 block/warp 大小以平衡 occupancy 与寄存器压力。
@@ -132,5 +164,6 @@ python kernels/rope/test.py
 手写算子的价值不在于替代高层缓存策略，而在于它能从实现层面重构数据通路：改变访存粒度、降低 kernel 调度次数、并在内核内部高效复用寄存器与缓存。这些是 PyTorch 层缓存无法替代的优化路径，也是 `rope` / `rope_fp32x4` 能显著胜出的根本原因。
 
 参考实现：
+
 - `kernels/rope/rope_neox.cu`
 - `kernels/rope/test.py`
