@@ -62,6 +62,15 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
     }
 }
 
+template <const int BM, const BN, const int BK, const int TM, const int TN>
+__global__ void sgemm_kernel(float *a, float *b, float *c, int m, int n, int k) {}
+
+template <const int BM, const BN, const int BK, const int TM, const int TN>
+__global__ void sgemm_bcf_kernel(float *a, float *b, float *c, int m, int n, int k) {}
+
+template <const int BM, const BN, const int BK, const int TM, const int TN>
+__global__ void sgemm_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {}
+
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
 #define binding_func_gen(name, num, element_dtype)                                                                     \
@@ -79,6 +88,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
             a.data_ptr<float>(), b.data_ptr<float>(), c.data_ptr<float>(), M, N, K);                                   \
     }
+
 extern void sgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_cublas_tf32(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 binding_func_gen(sgemm_naive, 1, float);
