@@ -102,8 +102,10 @@ if __name__ == "__main__":
             benchmark(lib.sgemm_cublas, a, b, c_cublas, prefix="sgemm_cublas")
             diff_check(c, c_cublas, prefix="sgemm_cublas")
             c_my = torch.zeros_like(c)
-            benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
-            diff_check(c, c_my, prefix="sgemm_naive")
+            # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
+            # diff_check(c, c_my, prefix="sgemm_naive")
+            benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
+            diff_check(c, c_my, prefix="sgemm")
 
             # Tensor core
             benchmark(
