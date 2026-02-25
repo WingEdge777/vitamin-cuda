@@ -70,7 +70,7 @@ def diff_check(a, b, prefix="torch", eps=1e-3):
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
 
 
-if __name__ == "__main__":
+def test_all():
     # test the kernel
     ns = [512, 1024, 4096, 8192]
     kms = [
@@ -116,3 +116,37 @@ if __name__ == "__main__":
                 prefix="sgemm_cublas_tf32",
             )
             diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
+
+def test_4096():
+    n, m, k = [4096] * 3
+    print("#" * 100)
+    print(f"n: {n}, m: {m}, k: {k}")
+    # a x b = c
+    a = torch.randn(n, m).float().cuda()
+    b = torch.randn(m, k).float().cuda()
+    c = torch.zeros(n, k).float().cuda()
+
+    # cuda core
+    benchmark(partial(torch.matmul, out=c), a, b)
+    c_cublas = torch.zeros_like(c)
+    benchmark(lib.sgemm_cublas, a, b, c_cublas, prefix="sgemm_cublas")
+    diff_check(c, c_cublas, prefix="sgemm_cublas")
+    c_my = torch.zeros_like(c)
+    # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
+    # diff_check(c, c_my, prefix="sgemm_naive")
+    benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
+    diff_check(c, c_my, prefix="sgemm")
+
+    # Tensor core
+    benchmark(
+        lib.sgemm_cublas_tf32,
+        a,
+        b,
+        c_cublas,
+        prefix="sgemm_cublas_tf32",
+    )
+    diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
+
+if __name__ == "__main__":
+    # test_all()
+    test_4096()
