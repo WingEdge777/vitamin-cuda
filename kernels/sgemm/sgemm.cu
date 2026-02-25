@@ -34,7 +34,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
 __global__ void sgemm_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
-    int tid = threadIdx.x; // 0~255; 8 个 warp, 2x4 tiling; 每个warp 4*8 tiling
+    int tid = threadIdx.x; // 0~255; 8 个 warp, 2x4 tiling; 每个warp 8x4 tiling
     int warp_id = tid / 32;
     int lane_id = tid % 32;
 
@@ -51,7 +51,7 @@ __global__ void sgemm_kernel(float *a, float *b, float *c, int m, int n, int k) 
     int t_row_in_warp = lane_id / 4; // 0~7
     int t_col_in_warp = lane_id % 4; // 0~3
 
-    // c out 初始坐标， 每个线程负责 8x8 个元素
+    // c out 初始坐标， 每个线程负责 8行8列 tile, 共256线程，256*64 = 128*128
     int c_row = warp_row * 64 + t_row_in_warp * 8;
     int c_col = warp_col * 32 + t_col_in_warp * 8;
 
