@@ -29,7 +29,7 @@ lib = load(
 baseline = None
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=50, prefix="torch"):
+def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
     if c is not None:
         # warm up
         for i in range(warmup):
@@ -72,59 +72,49 @@ def diff_check(a, b, prefix="torch", eps=1e-3):
 
 def test_all():
     # test the kernel
-    ns = [512, 1024, 4096, 8192]
-    kms = [
-        (512, 256),
-        (512, 512),
-        (512, 1024),
-        (1024, 512),
-        (1024, 1024),
-        (2048, 4096),
-        (4096, 2048),
-        (4096, 4096),
-        (4096, 8192),
-        (8192, 4096),
-        (8192, 8192),
-    ]
+    ns = [256, 512, 1024, 4096, 8192]
     torch.manual_seed(42)
-    for n in ns:
-        for m, k in kms:
-            print("#" * 100)
-            print(f"n: {n}, m: {m}, k: {k}")
-            # a x b = c
-            a = torch.randn(n, m).float().cuda()
-            b = torch.randn(m, k).float().cuda()
-            c = torch.zeros(n, k).float().cuda()
+    for i, m in enumerate(ns):
+        for k in ns[i-1:i+1]:
+            for n in ns[i-1:i+1]:
+                print("#" * 100)
+                print(f"m: {m}, n: {n}, k: {k}")
+                # a x b = c
+                a = torch.randn(m, k).float().cuda()
+                b = torch.randn(k, n).float().cuda()
+                c = torch.zeros(m, n).float().cuda()
 
-            # cuda core
-            benchmark(partial(torch.matmul, out=c), a, b)
-            c_cublas = torch.zeros_like(c)
-            benchmark(lib.sgemm_cublas, a, b, c_cublas, prefix="sgemm_cublas")
-            diff_check(c, c_cublas, prefix="sgemm_cublas")
-            c_my = torch.zeros_like(c)
-            # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
-            # diff_check(c, c_my, prefix="sgemm_naive")
-            benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
-            diff_check(c, c_my, prefix="sgemm")
+                # cuda core
+                benchmark(partial(torch.matmul, out=c), a, b)
+                c_cublas = torch.zeros_like(c)
+                benchmark(lib.sgemm_cublas, a, b, c_cublas, prefix="sgemm_cublas")
+                diff_check(c, c_cublas, prefix="sgemm_cublas")
+                c_my = torch.zeros_like(c)
+                # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
+                # diff_check(c, c_my, prefix="sgemm_naive")
+                benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
+                diff_check(c, c_my, prefix="sgemm")
+                benchmark(lib.sgemm_bcf, a, b, c_my, prefix="sgemm_bcf")
+                diff_check(c, c_my, prefix="sgemm_bcf")
 
-            # Tensor core
-            benchmark(
-                lib.sgemm_cublas_tf32,
-                a,
-                b,
-                c_cublas,
-                prefix="sgemm_cublas_tf32",
-            )
-            diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
+                # Tensor core
+                benchmark(
+                    lib.sgemm_cublas_tf32,
+                    a,
+                    b,
+                    c_cublas,
+                    prefix="sgemm_cublas_tf32",
+                )
+                diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
 
 def test_4096():
-    n, m, k = [4096] * 3
+    m, n, k = [4096] * 3
     print("#" * 100)
     print(f"n: {n}, m: {m}, k: {k}")
     # a x b = c
-    a = torch.randn(n, m).float().cuda()
-    b = torch.randn(m, k).float().cuda()
-    c = torch.zeros(n, k).float().cuda()
+    a = torch.randn(m, k).float().cuda()
+    b = torch.randn(k, n).float().cuda()
+    c = torch.zeros(m, n).float().cuda()
 
     # cuda core
     benchmark(partial(torch.matmul, out=c), a, b)
@@ -136,6 +126,8 @@ def test_4096():
     # diff_check(c, c_my, prefix="sgemm_naive")
     benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
     diff_check(c, c_my, prefix="sgemm")
+    benchmark(lib.sgemm_bcf, a, b, c_my, prefix="sgemm_bcf")
+    diff_check(c, c_my, prefix="sgemm_bcf")
 
     # Tensor core
     benchmark(
