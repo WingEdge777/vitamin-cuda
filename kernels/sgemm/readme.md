@@ -7,10 +7,11 @@
 gemm kernel
 
 - [x] sgemm_cublas fp32/tf32 版
-- [x] sgemm (向量化读写 + block tiling共享内存版， 8-way 冲突)
-- [ ] sgemm_bcf_padding (向量化读写 + block tiling共享内存双buffer版, padding 缓解bank conflict， 4-way冲突)
-- [ ] sgemm_bcf_swizzle (向量化读写 + block tiling共享内存双buffer版, swizzle)
-- [ ] sgemm_dbf_bcf (向量化读写 + block tiling共享内存双buffer版，bank conflict free版)
+- [x] sgemm_tiling (向量化读写 + block tiling共享内存版)
+- [x] sgemm_at_tiling (向量化读写 + a矩阵转置写入smem， 8-way 写入冲突)
+- [x] sgemm_bcf_swizzling (向量化读写 + swizzle， 无冲突版)
+- [x] sgemm_bcf_swizzling_coalesced_rw (向量化读写 + swizzle + c写回事务合并)
+- [ ] sgemm_bcf_swizzling_coalesced_rw_dbf(向量化读写 + swizzle + c写回事务合并 + 异步流水线)
 - [x] pytorch op bindings && diff check
 
 ## 测试
