@@ -29,7 +29,7 @@ lib = load(
 baseline = None
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
+def benchmark(op, a, b, c=None, warmup=10, rep=300, prefix="torch"):
     if c is not None:
         # warm up
         for i in range(warmup):
@@ -83,7 +83,7 @@ def test_all():
                 a = torch.randn(m, k).float().cuda()
                 b = torch.randn(k, n).float().cuda()
                 c = torch.zeros(m, n).float().cuda()
-
+                print("#" * 45 + "CUDA CORE" + "#" * 46)
                 # cuda core
                 benchmark(partial(torch.matmul, out=c), a, b)
                 c_cublas = torch.zeros_like(c)
@@ -92,11 +92,14 @@ def test_all():
                 c_my = torch.zeros_like(c)
                 # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
                 # diff_check(c, c_my, prefix="sgemm_naive")
-                benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
-                diff_check(c, c_my, prefix="sgemm")
-                benchmark(lib.sgemm_bcf, a, b, c_my, prefix="sgemm_bcf")
-                diff_check(c, c_my, prefix="sgemm_bcf")
+                benchmark(lib.sgemm_tiling, a, b, c_my, prefix="sgemm_tiling")
+                diff_check(c, c_my, prefix="sgemm_tiling")
+                benchmark(lib.sgemm_padding, a, b, c_my, prefix="sgemm_padding")
+                diff_check(c, c_my, prefix="sgemm_padding")
+                benchmark(lib.sgemm_bcf_swizzling, a, b, c_my, prefix="sgemm_bcf_swizzling")
+                diff_check(c, c_my, prefix="sgemm_bcf_swizzling")
 
+                print("#" * 44 + "Tensor Core" + "#" * 45)
                 # Tensor core
                 benchmark(
                     lib.sgemm_cublas_tf32,
@@ -124,10 +127,12 @@ def test_4096():
     c_my = torch.zeros_like(c)
     # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
     # diff_check(c, c_my, prefix="sgemm_naive")
-    benchmark(lib.sgemm, a, b, c_my, prefix="sgemm")
-    diff_check(c, c_my, prefix="sgemm")
-    benchmark(lib.sgemm_bcf, a, b, c_my, prefix="sgemm_bcf")
-    diff_check(c, c_my, prefix="sgemm_bcf")
+    benchmark(lib.sgemm_tiling, a, b, c_my, prefix="sgemm_tiling")
+    diff_check(c, c_my, prefix="sgemm_tiling")
+    benchmark(lib.sgemm_padding, a, b, c_my, prefix="sgemm_padding")
+    diff_check(c, c_my, prefix="sgemm_padding")
+    benchmark(lib.sgemm_bcf_swizzling, a, b, c_my, prefix="sgemm_bcf_swizzling")
+    diff_check(c, c_my, prefix="sgemm_bcf_swizzling")
 
     # Tensor core
     benchmark(
