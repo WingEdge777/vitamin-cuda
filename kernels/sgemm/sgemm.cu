@@ -276,14 +276,13 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
     int load_b_col = (tid % WARP_SIZE) * 4; // 0,4,8,12,16,20,24,28...
 
     // warp tiling
-    int warp_row = warp_id; // 0 ~ 7 (一共 8 个 Warp 全在 Y 轴)
-
     // 线程在 Warp 内的行偏移依然是 0 或 8
     int t_row_in_warp = (lane_id / 16) * 8;
 
-    // 每个 Warp 只占 16 行，每行128个元素，分两次load + 计算
-    int c_row = warp_row * 16 + t_row_in_warp;
-
+    // 每个 Warp 只负责 16 行，每行128个元素，分两次load + 计算
+    // 每个线程 一次load 8行8列, 8列拆开为两次float4, 比如T0 负责读写0~3,64~67 8列,
+    // 这样每8个线程在写回c的时候是连续的32个float,128bytes,完美事务合并
+    int c_row = warp_id * 16 + t_row_in_warp;
     int c_col_base = (lane_id % 16) * 4;
     int c_col_0 = c_col_base;      // 0~3
     int c_col_1 = c_col_base + 64; // 64~67
