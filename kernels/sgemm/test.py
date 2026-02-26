@@ -94,8 +94,12 @@ def test_all():
                 # diff_check(c, c_my, prefix="sgemm_naive")
                 benchmark(lib.sgemm_tiling, a, b, c_my, prefix="sgemm_tiling")
                 diff_check(c, c_my, prefix="sgemm_tiling")
-                benchmark(lib.sgemm_bcf_swizzling, a, b, c_my, prefix="sgemm_bcf_swizzling")
-                diff_check(c, c_my, prefix="sgemm_bcf_swizzling")
+                benchmark(lib.sgemm_at_tiling, a, b, c_my, prefix="sgemm_at_tiling")
+                diff_check(c, c_my, prefix="sgemm_at_tiling")
+                benchmark(lib.sgemm_at_bcf_swizzling, a, b, c_my, prefix="sgemm_at_bcf_swizzling")
+                diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling")
+                benchmark(lib.sgemm_at_bcf_swizzling_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_rw")
+                diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling_rw")
 
                 print("#" * 44 + "Tensor Core" + "#" * 45)
                 # Tensor core
@@ -127,8 +131,12 @@ def test_4096():
     # diff_check(c, c_my, prefix="sgemm_naive")
     benchmark(lib.sgemm_tiling, a, b, c_my, prefix="sgemm_tiling")
     diff_check(c, c_my, prefix="sgemm_tiling")
-    benchmark(lib.sgemm_bcf_swizzling, a, b, c_my, prefix="sgemm_bcf_swizzling")
-    diff_check(c, c_my, prefix="sgemm_bcf_swizzling")
+    benchmark(lib.sgemm_at_tiling, a, b, c_my, prefix="sgemm_at_tiling")
+    diff_check(c, c_my, prefix="sgemm_at_tiling")
+    benchmark(lib.sgemm_at_bcf_swizzling, a, b, c_my, prefix="sgemm_at_bcf_swizzling")
+    diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling")
+    benchmark(lib.sgemm_at_bcf_swizzling_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_rw")
+    diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling_rw")
 
     # Tensor core
     benchmark(
