@@ -143,7 +143,12 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] gemv fp32x4（向量化读取）
   - [x] pytorch op bindings && diff check
 - [sgemm](./kernels/sgemm/)
-  - [] sgemm fp32版
+  - [x] sgemm_cublas fp32/tf32 版
+  - [x] sgemm_tiling (向量化读写 + block tiling共享内存版)
+  - [x] sgemm_at_tiling (向量化读写 + a矩阵转置写入smem, 4-way 写入冲突, 内层循环float4读取)
+  - [x] sgemm_bcf_swizzling (向量化读写 + at + swizzle， 无冲突版)
+  - [x] sgemm_bcf_swizzling_coalesced_rw (向量化读写 + at + swizzle + c写回事务合并,95~99% cublas 性能)
+  - [x] pytorch op bindings && diff check
 
 ## Samples
 
