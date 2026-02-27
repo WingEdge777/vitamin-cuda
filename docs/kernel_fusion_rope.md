@@ -69,7 +69,7 @@ def rope_with_sin_cos_cache(q):  # q shape: [bs, seqlen, head_dim]
 
 在 pytorch fp32 实现中，即使做了 COS/SIN 表 cache，q 的最后一维度前后一半要分别与另一半相乘，所以其读写数据量就有 `bs * seq_len * head_dim * 2 * 4` bytes， 加上 COS/SIN 的读取又有两倍，还有临时空间的读写
 
-- 因此共有读取量 `bs * seq_len * head_dim * 4` bytes * 11（q 的两次读取，SIN/COS 表读取，q_out 写回；临时空间有rotate_half(q)、q*cos、rotate_half(q)*sin 的读写）
+- 因此共有读取量 `bs * seq_len * head_dim * 4` bytes * 11（q 的两次读取，SIN/COS 表读取，q_out 写回；临时空间有rotate_half(q)、q * cos、rotate_half(q) * sin 的读写）
   - 当然这是我的最原始的粗略估计，实际pytorch默认可能有什么优化策略导致读写量与我描述的不符
 
 手写算子可以有以下优势：
@@ -90,7 +90,7 @@ def rope_with_sin_cos_cache(q):  # q shape: [bs, seqlen, head_dim]
   - 把读取、旋转、写回放在同一个 kernel，避免中间写回显存；
   - 减少 kernel 启动次数，摊薄每次 launch 的固定延迟。（可以不提了）
 
-两点结合一下，完成以下代码：
+简单memory-bound的算子都这么优化，两点结合一下，完成以下代码：
 
 ```c++
 #define LDST128BITS(value) (reinterpret_cast<float4*>(&(value))[0])

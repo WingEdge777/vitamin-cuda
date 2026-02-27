@@ -518,7 +518,7 @@ transpose_Smem_swizzled_packed   0.414753 ms       2.73x      323.6 GB/s
 
 对照我们的 Benchmark，最终优化版本（transpose_Smem_swizzled_packed）的有效带宽达到了 323.6 GB/s，这意味着我们吃满了显卡物理带宽的 84.2%（本人是在笔记本上测试，无法排除桌面等应用程序影响），并且在 CUDA 实际开发中，由于显存刷新、页表转换和总线协议等底层开销，有效带宽跑到理论极限的 80%~85%，已经达到了教科书级别的满载状态。
 
-结论： 通过smem+swizzle+vectorization的组合，完美实现了合并访存（Coalescing），彻底消除了跨步写入造成的总线读写放大（Write Amplification）。它让每一滴流经 128-bit 总线的数据都是有效负载，最终让吞吐量成功逼近了硬件的物理红线。
+结论：通过smem+swizzle+vectorization的组合，完美实现了合并访存（Coalescing），彻底消除了跨步写入造成的总线读写放大（Write Amplification）。它让每一滴流经 128-bit 总线的数据都是有效负载，最终让吞吐量成功逼近了硬件的物理红线。
 
 ### 5.2 优化手段的总结
 
