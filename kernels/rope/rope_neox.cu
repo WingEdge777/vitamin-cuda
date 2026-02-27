@@ -18,9 +18,9 @@
 const float theta = 10000.f;
 
 // rope neox
-__global__ void rope_kernel(float *a, float *b, int head_dim) {
+__global__ void rope_kernel(float *a, float *b, int seq_len, int head_dim) {
     int pos = blockIdx.x;
-    int idx = pos * head_dim + threadIdx.x;
+    int idx = blockIdx.y * (seq_len * head_dim) + pos * head_dim + threadIdx.x;
     float x = a[idx];
     float y = a[idx + (head_dim >> 1)];
 
@@ -38,12 +38,12 @@ __global__ void rope_kernel(float *a, float *b, int head_dim) {
     b[idx + head_dim / 2] = y_new;
 }
 
-__global__ void rope_fp32x4_kernel(float *a, float *b, int head_dim) {
+__global__ void rope_fp32x4_kernel(float *a, float *b, int seq_len, int head_dim) {
     int pos = blockIdx.x * 4;
     int tid = threadIdx.x;
     pos += tid * 4 / (head_dim >> 1);
     int f_idx = tid * 4 % (head_dim >> 1);
-    int idx = pos * head_dim + f_idx;
+    int idx = blockIdx.y * (seq_len * head_dim) + pos * head_dim + f_idx;
     float4 x = LDST128BITS(a[idx]);
     float4 y = LDST128BITS(a[idx + (head_dim >> 1)]);
     float inv_freq[4], c[4], s[4];
@@ -73,14 +73,15 @@ __global__ void rope_fp32x4_kernel(float *a, float *b, int head_dim) {
     void name(torch::Tensor a, torch::Tensor b) {                                                                      \
         CHECK_T(a);                                                                                                    \
         CHECK_T(b);                                                                                                    \
-        const int seq_len = a.size(0);                                                                                 \
-        const int head_dim = a.size(1);                                                                                \
+        const int bs = a.size(0);                                                                                      \
+        const int seq_len = a.size(1);                                                                                 \
+        const int head_dim = a.size(2);                                                                                \
         const int threads_per_block = head_dim / 2;                                                                    \
-        const int blocks_per_grid = seq_len / num;                                                                     \
+        const dim3 blocks_per_grid(seq_len / num, bs);                                                                 \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         name##_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(                                              \
-            a.data_ptr<float>(), b.data_ptr<float>(), head_dim);                                                       \
+            a.data_ptr<float>(), b.data_ptr<float>(), seq_len, head_dim);                                              \
     }
 
 binding_func_gen(rope, 1, float);

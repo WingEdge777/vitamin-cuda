@@ -1,6 +1,6 @@
 # [CUDA 优化实战] RoPE - 手写算子的作用之 kernel fusion：减少访存次数、减少启动开销的优化技巧
 
-本文直接聚焦一个核心命题：为什么“手写算子（hand-written operator）”与“内核融合（kernel fusion）”能够带来大幅度的性能提升？本文基于 RoPE kernel 的经典的 pytorch naive 实现（neo-x style），pytorch cos/sin 表cache实现 以及 单个 CUDA kernel 实现说明优化的工程化原理和结论。
+本文直接聚焦一个核心命题：为什么“手写算子（hand-written operator）”与“内核融合（kernel fusion）”能够带来大幅度的性能提升？本文基于 RoPE kernel 的经典的 pytorch naive 实现（neo-x style），pytorch cos/sin 表cache实现 以及 单个 CUDA kernel 实现说明手工优化的原理和结论。
 
 完整代码可参见链接：
 
@@ -8,8 +8,8 @@
 
 - 单纯在 PyTorch 层做表缓存（cos/sin）可以减掉一部分开销
 - 但手写内核有核心的、不可替代的优化点，分别来自于的
-  - 减少对显存读取次数（flash attn的优化核心）
-  - 带框瓶颈，以算代读，降低空间复杂度，提高 kernel 执行速度
+  - 减少对显存读取次数（访存是最慢的，flash attn的优化核心也是减少访存）
+  - 带宽瓶颈，以算代读，降低空间复杂度，提高 kernel 执行速度
   - 读/算/写操作融合在一个 kernel 内部，减少 kernel lauch 开销（一般 2~5 ns，但现在都不提这个了，因为 CUDA graph 基本解决了这个问题且CUDA graph已经成为推理框架标配）
 
 ## 0. 分析 pytorch naive 实现
@@ -76,20 +76,18 @@ def rope_with_sin_cos_cache(q):  # q shape: [seqlen, head_dim]
 
 在pytorch实现中，即使做了COS/SIN表cache，q的第二纬度前后一半要分别与另一半相乘，所以其读写数据量就有 `seq_len * head_dim` * 2， 加上COS/SIN的读取又有两倍
 
-- 因此共有读取量 `seq_len * head_dim` *2* 4（q的两次读取，SIN/COS表读取， 临时空间读+写） =
+- 因此共有读取量 `seq_len * head_dim` *2* 4（q的两次读取，SIN/COS表读取，临时空间读+写
 
 手写算子有以下优势
 
-- 向量化读写把多个 32-bit 读合并成一次 128-bit 读写（`float4`），显著减少全局内存事务；
-- 在同一个 kernel 内完成读—算—写，避免中间结果往返显存并摊薄 kernel 启动开销， q只读取一次， ；
-- 利用寄存器保存中间值，减少对 L2/DRAM 的依赖，从而把瓶颈从内存迁移到算术单元。
+- 只读一遍 q，以算代读避免其他冗余读写（代价是sin/cos的重复计算）
+- 在同一个 kernel 内完成读—算—写，避免中间结果往返显存并摊薄 kernel 启动开销
 
-这些能力是单靠 PyTorch 层缓存三角表无法替代的，缓存仅解决三角函数计算的重复问题，而无法改变内存访问粒度与 kernel 调度成本。
+这些能力是单靠 PyTorch 层缓存三角表无法替代的，缓存仅解决三角函数计算的重复问题，而无法改变内存访问次数。
 
 ## 1. RoPE 的性能热点（简要剖析）
 
 - 访存次数：每个元素的 load/store 会产生大量小事务；
-- kernel 启动：大量小 kernel 会被反复调度，固定延迟累加显著；
 - 对齐与合并访问：未对齐或非合并的访问会导致低效的 DRAM/缓存利用率。
 
 工程目标就是用手写内核直接处理这三项：把多个元素合并为一次 load/store，保持连续与对齐；把多步逻辑融合为一个 kernel；在内核中用寄存器缓存中间结果。
@@ -99,19 +97,13 @@ def rope_with_sin_cos_cache(q):  # q shape: [seqlen, head_dim]
 1) 向量化 load/store（128-bit / `float4`）
 
 - 把连续分量用 `float4` 一次性读取：4 次访问 → 1 次访问；在寄存器中完成 4 个旋转后一次性写回。
-- 要点：保证数据对齐（16 字节），处理好 tail 情况。
+- 现在llm模型head_size肯定是4的倍数无需担心
 
-1) 内核融合（Kernel Fusion）
+2) 内核融合（Kernel Fusion）
 
 - 把读取、旋转、写回放在同一个 kernel，避免中间写回显存；
-- 减少 kernel 启动次数，摊薄每次 launch 的固定延迟。
+- 减少 kernel 启动次数，摊薄每次 launch 的固定延迟。(可以不提了)
 
-1) 寄存器与线程组织优化
-
-- 在线程层面做局部复用：在寄存器里保存已加载向量并复用，减少对 L2/DRAM 的重复访问；
-- 选择合理的 block/warp 大小以平衡 occupancy 与寄存器压力。
-
-把这三者组合起来，就是本仓库 `rope` / `rope_fp32x4` 手写内核的核心策略。
 
 ## 3. 关于 cos/sin 缓存的说明（重要）
 
@@ -125,11 +117,11 @@ def rope_with_sin_cos_cache(q):  # q shape: [seqlen, head_dim]
 ## 5. benchmark 结果与分析
 
 ```yaml
-n: 8192, m: 256
-torch                          mean time: 0.565554 ms
-torch.rope_with_sin_cos_cache  mean time: 0.275599 ms
-rope                           mean time: 0.025792 ms
-rope_fp32x4                    mean time: 0.014390 ms
+bs: 128, n: 8192, m: 128
+torch                          mean time: 86.233111 ms
+torch.rope_with_sin_cos_cache  mean time: 56.642383 ms
+rope                           mean time: 3.187057 ms
+rope_fp32x4                    mean time: 3.110710 ms
 ```
 
 手写算子的单个kernel通过多种手段最大化提高带宽利用效率，以算代读

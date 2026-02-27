@@ -11,7 +11,7 @@ common_flags = ["-O3", "-std=c++17"]
 # Load the CUDA kernel as a python module
 lib = load(
     name="rope_lib",
-    sources=["rope.cu"],
+    sources=["rope_neox.cu"],
     extra_cuda_cflags=common_flags
     + [
         "-U__CUDA_NO_HALF_OPERATORS__",
@@ -63,9 +63,9 @@ def apply_rotary_pos_emb(q, cos, sin):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     return q_embed
 
-def rope_with_sin_cos_cache(q):  # q shape: [seqlen, head_dim]
-    # inv_freq = compute_default_rope_parameters(q.shape[1])
-    # position_ids = torch.arange(q.shape[0], device=q.device).float()
+def rope_with_sin_cos_cache(q):  # q shape: [bs, seqlen, head_dim]
+    # inv_freq = compute_default_rope_parameters(q.shape[-1])
+    # position_ids = torch.arange(q.shape[1], device=q.device).float()
 
     # # [seq_len] outer [dim/2] -> [seq_len, dim/2]
     # freqs = torch.outer(position_ids, inv_freq)
@@ -74,15 +74,15 @@ def rope_with_sin_cos_cache(q):  # q shape: [seqlen, head_dim]
     # freqs = torch.cat([freqs, freqs], dim=-1)
 
     # cos, sin = torch.cos(freqs), torch.sin(freqs)
-    cos = COS[q.shape[1]][:q.shape[0], :q.shape[1]]
-    sin = SIN[q.shape[1]][:q.shape[0], :q.shape[1]]
+    cos = COS[q.shape[-1]][:q.shape[1], :q.shape[-1]]
+    sin = SIN[q.shape[-1]][:q.shape[1], :q.shape[-1]]
 
     return apply_rotary_pos_emb(q, cos, sin)
 
 # neo-x stype rope, single head single batch
-def rope(q):  # q shape: [seqlen, head_dim]
-    inv_freq = compute_default_rope_parameters(q.shape[1])
-    position_ids = torch.arange(q.shape[0], device=q.device).float()
+def rope(q):  # q shape: [bs, seqlen, head_dim]
+    inv_freq = compute_default_rope_parameters(q.shape[-1])
+    position_ids = torch.arange(q.shape[1], device=q.device).float()
 
     # [seq_len] outer [dim/2] -> [seq_len, dim/2]
     freqs = torch.outer(position_ids, inv_freq)
@@ -91,13 +91,13 @@ def rope(q):  # q shape: [seqlen, head_dim]
     freqs = torch.cat([freqs, freqs], dim=-1)
 
     cos, sin = torch.cos(freqs), torch.sin(freqs)
-    cos = COS[q.shape[1]][:q.shape[0], :q.shape[1]]
-    sin = SIN[q.shape[1]][:q.shape[0], :q.shape[1]]
+    cos = COS[q.shape[-1]][:q.shape[1], :q.shape[-1]]
+    sin = SIN[q.shape[-1]][:q.shape[1], :q.shape[-1]]
 
     return apply_rotary_pos_emb(q, cos, sin)
 
 
-def benchmark(op, a, b=None, warmup=10, rep=500, prefix="torch"):
+def benchmark(op, a, b=None, warmup=10, rep=100, prefix="torch"):
     if b is not None:
         # warm up
         for i in range(warmup):
@@ -129,22 +129,24 @@ def diff_check(a, b, prefix="torch", eps=1e-4):
 if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
+    batch_sizes = [64, 128,]
     seq_lens = [512, 1024, 2048, 4096, 8192]
     head_dim = [128, 256]
     torch.manual_seed(42)
-    for n in seq_lens:
-        for m in head_dim:
-            print("#" * 100)
-            print(f"n: {n}, m: {m}")
-            a = torch.randn(n, m).float().cuda()
+    for bs in batch_sizes:
+        for n in seq_lens:
+            for m in head_dim:
+                print("#" * 100)
+                print(f"bs: {bs}, n: {n}, m: {m}")
+                a = torch.randn(bs, n, m).float().cuda()
 
-            b = benchmark(rope, a)
-            c = benchmark(rope_with_sin_cos_cache, a, prefix="torch.rope_with_sin_cos_cache")
-            diff_check(b, c, prefix="rope_with_sin_cos_cache")
-            b_my = torch.empty_like(a)
-            benchmark(lib.rope, a, b_my, prefix="rope")
-            # print(b, b_my)
-            diff_check(b, b_my, prefix="rope")
+                b = benchmark(rope, a)
+                c = benchmark(rope_with_sin_cos_cache, a, prefix="torch.rope_with_sin_cos_cache")
+                diff_check(b, c, prefix="rope_with_sin_cos_cache")
+                b_my = torch.empty_like(a)
+                benchmark(lib.rope, a, b_my, prefix="rope")
+                # print(b, b_my)
+                diff_check(b, b_my, prefix="rope")
 
-            benchmark(lib.rope_fp32x4, a, b_my, prefix="rope_fp32x4")
-            diff_check(b, b_my, prefix="rope_fp32x4")
+                benchmark(lib.rope_fp32x4, a, b_my, prefix="rope_fp32x4")
+                diff_check(b, b_my, prefix="rope_fp32x4")
