@@ -62,7 +62,7 @@ def rotate_half(x):
 def apply_rotary_pos_emb(q, cos, sin):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     return q_embed
-
+#@torch.compile()
 def rope_with_sin_cos_cache(q):  # q shape: [bs, seqlen, head_dim]
     # inv_freq = compute_default_rope_parameters(q.shape[-1])
     # position_ids = torch.arange(q.shape[1], device=q.device).float()
@@ -80,6 +80,7 @@ def rope_with_sin_cos_cache(q):  # q shape: [bs, seqlen, head_dim]
     return apply_rotary_pos_emb(q, cos, sin)
 
 # neo-x stype rope, single head single batch
+#@torch.compile()
 def rope(q):  # q shape: [bs, seqlen, head_dim]
     inv_freq = compute_default_rope_parameters(q.shape[-1])
     position_ids = torch.arange(q.shape[1], device=q.device).float()
