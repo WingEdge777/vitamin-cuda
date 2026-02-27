@@ -90,6 +90,7 @@ if __name__ == "__main__":
     benchmark(lib.sgemm_at_tiling, a, b, c_my, prefix="sgemm_at_tiling")
     benchmark(lib.sgemm_at_bcf_swizzling, a, b, c_my, prefix="sgemm_at_bcf_swizzling")
     benchmark(lib.sgemm_at_bcf_swizzling_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_rw")
+    benchmark(lib.sgemm_at_bcf_swizzling_dbf_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_dbf_rw")
 
     # Tensor core
     # benchmark(
