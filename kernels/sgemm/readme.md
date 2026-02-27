@@ -2,8 +2,6 @@
 
 ## 说明
 
-
-
 gemm kernel
 
 - [x] sgemm_cublas fp32/tf32 版
@@ -11,7 +9,7 @@ gemm kernel
 - [x] sgemm_at_tiling (向量化读写 + a矩阵转置写入smem, 4-way 写入冲突, 内层循环float4读取)
 - [x] sgemm_bcf_swizzling (向量化读写 + at + swizzle， 无冲突版)
 - [x] sgemm_bcf_swizzling_rw (向量化读写 + at + swizzle + c写回事务合并)
-- [ ] sgemm_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + 异步流水线)
+- [x] sgemm_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + double buffer流水线, 超越cuBLAS)
 - [x] pytorch op bindings && diff check
 
 ## 测试
@@ -22,6 +20,23 @@ python test.py
 ```
 
 ### 输出
+
+### 4096x4096x4096
+
+```bash
+####################################################################################################
+n: 4096, m: 4096, k: 4096
+torch                          mean time: 16.591989 ms
+sgemm_cublas                   mean time: 14.335337 ms, speedup: 1.16
+sgemm_tiling                   mean time: 17.940181 ms, speedup: 0.92
+sgemm_at_tiling                mean time: 15.401380 ms, speedup: 1.08
+sgemm_at_bcf_swizzling         mean time: 14.748813 ms, speedup: 1.12
+sgemm_at_bcf_swizzling_rw      mean time: 14.440769 ms, speedup: 1.15
+sgemm_at_bcf_swizzling_dbf_rw  mean time: 13.854780 ms, speedup: 1.20
+sgemm_cublas_tf32              mean time: 8.382802 ms, speedup: 1.98
+```
+
+### all
 
 ```bash
 ####################################################################################################

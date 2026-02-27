@@ -137,6 +137,8 @@ def test_4096():
     diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling")
     benchmark(lib.sgemm_at_bcf_swizzling_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_rw")
     diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling_rw")
+    benchmark(lib.sgemm_at_bcf_swizzling_dbf_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_dbf_rw")
+    diff_check(c, c_my, prefix="sgemm_at_bcf_swizzling_dbf_rw")
 
     # Tensor core
     benchmark(

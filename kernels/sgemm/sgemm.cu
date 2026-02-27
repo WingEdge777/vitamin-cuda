@@ -341,7 +341,137 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
 }
 
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
-__global__ void sgemm_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {}
+__global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *c, int m, int n, int k) {
+    int bx = blockIdx.x, by = blockIdx.y;
+    int tid = threadIdx.x; // 0~255; 8 个 warp
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+
+    // 搬运映射
+    int load_a_row = tid / 4;               // 0~63
+    int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
+    int load_b_row = tid / WARP_SIZE;       // 0~8
+    int load_b_col = (tid % WARP_SIZE) * 4; // 0,4,8,12,16,20,24,28...
+
+    // c 计算读写数据映射，和之前相同
+    int t_row_in_warp = (lane_id / 16) * 8;
+    int c_row = warp_id * 16 + t_row_in_warp;
+    int c_col_base = (lane_id % 16) * 4;
+    int c_col_0 = c_col_base; // 0~3
+    // int c_col_1 = c_col_base + 64; // 64~67
+
+    // double buffer
+    __shared__ float As_T[2][BK][BM];
+    __shared__ float Bs[2][BK][BN];
+
+    float sum[TM][TN] = {0.f};
+
+    // 维护显存读取的一维扁平指针，方便在流水线中步进
+    float *a_ptr = a + (by * BM + load_a_row) * k + load_a_col;
+    // float *a_ptr_64 = a + (by * BM + load_a_row + 64) * k + load_a_col;
+    float *b_ptr = b + load_b_row * n + bx * BN + load_b_col;
+    // float *b_ptr_8 = b + (load_b_row + 8) * n + bx * BN + load_b_col;
+
+    // 先加载第一块, 多消耗16个寄存器, 上面几个注释掉将寄存器数量压低于128个，保障Occupancy不变
+    float4 tmp_a0 = FLOAT4(a_ptr[0]);
+    float4 tmp_a1 = FLOAT4(a_ptr[64 * k]);
+    float4 tmp_b0 = FLOAT4(b_ptr[0]);
+    float4 tmp_b1 = FLOAT4(b_ptr[8 * n]);
+
+    As_T[0][load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row)] = tmp_a0.x;
+    As_T[0][load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row)] = tmp_a0.y;
+    As_T[0][load_a_col + 2][SWIZZLE_A(load_a_col + 2, load_a_row)] = tmp_a0.z;
+    As_T[0][load_a_col + 3][SWIZZLE_A(load_a_col + 3, load_a_row)] = tmp_a0.w;
+
+    As_T[0][load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row + 64)] = tmp_a1.x;
+    As_T[0][load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row + 64)] = tmp_a1.y;
+    As_T[0][load_a_col + 2][SWIZZLE_A(load_a_col + 2, load_a_row + 64)] = tmp_a1.z;
+    As_T[0][load_a_col + 3][SWIZZLE_A(load_a_col + 3, load_a_row + 64)] = tmp_a1.w;
+
+    FLOAT4(Bs[0][load_b_row][load_b_col]) = tmp_b0;
+    FLOAT4(Bs[0][load_b_row + 8][load_b_col]) = tmp_b1;
+
+    __syncthreads();
+
+    // double buffer 下标
+    int write_idx = 1;
+    int read_idx = 0;
+    // 主循环
+    for (int bk = BK; bk < k; bk += BK) {
+        // 沿k纬度偏移指针
+        a_ptr += BK;
+        b_ptr += BK * n;
+
+        // 加载下一批数据，这个是异步的，发射完ldg指令后，可以立刻开始计算之前读取的数据
+        tmp_a0 = FLOAT4(a_ptr[0]);
+        tmp_a1 = FLOAT4(a_ptr[64 * k]);
+        tmp_b0 = FLOAT4(b_ptr[0]);
+        tmp_b1 = FLOAT4(b_ptr[8 * n]);
+
+// 计算逻辑和之前完全相同
+#pragma unroll
+        for (int i = 0; i < BK; i++) {
+            float reg_a[TM], reg_b[TN];
+
+            FLOAT4(reg_a[0]) = FLOAT4(As_T[read_idx][i][SWIZZLE_A(i, c_row)]);
+            FLOAT4(reg_a[4]) = FLOAT4(As_T[read_idx][i][SWIZZLE_A(i, c_row + 4)]);
+
+            FLOAT4(reg_b[0]) = FLOAT4(Bs[read_idx][i][c_col_0]);
+            FLOAT4(reg_b[4]) = FLOAT4(Bs[read_idx][i][c_col_0 + 64]);
+
+#pragma unroll
+            for (int m_idx = 0; m_idx < TM; ++m_idx) {
+#pragma unroll
+                for (int n_idx = 0; n_idx < TN; ++n_idx) {
+                    sum[m_idx][n_idx] += reg_a[m_idx] * reg_b[n_idx];
+                }
+            }
+        }
+
+        // 计算完，把上面异步加载的寄存器数据写入共享内存
+        As_T[write_idx][load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row)] = tmp_a0.x;
+        As_T[write_idx][load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row)] = tmp_a0.y;
+        As_T[write_idx][load_a_col + 2][SWIZZLE_A(load_a_col + 2, load_a_row)] = tmp_a0.z;
+        As_T[write_idx][load_a_col + 3][SWIZZLE_A(load_a_col + 3, load_a_row)] = tmp_a0.w;
+
+        As_T[write_idx][load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row + 64)] = tmp_a1.x;
+        As_T[write_idx][load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row + 64)] = tmp_a1.y;
+        As_T[write_idx][load_a_col + 2][SWIZZLE_A(load_a_col + 2, load_a_row + 64)] = tmp_a1.z;
+        As_T[write_idx][load_a_col + 3][SWIZZLE_A(load_a_col + 3, load_a_row + 64)] = tmp_a1.w;
+
+        FLOAT4(Bs[write_idx][load_b_row][load_b_col]) = tmp_b0;
+        FLOAT4(Bs[write_idx][load_b_row + 8][load_b_col]) = tmp_b1;
+
+        __syncthreads(); // 同步，然后开始下一次循环
+        write_idx ^= 1;
+        read_idx ^= 1;
+    }
+// 最后还有一批数据要计算
+#pragma unroll
+    for (int i = 0; i < BK; i++) {
+        float reg_a[TM], reg_b[TN];
+
+        FLOAT4(reg_a[0]) = FLOAT4(As_T[read_idx][i][SWIZZLE_A(i, c_row)]);
+        FLOAT4(reg_a[4]) = FLOAT4(As_T[read_idx][i][SWIZZLE_A(i, c_row + 4)]);
+
+        FLOAT4(reg_b[0]) = FLOAT4(Bs[read_idx][i][c_col_0]);
+        FLOAT4(reg_b[4]) = FLOAT4(Bs[read_idx][i][c_col_0 + 64]);
+
+#pragma unroll
+        for (int m_idx = 0; m_idx < TM; ++m_idx) {
+#pragma unroll
+            for (int n_idx = 0; n_idx < TN; ++n_idx) {
+                sum[m_idx][n_idx] += reg_a[m_idx] * reg_b[n_idx];
+            }
+        }
+    }
+// pipeline 完成，写回c
+#pragma unroll
+    for (int i = 0; i < TM; ++i) {
+        FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col_0]) = FLOAT4(sum[i][0]);
+        FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col_0 + 64]) = FLOAT4(sum[i][4]);
+    }
+}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
@@ -387,12 +517,13 @@ binding_func_gen(sgemm_naive, 1, float);
 binding_tiled_func_gen(sgemm_tiling);
 binding_tiled_func_gen(sgemm_at_tiling);
 binding_tiled_func_gen(sgemm_at_bcf_swizzling);
-binding_tiled_func_gen(sgemm_at_bcf_swizzling_rw)
+binding_tiled_func_gen(sgemm_at_bcf_swizzling_rw);
+binding_tiled_func_gen(sgemm_at_bcf_swizzling_dbf_rw);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
-    PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(sgemm_cublas);
     torch_pybinding_func(sgemm_cublas_tf32);
     torch_pybinding_func(sgemm_naive);
@@ -400,4 +531,5 @@ binding_tiled_func_gen(sgemm_at_bcf_swizzling_rw)
     torch_pybinding_func(sgemm_at_tiling);
     torch_pybinding_func(sgemm_at_bcf_swizzling);
     torch_pybinding_func(sgemm_at_bcf_swizzling_rw);
+    torch_pybinding_func(sgemm_at_bcf_swizzling_dbf_rw);
 }
