@@ -8,7 +8,7 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 ## News
 
-- [2026.02.27] [sgemm](./kernels/sgemm/) cuda core implementation outperforming cublas with smem + swizzel + double buffer + coalesced r/w
+- [2026.02.27] [sgemm](./kernels/sgemm/) cuda core implementation outperforming cublas with `smem + swizzle + double buffer + coalesced r/w`
 
 ## Contents 📖
 
