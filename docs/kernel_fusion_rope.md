@@ -1,5 +1,7 @@
 # [CUDA 优化实战] RoPE - 手写算子的作用之 kernel fusion：减少访存次数、减少启动开销的优化技巧
 
+## 背景
+
 现在 AI 编译器进化得越来越快，PyTorch 的 torch.compile 配合 JIT 优化经常能带来拔群的效果，以至于常常听到“手写算子已经没必要了”的论调。
 
 本文直接聚焦一个核心命题：为什么“手写算子（hand-written operator）”与“内核融合（kernel fusion）”能够带来大幅度的性能提升？本文将基于大模型标配的 RoPE (Rotary Position Embedding) 算子，对比 PyTorch 朴素实现、PyTorch 查表缓存实现，以及单 CUDA Kernel 的手写实现，用底层逻辑和测试数据给出答案。
@@ -75,7 +77,7 @@ def rope_with_sin_cos_cache(q):  # q shape: [bs, seqlen, head_dim]
 - $q$ 的多次读取。
 - SIN/COS 表的读取（通常是 $q$ 的两倍量）。
 - 临时空间分配（如 rotate_half(q)、q *cos、...* sin 产生的大量中间 tensor）带来的写出和再读取。
-保守估计，总数据搬运量高达 $bs \times seq\_len \times head\_dim \times 4 \text{ bytes} \times 11$ 左右。由于框架层面的限制，带宽被无意义的中间变量榨干了。
+保守估计，总数据搬运量高达 $bs \times seq\_len \times head\_dim \times 4 \text{ bytes} \times 11$ 左右（当然，这是我最原始的粗略估计，pytorch可能默认有优化策略数据量和估计有出入）。由于框架层面的限制，带宽被无意义的中间变量榨干了。
 
 而手写算子的降维打击在于：
 
@@ -161,7 +163,7 @@ rope_fp32x4 (手写向量化)         mean time:  3.306061 ms  | 有效带宽: 3
 
 ### 2.1 带宽利用率与极致榨取：接近极限的硬核答卷
 
-为了客观评估算子的真实表现，为了客观评估算子的真实表现，我们引入了有效带宽（Effective Bandwidth）的计算。手写算子的实际吞吐为 128*8192*128*2*4/3.306061*1e3/1e9 ~= 325 GB/s。
+为了客观评估算子的真实表现，我们引入了有效带宽（Effective Bandwidth）的计算。手写算子的实际吞吐为 128*8192*128*2*4/3.306061*1e3/1e9 ~= 325 GB/s。
 
 作为参考，我使用 nvbandwidth 测试了显卡底层的双向纯拷贝，实测物理极限约为 337 GB/s。这意味着，在端到端的真实调用环境下，我们的 Kernel 实际有效带宽利用率达到了 325 / 337 = 96.4%！
 
