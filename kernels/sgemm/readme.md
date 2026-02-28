@@ -26,14 +26,14 @@ python test.py
 ```bash
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                          mean time: 16.591989 ms
-sgemm_cublas                   mean time: 14.335337 ms, speedup: 1.16
-sgemm_tiling                   mean time: 17.940181 ms, speedup: 0.92
-sgemm_at_tiling                mean time: 15.401380 ms, speedup: 1.08
-sgemm_at_bcf_swizzling         mean time: 14.748813 ms, speedup: 1.12
-sgemm_at_bcf_swizzling_rw      mean time: 14.440769 ms, speedup: 1.15
-sgemm_at_bcf_swizzling_dbf_rw  mean time: 13.854780 ms, speedup: 1.20
-sgemm_cublas_tf32              mean time: 8.382802 ms, speedup: 1.98
+torch                          mean time: 14.974799 ms
+sgemm_cublas                   mean time: 14.523163 ms, speedup: 1.03
+sgemm_tiling                   mean time: 18.760985 ms, speedup: 0.80
+sgemm_at_tiling                mean time: 16.436968 ms, speedup: 0.91
+sgemm_at_bcf_swizzling         mean time: 15.706529 ms, speedup: 0.95
+sgemm_at_bcf_swizzling_rw      mean time: 15.522802 ms, speedup: 0.96
+sgemm_at_bcf_swizzling_dbf_rw  mean time: 14.193397 ms, speedup: 1.06
+sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 ```
 
 ### all

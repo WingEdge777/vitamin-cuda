@@ -14,7 +14,7 @@
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 
-#define SWIZZLE_A(y, x) ((x) ^ (((x) >> 5) << 2) ^ (((y) >> 2) << 3))
+#define SWIZZLE_A(x, y) ((y) ^ (((x) >> 2) << 3))
 
 const int WARP_SIZE = 32;
 
@@ -40,14 +40,14 @@ __global__ void sgemm_tiling_kernel(float *a, float *b, float *c, int m, int n, 
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 一个block一次搬运 64x16个a， 8x128个b， 分两次搬运
+    // 一个block一次搬运 64x16个a， 8x128个b， 分两次搬运恰好共 128x16, 16x128
     // 每4个线程负责一行a(16个元素)，每32个线程负责一行b(128个元素)
     int load_a_row = tid / 4;               // 0~63
     int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
     int load_b_row = tid / WARP_SIZE;       // 0~8
     int load_b_col = (tid % WARP_SIZE) * 4; // 0,4,8,12,16,20,24,28...
 
-    // warp tiling
+    // warp tiling, 每4个warp负责c的上下两部分 64x128，
     int warp_row = warp_id / 4;      // 0, 1
     int warp_col = warp_id % 4;      // 0, 1, 2, 3
     int t_row_in_warp = lane_id / 4; // 0~7
@@ -279,8 +279,8 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
     // 线程在 Warp 内的行偏移依然是 0 或 8
     int t_row_in_warp = (lane_id / 16) * 8;
 
-    // 每个 Warp 只负责 16 行，每行128个元素，分两次load + 计算
-    // 每个线程 一次load 8行8列, 8列拆开为两次float4, 比如T0 负责读写0~3,64~67 8列,
+    // 每个 Warp 只负责 16 行，每16线程负责8行128列，每行128个元素，列维度分两次load + 计算
+    // 每个线程 一次load 8行8列, 但是8列拆开为跨越64列的两次float4, 比如T0 负责读写0~3,64~67 8列,
     // 这样每8个线程在写回c的时候是连续的32个float,128bytes,完美事务合并
     int c_row = warp_id * 16 + t_row_in_warp;
     int c_col_base = (lane_id % 16) * 4;
@@ -408,7 +408,7 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
         tmp_b0 = FLOAT4(b_ptr[0]);
         tmp_b1 = FLOAT4(b_ptr[8 * n]);
 
-// 计算逻辑和之前完全相同
+        // 计算逻辑和之前完全相同
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             float reg_a[TM], reg_b[TN];
@@ -446,7 +446,7 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
         write_idx ^= 1;
         read_idx ^= 1;
     }
-// 最后还有一批数据要计算
+    // 最后还有一批数据要计算
 #pragma unroll
     for (int i = 0; i < BK; i++) {
         float reg_a[TM], reg_b[TN];
@@ -465,7 +465,7 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
             }
         }
     }
-// pipeline 完成，写回c
+    // pipeline 完成，写回c
 #pragma unroll
     for (int i = 0; i < TM; ++i) {
         FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col_0]) = FLOAT4(sum[i][0]);
