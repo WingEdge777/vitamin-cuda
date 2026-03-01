@@ -14,7 +14,7 @@
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 
-#define SWIZZLE_A(x, y) ((y) ^ (((x) >> 2) << 3))
+#define SWIZZLE_A(x, y) ((y) ^ ((x >> 2) << 3))
 
 const int WARP_SIZE = 32;
 
