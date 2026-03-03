@@ -10,7 +10,7 @@
 >
 在如今 Tensor Core 满天飞的时代，写一个纯 FP32 的 SIMT 标量矩阵乘法（SGEMM）还有意义吗？有。因为它是检验一个底层计算工程师对 GPU 显存控制、Warp 调度、共享内存/寄存器资源分配以及指令级并行（ILP）理解的最强试金石。
 
-本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等体量规模）的矩阵乘法为例，在 RTX 5060 移动版显卡上，本人在不调用任何汇编级指令，不使用 cp.async 等新架构特性，仅用纯 C++ CUDA，将耗时从 PyTorch 的 16.59 ms 压榨到了 13.85 ms，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS（14.33 ms）。本文将复盘这场与 nvcc 编译器和物理硬件的完整较量细节。
+本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等规模）的矩阵乘法为例，在 RTX 5060 移动版显卡上，本人在不调用任何汇编级指令，不使用 cp.async 等新架构特性，仅用纯 C++ CUDA，将耗时从 PyTorch 的 16.59 ms 压榨到了 13.85 ms，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS（14.33 ms）。本文将复盘这场与 nvcc 编译器和物理硬件的完整较量细节。
 
 本文会给出 6 个 kernel 实现，从基础的 tiling，共享内存的运用以及如何设计 swizzle 方案 解决 bank conflict，双 buffer 掩盖时延，尽可能的合并访问显存和 smem，提高指令级并行度，寄存器用量压制保障 Occupancy 等手段完成最终对 cuBLAS 的超越。整个过程能接触到具体到搬运/计算数据复杂精巧的下标映射，时延隐藏的哲学，强迫你进一步加深对自己的硬件了解，具体 kernel 大纲如下。话不多说，我们直接开始。
 
@@ -81,7 +81,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 - 首先肯定是 4 的倍数，因为我要向量化访问。
 - 我的显卡理论峰值 cuda core 算力为 3328*1455*1e6*2 ~= 9.6 TFLOPs，理论带宽峰值 12001*1e6*128/8*2 ~= 384GB/s，因此访存算力比为 9686/384 ~= 25.2 FLOPs/Byte
   - 为了越过内存墙，让 cuda core 疯狂发烧，在 load 完数据后执行 fma 次数要超过 25 次才好。最终，我挑了几种分块大小验证了下，最终选择对 c 进行 128x16x128 的数据分块。
-    - 128*16*128*2 / (128*16*2) / 4 = 31.5 > 25.2
+    - 128*16*128*2 / (128*16*2) / 4 = 32 > 25.2
 
 最后，其实个人直觉也占不小比重，我下意识就选了 128x128 的方阵分块。然后验证了下这个情况下的资源用量。假设 k 步长为 16。
 
@@ -196,7 +196,7 @@ __global__ void sgemm_tiling_kernel(float *a, float *b, float *c, int m, int n, 
 
 ## 3. at_tiling
 
-初版的 kernel 有个明显的优化点，那就是在内层循环读取 As smem 时，用了循环标量读取，这给 LSU 带来了很大的指令压力，而且在计算循环中频繁的等待数据是很糟糕的选择，会产生很多小空泡。因此可以立马想到的一个优化点就是将 a 矩阵转置后存入 smem，这样读取时就能用 float4 等向量读取，提高指令级并行度。虽然这样导致写入时被迫以标量写入，但内层循环的读取压力大大降低，用外层循环 “两个 float4 写 变为 8 个 float 写入” 代替内层计算循环 “读 16x8 个 float 变为 16x 两个 float4” 这种 trade-off 是值得的，因为能显著降低 LSU 的压力，避免 ALU 计算单元在计算过程中等待 L1 数据，提高整体吞吐。
+初版的 kernel 有个明显的优化点，那就是在内层循环读取 As smem 时，用了循环标量读取，这给 LSU 带来了很大的指令压力，而且在计算循环中频繁的等待数据是很糟糕的选择，会产生很多小空泡。因此可以立马想到的一个优化点就是将 a 矩阵转置后存入 smem，这样读取时就能用 float4 等向量读取，提高指令级并行度。虽然这样导致写入时被迫以标量写入，但内层循环的读取压力大大降低，用用外层循环的 “2 个 float4 拆成 8 个标量写入” 来换取内层计算循环的 “16x8 次标量读取优化为 16x2 次 float4 读取” 这种 trade-off 是值得的，因为能显著降低 LSU 的压力，避免 ALU 计算单元在计算过程中等待 L1 数据，提高整体吞吐。
 
 核心修改非常简单，就是交换一下 a 的行列，如下：
 
@@ -548,8 +548,8 @@ sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 
 通过 ncu 的 report 我们还可以看到一些有意思的东西
 
-- 比如我的前两个 swizzling kernel 依然提示了 `shared store bank conflict`，这其实让我一度很自我怀疑，但经过反复手算进行坐标验证，确定不应该出现冲突。然后通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。这其实也让我很费解，因为一个warp通过float4写入512bytes，由于物理限制必然展开为 4 次 内存事务(wavefronts)。我猜大概率 NCU 不知为何在这里粗暴地用 Wavefronts / Requests 比例来触发黄框报警。为此我还专门写了个纯 float4 搬运的微测试（具体见 [test](/kernels/test/))，底层硬件计数器显示确为 0 冲突。如果有对 Profiler 判定规则有更深层见解的朋友，欢迎留言讨论。总之我个人结论就是：不要迷信 ncu 的 UI 警告，如果确信算法中的数学映射无误，那就相信代码。
-  - 其次，这个冲突 summary 提示在 double buffering 之后就消失了，尽管我的 swizzling 逻辑/Bs 写入逻辑是完全一样的。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
+- 首先，前两个 swizzling kernel 依然提示了 `shared store bank conflict`，这其实让我一度很自我怀疑，但经过反复手算进行坐标验证，确定不应该出现冲突。然后通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。这其实也让我很费解，因为一个 warp 通过 float4 写入 512bytes，由于物理限制必然展开为 4 次 内存事务 (wavefronts)。我猜大概率 NCU 不知为何在这里粗暴地用 Wavefronts / Requests 比例来触发黄框报警。为此我还专门写了个纯 float4 搬运的微测试（具体见 [test](/kernels/test/))，底层硬件计数器显示确为 0 冲突。如果有对 Profiler 判定规则有更深层见解的朋友，欢迎留言讨论。总之我个人结论就是：不要迷信 ncu 的 UI 警告，如果确信算法中的数学映射无误，那就相信代码。
+- 其次，这个 summary 冲突提示在 double buffer kernel中就消失了（尽管我的 smem 写入逻辑是完全一样的）。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
 - report 中还能看到 cuBLAS 其实是调用了 cutlass 的 kernel（void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)），cutlass SIMT 算子命名规则是`[M]x[N]_[K]x[Stages]`
   - 因此 cuBLAS 对 c 矩阵 tiling 的选择是 128x64（m=128，n=64），跨步 k=8，并且用了恐怖的 5 级流水线来隐藏时延。
   - block size 设置为 128（对应较小的数据搬运量），grid 用了奇怪的 512x4（大概率用了 grid swizzling，重新排布了 block 访问显存的顺序以吃到 L2cache 红利）
