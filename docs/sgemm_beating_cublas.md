@@ -10,7 +10,7 @@
 >
 在如今 Tensor Core 满天飞的时代，写一个纯 FP32 的 SIMT 标量矩阵乘法（SGEMM）还有意义吗？有。因为它是检验一个底层计算工程师对 GPU 显存控制、Warp 调度、共享内存/寄存器资源分配以及指令级并行（ILP）理解的最强试金石。
 
-本文以 M=N=K=4096（MxKxN,这是cuBLAS最擅长的中等体量规模）的矩阵乘法为例，在 RTX 5060 移动版显卡上，本人在不调用任何汇编级指令，不使用 cp.async 等新架构特性，仅用纯 C++ CUDA，将耗时从 PyTorch 的 16.59 ms 压榨到了 13.85 ms，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS（14.33 ms）。本文将复盘这场与 nvcc 编译器和物理硬件的完整较量细节。
+本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等体量规模）的矩阵乘法为例，在 RTX 5060 移动版显卡上，本人在不调用任何汇编级指令，不使用 cp.async 等新架构特性，仅用纯 C++ CUDA，将耗时从 PyTorch 的 16.59 ms 压榨到了 13.85 ms，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS（14.33 ms）。本文将复盘这场与 nvcc 编译器和物理硬件的完整较量细节。
 
 本文会给出 6 个 kernel 实现，从基础的 tiling，共享内存的运用以及如何设计 swizzle 方案 解决 bank conflict，双 buffer 掩盖时延，尽可能的合并访问显存和 smem，提高指令级并行度，寄存器用量压制保障 Occupancy 等手段完成最终对 cuBLAS 的超越。整个过程能接触到具体到搬运/计算数据复杂精巧的下标映射，时延隐藏的哲学，强迫你进一步加深对自己的硬件了解，具体 kernel 大纲如下。话不多说，我们直接开始。
 
@@ -88,7 +88,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 - 共享内存用量：每个线程需要 load 128x16 的 a 和 16x128 的 b，共 128x16x2x4 bytes = 16KB 的显存数据，这个大小在 smem 容量范围内，且能被 256 整除，符合线程分配，可以有四个活跃 block。即使开 double buffer 32KB，也完全没问题，可以有 2 个活跃 block。
 - 寄存器用量：每个线程需要 8x8 的 c 矩阵结果，共 64 个；其次搬运 a，b 数据需要 8*2=16 个寄存器，64+16 = 80，算上双 buffer 再加 16 个就是共 96 个寄存器，最后算上其他临时变量，中间结果，地址偏移变量等等估计 10~20+，256 线程使用总量肯定不超过 65536 个（65536/256 = 256），因此是也是安全的，而且理想情况至少有 2 个 block 活跃，如果超过 128 个寄存器用量就只能有一个 block 活跃了（事实上在初版 双 buffer 代码中我确实超过了 128 导致 Occupancy 降低而性能爆降，但通过移除了一些变量寄存器重新挽救了回来）。
 
-如果把 BK 步长改为 8，访存计算比会降低,越不过内存墙；如果改为 32，那么 smem 和寄存器用量会暴增，Occupancy 下降，甚至没法双 buffer。
+如果把 BK 步长改为 8，访存计算比会降低，越不过内存墙；如果改为 32，那么 smem 和寄存器用量会暴增，Occupancy 下降，甚至没法双 buffer。
 
 以上就是我选择 block size 和 data tiling size 的个人考量。当然了，有没有其他合适的参数呢？我觉得是有的，不过我筛出来的这份参数都满足我的需求，所以就直接用了。
 
@@ -338,9 +338,9 @@ The memory access pattern for global stores to L1TEX might not be optimal. On av
 This kernel has uncoalesced global accesses resulting in a total of 2097152 excessive sectors (2% of the total 138412032 sectors). Check the L2 Theoretical Sectors Global Excessive table for the primary source locations. The  CUDA Programming Guide has additional information on reducing uncoalesced device memory accesses.
 ```
 
-为什么 ncu 会出现这两个提示，原因是在单个线程计算 8 行 8 列时，我们选择了连续的 8 列，这导致在写回 c 矩阵 时需要分两次 float4 写出，如果看一个 warp 相邻线程的情况就是，都隔着空泡(4个 float) 在写数据，而 L1/L2 的访问模式都是按一个 128bytes 作为内存事务进行的，我们分两次写出，其实都发起了两批完全一模一样的内存事务请求，只不过第一次写了其中 64bytes，第二次写了另外 64bytes，这造成了显著浪费。
+为什么 ncu 会出现这两个提示，原因是在单个线程计算 8 行 8 列时，我们选择了连续的 8 列，这导致在写回 c 矩阵 时需要分两次 float4 写出，如果看一个 warp 相邻线程的情况就是，都隔着空泡 (4 个 float) 在写数据，而 L1/L2 的访问模式都是按一个 128bytes 作为内存事务进行的，我们分两次写出，其实都发起了两批完全一模一样的内存事务请求，只不过第一次写了其中 64bytes，第二次写了另外 64bytes，这造成了显著浪费。
 
-两个异常提示是同一个问题在L1和L2两个层面体现，为了解决这个问题。我们可以重新设计一下每个线程负责的 8 列，只要把这 8 列分成两个连续的 4 列，依然可以用 float4 读写，并且可以把相邻线程划到连续的 float4 地址上，比如 T0 读取 0~3，T1 读取 4~7..., 读完一次 float4 后， T0 再读 64~67，T1 读取 68~71... 这样就能保证写回 c 时相邻线程地址是合并的了。
+两个异常提示是同一个问题在 L1 和 L2 两个层面体现，为了解决这个问题。我们可以重新设计一下每个线程负责的 8 列，只要把这 8 列分成两个连续的 4 列，依然可以用 float4 读写，并且可以把相邻线程划到连续的 float4 地址上，比如 T0 读取 0~3，T1 读取 4~7..., 读完一次 float4 后， T0 再读 64~67，T1 读取 68~71... 这样就能保证写回 c 时相邻线程地址是合并的了。
 
 ![col_shuffle](static/col_shuffle.svg)
 
@@ -362,20 +362,20 @@ This kernel has uncoalesced global accesses resulting in a total of 2097152 exce
 
 ## 6. at_tiling + swizzling + 全合并读写 global memory + 双 smem buffer
 
-上一个 kernel 写完，其实基本达到单 buffer kernel 的天花板了，完美的合并读写（global memory，smem）,充分的访存算力比。还想进一步提高上限，要开始上特殊技巧了，那就是 copy 和 compute overlap，这是高性能计算老生常谈的话题了。CUDA LSU 发起内存事务请求，从 global memory 加载数据到寄存器（其实是要过 L2-->L1-->register）, ALU 可以说是没事干，即使有多个 block/warp 在切换计算，但还是不如在一个 warp 内利用空闲时间做计算来得高效（进一步提高指令级并行度，隐藏访问时延）。这里实现的方式是传统的 double buffering, 不使用 cp.async 等新架构特性。
+上一个 kernel 写完，其实基本达到单 buffer kernel 的天花板了，完美的合并读写（global memory，smem）, 充分的访存算力比。还想进一步提高上限，要开始上特殊技巧了，那就是 copy 和 compute overlap，这是高性能计算老生常谈的话题了。CUDA LSU 发起内存事务请求，从 global memory 加载数据到寄存器（其实是要过 L2-->L1-->register）, ALU 可以说是没事干，即使有多个 block/warp 在切换计算，但还是不如在一个 warp 内利用空闲时间做计算来得高效（进一步提高指令级并行度，隐藏访问时延）。这里实现的方式是传统的 double buffering, 不使用 cp.async 等新架构特性。
 
 流水线算法流程：
 
-- 预先加载一块 a/b 到 smem_buffer[0]，同步`__syncthreads()`确保写入smem完成
+- 预先加载一块 a/b 到 smem_buffer[0]，同步`__syncthreads()`确保写入 smem 完成
 - 循环主体：
   - 先发起请求加载下一块 a/b 到 寄存器，
-  - 然后立刻拿 smem_buffer[0] 中的数据计算（和上一步overlap）
+  - 然后立刻拿 smem_buffer[0] 中的数据计算（和上一步 overlap）
   - 计算完后，再将循环开头加载到寄存器的数据，写入到 smem_buffer[1]，同步`__syncthreads()`
-    - 对比单buffer kernel，可以发现，循环主体少了一次同步开销（其实就是空间换时间）
+    - 对比单 buffer kernel，可以发现，循环主体少了一次同步开销（其实就是空间换时间）
   - 交换 smem_buffer 指针，开始下一循环
 - 收尾阶段
   - 循环结束，计算最后一次 load 的数据块
-  - 将累加寄存器 sum[8][8] 写回 c 矩阵的global memory，算法结束
+  - 将累加寄存器 sum[8][8] 写回 c 矩阵的 global memory，算法结束
 
 最后贴一个最终版本的完整 kernel 代码：
 
@@ -515,13 +515,13 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
 }
 ```
 
-细心的读者可能会发现，我在最终代码里注释掉了一些中间变量（比如 c_col_1, a_ptr_64），转而在访问时直接计算偏移量 a_ptr[64 * k]。这是因为 Double Buffering 会让读写寄存器用量倍增，如果不精打细算，很容易超过每个线程的寄存器阈值限制（我的初始代码单线程就超过128个寄存器，导致活跃 warp 减半性能暴跌）。通过移除这些非必要的中间变量，我成功把寄存器用量压回到了128内，保住了 Occupancy。
+细心的读者可能会发现，我在最终代码里注释掉了一些中间变量（比如 c_col_1, a_ptr_64），转而在访问时直接计算偏移量 a_ptr[64 * k]。这是因为 Double Buffering 会让读写寄存器用量倍增，如果不精打细算，很容易超过每个线程的寄存器阈值限制（我的初始代码单线程就超过 128 个寄存器，导致活跃 warp 减半性能暴跌）。通过移除这些非必要的中间变量，我成功把寄存器用量压回到了 128 内，保住了 Occupancy。
 
 ## 7. benchmark 结果和分析
 
 选择 M=N=K=4096 并非随意之举。首先，4096 作为完美的 2 的幂次方，能让 cuBLAS 毫无边界判断包袱地跑在 Fast Path 上，展现其最强实力；其次，4096 也是当前主流 7B/8B 大语言模型的标准隐层维度，在 LLM 的 Prefill 阶段极为常见。在这个‘cuBLAS 的绝对主场’也是‘现代 AI 最核心的计算场景’中正面硬刚，更能检验出我们手搓 Kernel 的含金量。
 
-show code 部分结束，说理论性能多好没意义，口说无凭，直接上 benchmark 结果和 ncu profile报告
+show code 部分结束，说理论性能多好没意义，口说无凭，直接上 benchmark 结果和 ncu profile 报告
 
 ```bash
 ####################################################################################################
@@ -548,12 +548,13 @@ sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 
 通过 ncu 的 report 我们还可以看到一些有意思的东西
 
-- 比如我的前两个 swizzling kernel 依然提示了 bank conflict，但 double buffering 之后就没提示，尽管我的 swizzling 逻辑是完全一样的。为什么呢？这种 bank conflict 的出现是由于向量化读写导致的，一个 warp 使用 float4 读写 128个float，512bytes，无论怎么写都要 4 个内存事务请求完成，但是一条指令在一个周期内没有完成就会被认为是 bank conflict。实际对性能没影响，而且 float4 读写是更高效的（减少了指令开销）。既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟，完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
+- 比如我的前两个 swizzling kernel 依然提示了 `shared store bank conflict`，这其实让我一度很自我怀疑，但经过反复手算进行坐标验证，确定不应该出现冲突。然后通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。这其实也让我很费解，因为一个warp通过float4写入512bytes，由于物理限制必然展开为 4 次 内存事务(wavefronts)。我猜大概率 NCU 不知为何在这里粗暴地用 Wavefronts / Requests 比例来触发黄框报警。为此我还专门写了个纯 float4 搬运的微测试（具体见 [test](/kernels/test/))，底层硬件计数器显示确为 0 冲突。如果有对 Profiler 判定规则有更深层见解的朋友，欢迎留言讨论。总之我个人结论就是：不要迷信 ncu 的 UI 警告，如果确信算法中的数学映射无误，那就相信代码。
+  - 其次，这个冲突 summary 提示在 double buffering 之后就消失了，尽管我的 swizzling 逻辑/Bs 写入逻辑是完全一样的。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
 - report 中还能看到 cuBLAS 其实是调用了 cutlass 的 kernel（void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)），cutlass SIMT 算子命名规则是`[M]x[N]_[K]x[Stages]`
   - 因此 cuBLAS 对 c 矩阵 tiling 的选择是 128x64（m=128，n=64），跨步 k=8，并且用了恐怖的 5 级流水线来隐藏时延。
   - block size 设置为 128（对应较小的数据搬运量），grid 用了奇怪的 512x4（大概率用了 grid swizzling，重新排布了 block 访问显存的顺序以吃到 L2cache 红利）
   - 如果点开 cuBLAS kernel 的 `memory workload analysis`，可以看到有巨多的 `shared store from global load bank conflict`，说明了啥，cuBLAS 使用了 cp.async 指令来异步加载数据，而它在这里也容忍了 Bank Conflict，是因为硬件层面异步拷贝指令（cp.async）的位宽和事务打包机制本身就与传统 ldg 结合共享内存写入不同。一方面无可避免，另一方面也说明了只要流水线深度足够，这种级别的冲突时延往往被完全掩盖，进一步印证了 Double Buffering 的正确性。
-- Tensor Core的无敌。我们纯手搓的 SIMT Kernel 跑出了 14.19 ms，而 cuBLAS TF32 跑出了 8.79 ms。这说明在利用了 Tensor Core 的情况下，算力天花板被拉高了近一倍。
+- Tensor Core 的无敌。我们纯手搓的 SIMT Kernel 跑出了 14.19 ms，而 cuBLAS TF32 跑出了 8.79 ms。这说明在利用了 Tensor Core 的情况下，算力天花板被拉高了近一倍。
 
 ## 总结
 
