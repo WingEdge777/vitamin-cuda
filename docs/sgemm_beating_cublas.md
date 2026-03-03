@@ -68,7 +68,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
   - k 维度跨步 BK 为 16，一个 block 每次 load 128x16 个 a 和 16x128 个的 b
     - 16 是在 k 纬度上的切分，kernel 会有一个循环在 k 纬度上累加乘积和，最终得到 c[128][128] 的结果
 
-有朋友要问了，你这是怎么定出来的数据分块和线程 block 大小。这里其实有很多因素考量，我可以谈几点。
+有朋友要问了，你这是怎么定出来的数据分块和线程 block 大小。这里其实有很多因素考量，我可以谈几点。首先你要先了解你的硬件(回头看我的第一篇文章，把 deviceQuery 结果记住)
 
 关于线程 block：
 
@@ -79,14 +79,14 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 
 - 从 c 矩阵视角进行线程分配，线程数量定了 256 后，要 load/计算多少行列数据？
 - 首先肯定是 4 的倍数，因为我要向量化访问。
-- 我的显卡理论峰值 cuda core 算力为 3328*1455*1e6*2 ~= 9.6 TFLOPs，理论带宽峰值 12001*1e6*128/8*2 ~= 384GB/s，因此访存算力比为 9686/384 ~= 25.2 FLOPs/Byte
-  - 为了越过内存墙，让 cuda core 疯狂发烧，在 load 完数据后执行 fma 次数要超过 25 次才好。最终，我挑了几种分块大小验证了下，最终选择对 c 进行 128x16x128 的数据分块。
+- 然后，计算访存算力比。我的显卡理论峰值 cuda core 算力为 3328*1455*1e6*2 ~= 9.6 TFLOPs，理论带宽峰值 12001*1e6*128/8*2 ~= 384GB/s，因此访存算力比为 9686/384 ~= 25.2 FLOPs/B
+  - 为了越过内存墙，让 cuda core 疯狂发烧，在 load 完数据后执行 fma 次数要超过 25 次才好。最终，我挑了几种分块大小验证了下，选择 128x16x128 的数据/计算分块。
     - 128*16*128*2 / (128*16*2) / 4 = 32 > 25.2
 
 最后，其实个人直觉也占不小比重，我下意识就选了 128x128 的方阵分块。然后验证了下这个情况下的资源用量。假设 k 步长为 16。
 
-- 共享内存用量：每个线程需要 load 128x16 的 a 和 16x128 的 b，共 128x16x2x4 bytes = 16KB 的显存数据，这个大小在 smem 容量范围内，且能被 256 整除，符合线程分配，可以有四个活跃 block。即使开 double buffer 32KB，也完全没问题，可以有 2 个活跃 block。
-- 寄存器用量：每个线程需要 8x8 的 c 矩阵结果，共 64 个；其次搬运 a，b 数据需要 8*2=16 个寄存器，64+16 = 80，算上双 buffer 再加 16 个就是共 96 个寄存器，最后算上其他临时变量，中间结果，地址偏移变量等等估计 10~20+，256 线程使用总量肯定不超过 65536 个（65536/256 = 256），因此是也是安全的，而且理想情况至少有 2 个 block 活跃，如果超过 128 个寄存器用量就只能有一个 block 活跃了（事实上在初版 双 buffer 代码中我确实超过了 128 导致 Occupancy 降低而性能爆降，但通过移除了一些变量寄存器重新挽救了回来）。
+- 共享内存用量：每个线程需要 load 128x16 的 a 和 16x128 的 b，共 128x16x2x4 bytes = 16KB 的显存数据，这个大小在 smem 容量范围内，且能被 256 整除，符合线程分配，可以有四个活跃 block。即使开 double buffer 32KB，也完全没问题，可以有 2~3 个活跃 block。
+- 寄存器用量：每个线程需要 8x8 的 c 矩阵结果，共 64 个；其次搬运 a，b 数据需要 8*2=16 个寄存器，64+16 = 80，算上双 buffer 再加 16 个就是共 96 个寄存器；最后算上其他临时变量，中间结果，地址偏移变量等等估计 10~20+，256 线程使用总量肯定不超过上限 65536 个（65536/256 = 256），因此也是安全的，而且理想情况至少有 2 个 block 活跃，如果超过 128 个寄存器用量就只能有一个 block 活跃了（事实上在初版 双 buffer 代码中我确实超过了 128 导致 Occupancy 降低而性能爆降，但通过移除了一些变量寄存器重新挽救了回来）。
 
 如果把 BK 步长改为 8，访存计算比会降低，越不过内存墙；如果改为 32，那么 smem 和寄存器用量会暴增，Occupancy 下降，甚至没法双 buffer。
 
@@ -258,7 +258,7 @@ col : 0, 0, 0, 0, 1, 1, 1, 1...
 row : 0, 4, 8, 12, 0, 4, 8, 12...
 ```
 
-典型的 4-way bank conflict，每四个线程同时访问同一 bank 的不同地址。这里我们使用一个稍微复杂一点的 swizzle 技巧来避免 bank conflict。我们需要找到一种映射 f(row, col) -> (row, new_col) 使得 new_col 分散在连续的 32 个 bank 内。
+典型的 4-way bank conflict，每四个线程同时访问同一 bank 的不同地址。这里我们使用一个稍微复杂一点的 swizzle 技巧来避免 bank conflict。我们需要找到一种映射 f(row, col) -> (row, new_col) 使得 new_col 分散在 32 个 bank 内。
 
 在之前矩阵转置的文章提到了一种简单 XOR swizzle 的方法：`new_col = row^col` 这里没法直接用，为啥？因为这里的 col 和 row 都没有遍历一组 32 个 bank 的所有可能值，直接使用 row 的 bit 去扰动 col，并不能达到目的。
 
@@ -273,13 +273,13 @@ row : 0, 4, 8, 12, 0, 4, 8, 12...
 
 很自然的，既然冲突是相同的 col 导致的，而他们的 row 值都不同。那我们可以把 row 左移一位，变成 0, 8, 16, 24，这样它的变量位就推到了 bit3 和 bit4。此时再把它和 col 做 XOR，神奇的事情就发生了：row 负责填满高 2 位（bit 3, 4），col 负责填满低 3 位（bit 0~2），两者交错异或，相当于完美铺满并遍历了低 5 bits 的所有 32 种情况！
 
-其他 warp 情况是类似的，比如 warp 1 的 col 为 01xxx， 只要去异或 bit4~5 的四种排列，就能得到互不相同的 32 个值，这是 xor 的双射性质保证的；而单个 warp 内 row，每次都是同步变动，比如在 row 为 1，5，9，13 时， 二进制为 xx01，左移 1 位后变化位依然是 bit4~5，同理依然能得到互不相同的 32 个值
+其他 warp 情况是类似的，比如 warp 1 的 col 为 01xxx， 只要去异或 bit4~5 的四种排列，就能得到互不相同的 32 个值，这是 xor 的双射性质保证的；而单个 warp 内 的row，每次都是同步变动，比如在 row 变为 1，5，9，13 时， 二进制为 xx01，左移 1 位后变化位依然是 bit4~5，同理依然能得到互不相同的 32 个值
 
 由此，我们得到一个写入 As_T 无冲突的 swizzle 映射：`new_col = col^(row << 1)`
 
 但这还不够，虽然乱序写入完美打散了 Bank，但我们在内层循环还需要用 float4 向量化读取，float4 的物理底线是：这 4 个连续的 float 不仅要在物理内存上挨在一起，且起始地址必须 16 字节对齐。同时我们注意到，在`FLOAT4(reg_a[0]) = FLOAT4(As_T[i][SWIZZLE_A(i, c_row)]);`这个读取动作中，32 个线程的外层 row 维坐标（变量 i）是固定不变的！
 
-怎么做？col 下标的二进制的低 2bits 决定了 4 float 的一个 segment，只需要把 row 的低 2bits 都抹为 0，`00 xor (col's bit0~1) = col‘s’ bit0~1`，就不会改变 `col+0,col+1,col+2,col+3` 4 个元素之间的相对顺序。这，其实就是 float4 数据打包的地址 swizzle 映射：`new_col = col^((row>>2) << 3)`。
+怎么做？col 下标的二进制的低 2bits 决定了 4 float 的一个 segment，只需要把 row 的低 2bits 都抹为 0，`00 xor (col's bit0~1) = col's bit0~1`，就不会改变 `col+0,col+1,col+2,col+3` 4 个元素之间的相对顺序。这，其实就是 float4 数据打包的地址 swizzle 映射：`new_col = col^((row>>2) << 3)`。
 
 这个映射确保了 row 的扰动有效位始终是 bit4~5 (>>2 把低 bit0~1 都抹掉了，当 i 遍历 0，1，2，3 时，(i>>2) << 3 值都为 0；当 i 遍历 4,5,6,7 时，(i>>2) << 3 值都为 8，以此类推）
 
@@ -326,7 +326,7 @@ __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int 
 
 ## 5. at_tiling + swizzling + 全合并读写 global memory
 
-上一版作为单 buffer 无流水线的 kernel 已经比较可以了，但还有两点瑕疵，使用 ncu profile 后查看发现有
+上一版作为单 buffer 无流水线的 kernel 已经比较可以了，但还有点瑕疵，使用 ncu profile 后查看发现有
 
 - 非合并写 global memory 的访存写入，提示如下
 
@@ -340,7 +340,7 @@ This kernel has uncoalesced global accesses resulting in a total of 2097152 exce
 
 为什么 ncu 会出现这两个提示，原因是在单个线程计算 8 行 8 列时，我们选择了连续的 8 列，这导致在写回 c 矩阵 时需要分两次 float4 写出，如果看一个 warp 相邻线程的情况就是，都隔着空泡 (4 个 float) 在写数据，而 L1/L2 的访问模式都是按一个 128bytes 作为内存事务进行的，我们分两次写出，其实都发起了两批完全一模一样的内存事务请求，只不过第一次写了其中 64bytes，第二次写了另外 64bytes，这造成了显著浪费。
 
-两个异常提示是同一个问题在 L1 和 L2 两个层面体现，为了解决这个问题。我们可以重新设计一下每个线程负责的 8 列，只要把这 8 列分成两个连续的 4 列，依然可以用 float4 读写，并且可以把相邻线程划到连续的 float4 地址上，比如 T0 读取 0~3，T1 读取 4~7..., 读完一次 float4 后， T0 再读 64~67，T1 读取 68~71... 这样就能保证写回 c 时相邻线程地址是合并的了。
+两个异常提示是同一个问题在 L1 和 L2 两个层面的体现，为了解决这个问题。我们可以重新设计一下每个线程负责的 8 列，只要把这 8 列分成两个连续的 4 列，依然可以用 float4 读写，同时把相邻线程划到连续的 float4 地址上，比如 T0 读取 0~3，T1 读取 4~7..., 读完一次 float4 后， T0 再读 64~67，T1 读取 68~71... 这样就能保证写回 c 时相邻线程地址是合并的了。
 
 ![col_shuffle](static/col_shuffle.svg)
 
@@ -358,6 +358,11 @@ This kernel has uncoalesced global accesses resulting in a total of 2097152 exce
     int c_col_base = (lane_id % 16) * 4;
     int c_col_0 = c_col_base;      // 0~3
     int c_col_1 = c_col_base + 64; // 64~67
+
+    ...
+
+    FLOAT4(reg_b[0]) = FLOAT4(Bs[i][c_col_0]); // 读 0~3
+    FLOAT4(reg_b[4]) = FLOAT4(Bs[i][c_col_1]); // 读 64~67
 ```
 
 ## 6. at_tiling + swizzling + 全合并读写 global memory + 双 smem buffer
@@ -521,7 +526,7 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
 
 选择 M=N=K=4096 并非随意之举。首先，4096 作为完美的 2 的幂次方，能让 cuBLAS 毫无边界判断包袱地跑在 Fast Path 上，展现其最强实力；其次，4096 也是当前主流 7B/8B 大语言模型的标准隐层维度，在 LLM 的 Prefill 阶段极为常见。在这个‘cuBLAS 的绝对主场’也是‘现代 AI 最核心的计算场景’中正面硬刚，更能检验出我们手搓 Kernel 的含金量。
 
-show code 部分结束，说理论性能多好没意义，口说无凭，直接上 benchmark 结果和 ncu profile 报告
+show code 部分结束，说理论性能多好没意义，口说无凭，直接上 benchmark 结果和 ncu profile 报告，测试设备为 RTX 5060 移动版（由于无法排除桌面等应用程序、动态频率的影响，绝对数值会有波动）
 
 ```bash
 ####################################################################################################
@@ -533,10 +538,11 @@ sgemm_at_tiling                mean time: 16.436968 ms, speedup: 0.91
 sgemm_at_bcf_swizzling         mean time: 15.706529 ms, speedup: 0.95
 sgemm_at_bcf_swizzling_rw      mean time: 15.522802 ms, speedup: 0.96
 sgemm_at_bcf_swizzling_dbf_rw  mean time: 14.193397 ms, speedup: 1.06
+####################################################################################################
 sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 ```
 
-从 18.760985 到 14.193397，纯手搓的性能优化，正面硬刚超越 cuBLAS ！这整个过程，我们通过精确地资源分配，设计复杂而精巧的搬运/计算坐标映射，加上双 buffer 流水线技术，实现了超越 cuBLAS 的性能。相信熟练并掌握这些技巧之后，面对绝大多数矩阵相关的算法 kernel 实现，都有信心轻松应对。
+从 18.760985 到 14.193397，纯手搓的性能优化，正面硬刚并超越 cuBLAS ！这整个过程，我们通过精确地资源分配，设计复杂精巧且解耦(a,b,c各不相同)的搬运/计算坐标映射，加上双 buffer 流水线技术，实现了超越 cuBLAS 的性能。相信熟练并掌握这些技巧之后，面对绝大多数矩阵相关的算法 kernel 实现，都有信心轻松应对。
 
 ### ncu 报告
 
@@ -548,8 +554,8 @@ sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 
 通过 ncu 的 report 我们还可以看到一些有意思的东西
 
-- 首先，前两个 swizzling kernel 依然提示了 `shared store bank conflict`，这其实让我一度很自我怀疑，但经过反复手算进行坐标验证，确定不应该出现冲突。然后通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。这其实也让我很费解，因为一个 warp 通过 float4 写入 512bytes，由于物理限制必然展开为 4 次 内存事务 (wavefronts)。我猜大概率 NCU 不知为何在这里粗暴地用 Wavefronts / Requests 比例来触发黄框报警。为此我还专门写了个纯 float4 搬运的微测试（具体见 [test](/kernels/test/))，底层硬件计数器显示确为 0 冲突。如果有对 Profiler 判定规则有更深层见解的朋友，欢迎留言讨论。总之我个人结论就是：不要迷信 ncu 的 UI 警告，如果确信算法中的数学映射无误，那就相信代码。
-- 其次，这个 summary 冲突提示在 double buffer kernel中就消失了（尽管我的 smem 写入逻辑是完全一样的）。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
+- 首先，前两个 swizzling kernel 依然提示了 `shared store bank conflict`，这其实让我一度很自我怀疑，但经过反复手算坐标进行验证，确定不应该出现冲突。然后通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。这其实也让我很费解，因为一个 warp 通过 float4 写入 512 bytes，由于物理限制必然展开为 4 次 内存事务 (wavefronts)。我猜大概率 NCU 不知为何在这里粗暴地用 Wavefronts / Requests 比例来触发黄框报警。为此我还专门写了个纯 float4 搬运的微测试（具体见 [test](/kernels/test/))，底层硬件计数器显示确为 0 冲突。如果有对 Profiler 判定规则有更深层见解的朋友，欢迎留言讨论。总之我个人结论就是：不要迷信 ncu 的 UI 警告，如果确信算法中的数学映射无误，那就相信代码。
+- 其次，这个 summary 冲突提示在 double buffer kernel中消失了（尽管我的 smem 写入逻辑是完全一样的）。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
 - report 中还能看到 cuBLAS 其实是调用了 cutlass 的 kernel（void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)），cutlass SIMT 算子命名规则是`[M]x[N]_[K]x[Stages]`
   - 因此 cuBLAS 对 c 矩阵 tiling 的选择是 128x64（m=128，n=64），跨步 k=8，并且用了恐怖的 5 级流水线来隐藏时延。
   - block size 设置为 128（对应较小的数据搬运量），grid 用了奇怪的 512x4（大概率用了 grid swizzling，重新排布了 block 访问显存的顺序以吃到 L2cache 红利）
