@@ -1,8 +1,8 @@
-# gemm
+# sgemm
 
 ## 说明
 
-gemm kernel
+sgemm kernel
 
 - [x] sgemm_cublas fp32/tf32 版
 - [x] sgemm_tiling (向量化读写 + block tiling共享内存版)
