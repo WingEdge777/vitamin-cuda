@@ -35,7 +35,7 @@ __global__ void load_fp32x4_kernel(float *a, float *b, int n) {
         CHECK_T(a);                                                                                                    \
         CHECK_T(b);                                                                                                    \
         const int N = a.size(0);                                                                                       \
-        const int threads_per_block = 32;                                                                              \
+        const int threads_per_block = 128;                                                                             \
         const dim3 blocks_per_grid = N / num / threads_per_block;                                                      \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
