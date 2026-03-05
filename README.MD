@@ -158,6 +158,7 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
 ## Samples
 
 - [deviceQuery](./samples/deviceQuery)
+- [bankConflictNCU](./samples/bank_conflict_ncu/)
 
 ## Reference
 
