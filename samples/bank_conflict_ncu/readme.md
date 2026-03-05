@@ -1,4 +1,4 @@
-# gemm
+# bank conflict between warps test
 
 ## 说明
 
@@ -9,9 +9,11 @@ load kernel test
 
 本代码用来做一个特殊情况的 bank conflict 验证的，搬运数据随便加个计算然后过一下 smem 立马写回。
 
-网上大量的解释 bank conflict 概念和解决办法的文章，但是少有提到这种特殊情况的。那就是多个 warp 间同时访问 L1/smem 也会产生 bank conflict。现代 gpu，一个 SM 都有多个 sub-core 调度器(大多4个)，多个 warp 是会同时向 L1/smem 发起请求。当这些 warp 同时访问 smem 的相同 bank 的不同地址时，就会产生 bank conflict。这种冲突是无法通过数据布局或者 swizzling 来避免的，因为它是由于硬件调度机制导致的。目前没有看到有解决这种冲突的办法，底层物理调度无可避免，只能降低冲突概率（比如向量化访问或者使用ldmatrix等降低请求分散度），再就是通过流水线计算时延隐藏来掩盖这种冲突开销。（现在异步拷贝+计算重叠已经 kernel 优化必备了）
+网上大量的解释 bank conflict 概念和解决办法的文章，但是少有提到这种特殊情况的。那就是多个 warp 间同时访问 L1/smem 也会产生 bank conflict。
 
-kernel 代码很简单，完美的向量化写入/读取 smem，每个 warp 有 4 个内存事务（wavefronts），理论没有 bank conflict。但是通过跑三个不同规模的数据实验就能看到，前两个小规模的是 0 冲突，最后一个大规模的就有了冲突。
+现代 gpu，一个 SM 都有多个 sub-core 调度器(大多4个)，多个 warp 是会同时向 L1/TEX/Smem 发起请求。当这些 warp 同时访问 smem 的相同 bank 的不同地址时，就会产生 bank conflict。。目前没有看到有解决这种冲突的办法，底层物理调度无可避免，只能降低冲突概率（比如向量化访问或者使用ldmatrix等降低请求分散度），再就是通过流水线计算时延隐藏来掩盖这种冲突开销。（现在异步拷贝+计算重叠已经是 kernel 优化必备了）
+
+kernel 代码很简单，向量化写入/读取 smem，每个 warp 有 4 个内存事务（wavefronts），理论上没有 bank conflict。但是通过跑三个不同规模的数据实验就能看到，前两个小规模的是 0 冲突，最后一个大规模的就有了冲突。
 
 具体看下面的第三个测试结果，266148 wavefronts 有 4004 次冲突（1.5%），嘿嘿~
 
@@ -65,4 +67,4 @@ bash run_ncu.sh
     -------------------------------------------------------- ----------- ------------
 ```
 
-更多详细 bank conflict 分析，不要看乱七八糟的博客了，可以直接参考 NV 技术报告：<https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41723/>
+更多详细有关 bank conflict 理解和分析，不要看乱七八糟的博客了，可以直接参考 NV 技术报告：<https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41723/>
