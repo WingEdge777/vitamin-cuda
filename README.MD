@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="600">
+  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="800">
 </p>
 
 <p align="center">
@@ -169,6 +169,8 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] sgemm_at_bcf_swizzling_rw (向量化读写 + at + swizzle + c写回事务合并)
   - [x] sgemm_at_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + double buffer流水线, 超越cuBLAS ！)
   - [x] pytorch op bindings && diff check
+
+<div id="samples"></div>
 
 ## Samples
 
