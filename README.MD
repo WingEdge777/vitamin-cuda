@@ -1,10 +1,25 @@
-# Vitamin-CUDA 🧠
+<p align="center">
+  <img src="posts/static/vw-logo.png" alt="Vitamin-CUDA" width="800">
+</p>
 
-> **One Kernel a Day, Keeps High Latency Away.** 🚀
+<p align="center">
+  <b>Vitamin-CUDA: A hands-on CUDA dev learning notes from novice to expert.</b>
+</p>
+<p align="center">
+  <em>One Kernel a Day, Keeps High Latency Away. 🚀</em>
+</p>
+
+<!-- <p align="center">
+  <a href="https://hellogithub.com/...">
+    <img src="https://img.shields.io/badge/HelloGitHub-Review-blue" alt="HelloGitHub">
+  </a>
+</p> -->
+
+<br>
 
 Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated collection of hands-on CUDA practices, designed to take you from **Hello World** to **High Performance**. Whether you are a beginner looking to understand the grid-stride loop or an enthusiast diving into warp-level primitives, there's a kernel here for you.
 
-💊Let's get started and happy coding! 🧠
+💻 Let's get started and happy coding! ⌨️
 
 ## News
 

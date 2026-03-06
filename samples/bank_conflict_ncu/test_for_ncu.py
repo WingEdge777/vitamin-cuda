@@ -29,7 +29,7 @@ lib = load(
 
 if __name__ == "__main__":
     # test the kernel
-    for sz in [512, 512*128, 512*128*128]:
+    for sz in [512, 512*128, 512*128*128, 512*512*512]:
         a = torch.randn(sz).float().cuda()
         b = torch.zeros_like(a)
         lib.load_fp32x4(a, b)
