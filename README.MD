@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="posts/static/vw-logo.png" alt="Vitamin-CUDA" width="800">
+  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="800">
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
   </a>
 </p> -->
 
-<br>
+<!-- <br> -->
 
 Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated collection of hands-on CUDA practices, designed to take you from **Hello World** to **High Performance**. Whether you are a beginner looking to understand the grid-stride loop or an enthusiast diving into warp-level primitives, there's a kernel here for you.
 
