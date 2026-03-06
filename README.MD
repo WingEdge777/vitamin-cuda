@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="800">
+  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="600">
 </p>
 
 <p align="center">
-  <b>Vitamin-CUDA: A hands-on CUDA dev learning notes from novice to expert.</b>
+  <b>A hands-on CUDA dev learning path from novice to expert.</b>
 </p>
 <p align="center">
   <em>One Kernel a Day, Keeps High Latency Away. 🚀</em>
