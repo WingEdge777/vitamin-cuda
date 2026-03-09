@@ -169,6 +169,10 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] sgemm_at_bcf_swizzling_rw (向量化读写 + at + swizzle + c写回事务合并)
   - [x] sgemm_at_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + double buffer流水线, 超越cuBLAS ！)
   - [x] pytorch op bindings && diff check
+- [sgemm_TF32](./kernels/sgemm/)
+  - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
+  - [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
+  - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
 
