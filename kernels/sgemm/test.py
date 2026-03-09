@@ -29,7 +29,7 @@ lib = load(
 baseline = None
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=300, prefix="torch"):
+def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
     if c is not None:
         # warm up
         for i in range(warmup):
@@ -64,7 +64,7 @@ def benchmark(op, a, b, c=None, warmup=10, rep=300, prefix="torch"):
 
 def diff_check(a, b, prefix="torch", eps=1e-3):
     if "tf32" in prefix:
-        eps = 0.2
+        eps = 0.1
     if not torch.allclose(a, b, atol=eps, rtol=eps):
         print(f"{prefix} result diff: {torch.mean(torch.abs(a - b)).item()}")
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
@@ -189,6 +189,14 @@ def test_tf32():
         prefix="sgemm_tf32_bt_swizzle",
     )
     diff_check(c, c_my, prefix="sgemm_tf32_bt_swizzle")
+    benchmark(
+        lib.sgemm_tf32_bt_swizzle_dbf,
+        a,
+        b,
+        c_my,
+        prefix="sgemm_tf32_bt_swizzle_dbf",
+    )
+    diff_check(c, c_my, prefix="sgemm_tf32_bt_swizzle_dbf")
 
 if __name__ == "__main__":
     # test_all()
