@@ -512,6 +512,9 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
 extern void sgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_cublas_tf32(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 
+extern void sgemm_tf32_bt(torch::Tensor a, torch::Tensor b, torch::Tensor c);
+extern void sgemm_tf32_bt_swizzle(torch::Tensor a, torch::Tensor b, torch::Tensor c);
+
 binding_func_gen(sgemm_naive, 1, float);
 
 binding_tiled_func_gen(sgemm_tiling);
@@ -525,11 +528,14 @@ binding_tiled_func_gen(sgemm_at_bcf_swizzling_dbf_rw);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(sgemm_cublas);
-    torch_pybinding_func(sgemm_cublas_tf32);
     torch_pybinding_func(sgemm_naive);
     torch_pybinding_func(sgemm_tiling);
     torch_pybinding_func(sgemm_at_tiling);
     torch_pybinding_func(sgemm_at_bcf_swizzling);
     torch_pybinding_func(sgemm_at_bcf_swizzling_rw);
     torch_pybinding_func(sgemm_at_bcf_swizzling_dbf_rw);
+    // tensor core
+    torch_pybinding_func(sgemm_cublas_tf32);
+    torch_pybinding_func(sgemm_tf32_bt);
+    torch_pybinding_func(sgemm_tf32_bt_swizzle);
 }
