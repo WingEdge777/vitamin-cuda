@@ -26,7 +26,18 @@ export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,no
 python test.py
 ```
 
-### sgemm 输出
+## sgemm tf32 输出
+
+```yaml
+####################################################################################################
+n: 4096, m: 4096, k: 4096
+torch                          mean time: 15.270862 ms
+sgemm_cublas_tf32              mean time: 8.529436 ms, speedup: 1.79
+sgemm_tf32_bt                  mean time: 15.996512 ms, speedup: 0.95
+sgemm_tf32_bt_swizzle          mean time: 9.753969 ms, speedup: 1.57
+```
+
+## sgemm 输出
 
 ### 4096x4096x4096
 
