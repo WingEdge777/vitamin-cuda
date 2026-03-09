@@ -510,7 +510,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
 __global__
-__launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_kernel(float *a, float *b, float *c, int m, int n, int k) {
+__launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
     int tid = threadIdx.x; // 0~255
     int warp_id = tid / WARP_SIZE;
@@ -675,4 +675,4 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_kernel(float *a, float *
 binding_tiled_func_gen(sgemm_tf32_bt);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle_dbf);
-binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle);
+binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle_bcf);
