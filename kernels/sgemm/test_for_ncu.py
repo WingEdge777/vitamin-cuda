@@ -115,6 +115,13 @@ def run_tf32():
         c_my,
         prefix="sgemm_tf32_bt_swizzle",
     )
+    benchmark(
+        lib.sgemm_tf32_bt_swizzle_dbf,
+        a,
+        b,
+        c_my,
+        prefix="sgemm_tf32_bt_swizzle_dbf",
+    )
 
 
 if __name__ == "__main__":

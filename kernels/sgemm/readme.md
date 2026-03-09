@@ -31,10 +31,11 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                          mean time: 15.270862 ms
-sgemm_cublas_tf32              mean time: 8.529436 ms, speedup: 1.79
-sgemm_tf32_bt                  mean time: 15.996512 ms, speedup: 0.95
-sgemm_tf32_bt_swizzle          mean time: 9.753969 ms, speedup: 1.57
+torch                          mean time: 14.938668 ms
+sgemm_cublas_tf32              mean time: 8.706780 ms, speedup: 1.72
+sgemm_tf32_bt                  mean time: 16.126631 ms, speedup: 0.93
+sgemm_tf32_bt_swizzle          mean time: 10.361509 ms, speedup: 1.44
+sgemm_tf32_bt_swizzle_dbf      mean time: 9.042201 ms, speedup: 1.65
 ```
 
 ## sgemm 输出
