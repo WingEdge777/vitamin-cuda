@@ -18,7 +18,7 @@ sgemm tf32 kernel
 - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
 - [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多)
 - [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多, 96% cuBLAS 性能)
-- [x] sgemm_tf32_bshfl_swizzle (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突， 97% cuBLAS 性能)
+- [x] sgemm_tf32_bshfl_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突， 97% cuBLAS 性能)
 - [x] pytorch op bindings && diff check
 
 ## 测试
@@ -38,7 +38,7 @@ sgemm_cublas_tf32              mean time: 9.032715 ms, speedup: 1.76
 sgemm_tf32_bt                  mean time: 21.636851 ms, speedup: 0.74
 sgemm_tf32_bt_swizzle          mean time: 10.307738 ms, speedup: 1.55
 sgemm_tf32_bt_swizzle_dbf      mean time: 9.304908 ms, speedup: 1.71
-sgemm_tf32_bshfl_swizzle       mean time: 9.232044 ms, speedup: 1.73
+sgemm_tf32_bshfl_swizzle_bcf   mean time: 9.232044 ms, speedup: 1.73
 ```
 
 ## sgemm 输出

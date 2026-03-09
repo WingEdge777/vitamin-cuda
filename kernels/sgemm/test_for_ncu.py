@@ -123,11 +123,11 @@ def run_tf32():
         prefix="sgemm_tf32_bt_swizzle_dbf",
     )
     benchmark(
-        lib.sgemm_tf32_bshfl_swizzle,
+        lib.sgemm_tf32_bshfl_swizzle_bcf,
         a,
         b,
         c_my,
-        prefix="sgemm_tf32_bshfl_swizzle",
+        prefix="sgemm_tf32_bshfl_swizzle_bcf",
     )
 
 
