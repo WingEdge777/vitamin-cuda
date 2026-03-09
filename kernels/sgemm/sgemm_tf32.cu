@@ -10,14 +10,17 @@
 #include <torch/extension.h>
 #include <torch/types.h>
 
+#define UINT2(value) (reinterpret_cast<uint2 *>(&(value))[0])
 #define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 
 // A 矩阵: 写入时跨度小，按行求余
-#define SWIZZLE_A(row, col) ((col) ^ (((row >> 1) % 4) << 2))
+#define SWIZZLE_A(row, col) ((col) ^ (((row >> 1) & 0x3) << 2))
 // B 矩阵: 写入时列跨度大，除以 4 后求余
-#define SWIZZLE_B(row, col) ((col) ^ ((((row) >> 2) % 4) << 2))
+#define SWIZZLE_B(row, col) ((col) ^ ((((row) >> 2) & 0x3) << 2))
+
+#define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 3))
 
 // ---------------- 内联 PTX 汇编宏定义 ----------------
 // cp.async: 从 Global (src) 异步拷贝 16 Bytes 到 Shared (dst_smem_32b)
@@ -45,7 +48,7 @@
 
 const int WARP_SIZE = 32;
 
-// ----------------------------------- kernels --------------------------------------------------
+// ------------------------------------------ b trans + ldmatrix  ----------------------------------------------------
 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
@@ -155,6 +158,8 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
     }
 
     // Tensor Core m16n8k8 C 寄存器碎片的标准排布映射法则
+    // c fragments layout:
+    // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688 1688.tf32
     int t_row = lane_id / 4;       // 0~7
     int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
 
@@ -500,6 +505,153 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
     }
 }
 
+// -------------------------------------------------------- b cp.async + shfl ---------------------------------------
+
+// a block calculate c[128][128]
+template <const int BM = 128, const int BN = 128, const int BK = 16>
+__global__
+__launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_kernel(float *a, float *b, float *c, int m, int n, int k) {
+    int bx = blockIdx.x, by = blockIdx.y;
+    int tid = threadIdx.x; // 0~255
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+
+    // 搬运映射
+    int load_a_row = tid / 4;               // 0~63
+    int load_a_col = (tid % 4) * 4;         // 0,4,8,12
+    int load_b_row = tid / WARP_SIZE;       // 0~7  (K维度)
+    int load_b_col = (tid % WARP_SIZE) * 4; // 0~124 (N维度)
+
+    // A/B 保持 Row-Major [BM][BK]，
+    __shared__ float As[BM][BK];
+    __shared__ float Bs[BK][BN];
+
+    // warp tiling
+    // 每个 warp 负责  64 x 32 的 C 矩阵块
+    int warp_id_m = warp_id / 4; // 0, 1
+    int warp_id_n = warp_id % 4; // 0, 1, 2, 3
+
+    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64 个浮点寄存器/线程 (寄存器总量完美保持不变)
+    float sum[4][4][4] = {0.f};
+
+    // 主循环
+    for (int bk = 0; bk < k; bk += BK) {
+
+        // 1. 使用 cp.async 加载 A 矩阵
+        uint32_t smem_a0 =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
+        uint32_t smem_a1 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&As[load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
+
+        float *global_a0 = &a[(by * BM + load_a_row) * k + bk + load_a_col];
+        float *global_a1 = &a[(by * BM + load_a_row + 64) * k + bk + load_a_col];
+
+        CP_ASYNC_CG(smem_a0, global_a0);
+        CP_ASYNC_CG(smem_a1, global_a1);
+
+        // cp.async load B
+        uint32_t smem_b0 =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[load_b_row][SWIZZLE_B_F2(load_b_row, load_b_col)]));
+        uint32_t smem_b1 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&Bs[load_b_row + 8][SWIZZLE_B_F2(load_b_row + 8, load_b_col)]));
+
+        float *global_b0 = &b[(bk + load_b_row) * n + bx * BN + load_b_col];
+        float *global_b1 = &b[(bk + load_b_row + 8) * n + bx * BN + load_b_col];
+
+        CP_ASYNC_CG(smem_b0, global_b0);
+        CP_ASYNC_CG(smem_b1, global_b1);
+        // 提交所有的异步拷贝任务
+        CP_ASYNC_COMMIT_GROUP();
+        CP_ASYNC_WAIT_GROUP_0();
+        __syncthreads();
+
+        // 3. Tensor Core 计算阶段 (K 维度走 2 步，每次消耗 8 个 K)
+#pragma unroll
+        for (int k_step = 0; k_step < 2; ++k_step) {
+            int k_offset = k_step * 8;
+
+            uint32_t reg_a[4][4];
+            uint32_t reg_b[4][2];
+
+            // 发射 4 次 ldmatrix 获取 A 矩阵块 (4 * 16 = 64 行)
+#pragma unroll
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
+                int a_col = k_offset + (lane_id / 16) * 4;
+                uint32_t smem_addr =
+                    static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_A(a_row, a_col)]));
+                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+            }
+
+            // 用float2 load，然后 warp shuffle， 获取 B 矩阵块 (4 * 8 = 32 列)
+#pragma unroll
+            for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                int n_base = warp_id_n * 32 + n_idx * 8;
+
+                int load_row = lane_id / 4;       // 0~7 行，每四线程一行
+                int load_col = (lane_id % 4) * 2; // 读float2：0~1, 2~3, 4~5, 6~7 列
+
+                uint2 loaded_b = UINT2(Bs[k_offset + load_row][SWIZZLE_B_F2(k_offset + load_row, n_base + load_col)]);
+
+                // shuffle 成 ldmatrix.sync.aligned.m8n8.x2 寄存器结果, 也就是 mma 1688 tf32 的 b fragments：
+                // 8x8 的矩阵转置后，每 4 个线程一列: b[lane_id%4][lane_id/4], b[lane_id%4 + 4][lane_id/4]
+                // T0 : b[0][0], b[4][0]，T1：b[1][0],b[5][0] ...
+                // T4 : b[0][1], b[4][1], T5: b[1][1],b[5][1] ...
+                // ...
+                int src_thread_0 = (lane_id % 4) * 4 + (lane_id / 8);
+                int src_thread_1 = src_thread_0 + 16;
+
+                uint32_t x0 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_0);
+                uint32_t y0 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_0);
+                uint32_t x1 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_1);
+                uint32_t y1 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_1);
+                bool use_y = ((lane_id / 4) % 2) != 0; // 偶数列取x, 奇数列取y
+
+                reg_b[n_idx][0] = use_y ? y0 : x0;
+                reg_b[n_idx][1] = use_y ? y1 : x1;
+            }
+
+            // MMA 核心运算：4x4 的 1688
+#pragma unroll
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+                for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                    M16N8K8(sum[m_idx][n_idx][0],
+                            sum[m_idx][n_idx][1],
+                            sum[m_idx][n_idx][2],
+                            sum[m_idx][n_idx][3],
+                            reg_a[m_idx][0],
+                            reg_a[m_idx][1],
+                            reg_a[m_idx][2],
+                            reg_a[m_idx][3],
+                            reg_b[n_idx][0],
+                            reg_b[n_idx][1]);
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    // Tensor Core m16n8k8 C 寄存器碎片的标准排布映射法则
+    int t_row = lane_id / 4;       // 0~7
+    int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
+
+#pragma unroll
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            // 根据新的 Warp 跨度重新计算 Global C 的基址
+            int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
+            int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
+
+            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m_idx][n_idx][0];
+            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][1];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m_idx][n_idx][2];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
+        }
+    }
+}
+
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
 #define binding_tiled_func_gen(name)                                                                                   \
@@ -523,3 +675,4 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
 binding_tiled_func_gen(sgemm_tf32_bt);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle_dbf);
+binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle);
