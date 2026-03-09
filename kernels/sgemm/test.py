@@ -150,7 +150,7 @@ def test_4096():
     )
     diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
 
-def test_tf32():
+def test_tf32_4096():
     m, n, k = [4096] * 3
     print("#" * 100)
     print(f"n: {n}, m: {m}, k: {k}")
@@ -201,4 +201,4 @@ def test_tf32():
 if __name__ == "__main__":
     # test_all()
     # test_4096()
-    test_tf32()
+    test_tf32_4096()
