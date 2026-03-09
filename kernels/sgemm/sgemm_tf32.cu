@@ -85,14 +85,12 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
 
         CP_ASYNC_CG(smem_a0, global_a0);
         CP_ASYNC_CG(smem_a1, global_a1);
+        // 提交所有的异步拷贝任务
+        CP_ASYNC_COMMIT_GROUP();
 
         // 2. 加载 B 矩阵并手动转置写入 Shared Memory
         float4 tmp_b0 = FLOAT4(b[(bk + load_b_row) * n + bx * BN + load_b_col]);
         float4 tmp_b1 = FLOAT4(b[(bk + load_b_row + 8) * n + bx * BN + load_b_col]);
-
-        // 提交所有的异步拷贝任务，并阻塞等待当前 Group 里的任务全部完成
-        CP_ASYNC_COMMIT_GROUP();
-        CP_ASYNC_WAIT_GROUP_0();
 
         // 将读取的 B 手动打散转置写入 Shared Memory
         Bs[load_b_col + 0][load_b_row] = tmp_b0.x;
@@ -104,6 +102,7 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
         Bs[load_b_col + 2][load_b_row + 8] = tmp_b1.z;
         Bs[load_b_col + 3][load_b_row + 8] = tmp_b1.w;
 
+        CP_ASYNC_WAIT_GROUP_0();
         __syncthreads();
 
         // 3. Tensor Core 计算阶段 (K 维度走 2 步，每次消耗 8 个 K)
@@ -204,24 +203,22 @@ __global__ __launch_bounds__(256,
     // 主循环
     for (int bk = 0; bk < k; bk += BK) {
 
-        // 1. 使用 cp.async 加载 A 矩阵，带上 SWIZZLE_A
-        int a_swizzle_col_0 = SWIZZLE_A(load_a_row, load_a_col);
-        int a_swizzle_col_1 = SWIZZLE_A(load_a_row + 64, load_a_col);
-        uint32_t smem_a0 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row][a_swizzle_col_0]));
-        uint32_t smem_a1 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row + 64][a_swizzle_col_1]));
+        // 1. 使用 cp.async swizzling 加载 A 矩阵
+        uint32_t smem_a0 =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
+        uint32_t smem_a1 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&As[load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
 
         float *global_a0 = &a[(by * BM + load_a_row) * k + bk + load_a_col];
         float *global_a1 = &a[(by * BM + load_a_row + 64) * k + bk + load_a_col];
 
         CP_ASYNC_CG(smem_a0, global_a0);
         CP_ASYNC_CG(smem_a1, global_a1);
+        CP_ASYNC_COMMIT_GROUP(); // 提交
 
         // 2. 加载 B 矩阵
         float4 tmp_b0 = FLOAT4(b[(bk + load_b_row) * n + bx * BN + load_b_col]);
         float4 tmp_b1 = FLOAT4(b[(bk + load_b_row + 8) * n + bx * BN + load_b_col]);
-
-        CP_ASYNC_COMMIT_GROUP();
-        CP_ASYNC_WAIT_GROUP_0();
 
         // 将读取的 B 手动打散转置写入 Shared Memory，带上 SWIZZLE_B
         Bs[load_b_col + 0][SWIZZLE_B(load_b_col + 0, load_b_row)] = tmp_b0.x;
@@ -234,6 +231,7 @@ __global__ __launch_bounds__(256,
         Bs[load_b_col + 2][SWIZZLE_B(load_b_col + 2, load_b_row + 8)] = tmp_b1.z;
         Bs[load_b_col + 3][SWIZZLE_B(load_b_col + 3, load_b_row + 8)] = tmp_b1.w;
 
+        CP_ASYNC_WAIT_GROUP_0();
         __syncthreads();
 
         // 3. Tensor Core 计算阶段
@@ -338,13 +336,11 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
 
     CP_ASYNC_CG(smem_a0, global_a0);
     CP_ASYNC_CG(smem_a1, global_a1);
+    CP_ASYNC_COMMIT_GROUP();
 
     // B 矩阵同步加载进物理寄存器
     float4 tmp_b0 = FLOAT4(b[(0 + load_b_row) * n + bx * BN + load_b_col]);
     float4 tmp_b1 = FLOAT4(b[(0 + load_b_row + 8) * n + bx * BN + load_b_col]);
-
-    CP_ASYNC_COMMIT_GROUP();
-    CP_ASYNC_WAIT_GROUP_0();
 
     // B 矩阵转置写入 SMEM
     Bs[0][load_b_col + 0][SWIZZLE_B(load_b_col + 0, load_b_row)] = tmp_b0.x;
@@ -357,6 +353,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
     Bs[0][load_b_col + 2][SWIZZLE_B(load_b_col + 2, load_b_row + 8)] = tmp_b1.z;
     Bs[0][load_b_col + 3][SWIZZLE_B(load_b_col + 3, load_b_row + 8)] = tmp_b1.w;
 
+    CP_ASYNC_WAIT_GROUP_0();
     __syncthreads();
 
     int read_idx = 0;
@@ -379,7 +376,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         CP_ASYNC_CG(smem_a1, global_a1);
         CP_ASYNC_COMMIT_GROUP();
 
-// 2. 使用【当前轮】的 read_idx 缓冲进行Tensor Core 计算
+        // 2. 使用【当前轮】的 read_idx 缓冲进行Tensor Core 计算
 #pragma unroll
         for (int k_step = 0; k_step < 2; ++k_step) {
             int k_offset = k_step * 8;
@@ -422,11 +419,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
             }
         }
 
-        // 3. 计算完毕，等待 A 矩阵落入 Shared Memory
-        CP_ASYNC_WAIT_GROUP_0();
-        __syncthreads();
-
-        // 4. 将预取在寄存器里的【下一轮】 B 矩阵，写入 Shared Memory
+        // 3. 将预取在寄存器里的【下一轮】 B 矩阵，写入 Shared Memory
         Bs[write_idx][load_b_col + 0][SWIZZLE_B(load_b_col + 0, load_b_row)] = tmp_b0.x;
         Bs[write_idx][load_b_col + 1][SWIZZLE_B(load_b_col + 1, load_b_row)] = tmp_b0.y;
         Bs[write_idx][load_b_col + 2][SWIZZLE_B(load_b_col + 2, load_b_row)] = tmp_b0.z;
@@ -437,6 +430,8 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         Bs[write_idx][load_b_col + 2][SWIZZLE_B(load_b_col + 2, load_b_row + 8)] = tmp_b1.z;
         Bs[write_idx][load_b_col + 3][SWIZZLE_B(load_b_col + 3, load_b_row + 8)] = tmp_b1.w;
 
+        // 4. 同步
+        CP_ASYNC_WAIT_GROUP_0();
         __syncthreads();
 
         // 切换乒乓缓冲指针
