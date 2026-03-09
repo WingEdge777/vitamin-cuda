@@ -23,7 +23,8 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 ## News
 
-- [2026.02.27] [sgemm](./kernels/sgemm/) SIMT kernel outperforming cublas with `smem + swizzle + double buffer + coalesced r/w`🚀
+- [2026.03.09] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel achiving 96% cuBLAS's performance (and waiting for improvement)🚀
+- [2026.02.27] [sgemm](./kernels/sgemm/) SIMT kernel outperforming cuBLAS with `smem + swizzle + double buffer + coalesced r/w`🚀
 
 ## Contents 📖
 
@@ -162,16 +163,18 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] gemv fp32x4（向量化读取）
   - [x] pytorch op bindings && diff check
 - [sgemm](./kernels/sgemm/)
-  - [x] sgemm_cublas fp32/tf32 版
+  - [x] sgemm_cublas fp32 版
   - [x] sgemm_tiling (向量化读写 + block tiling共享内存版)
   - [x] sgemm_at_tiling (向量化读写 + a矩阵转置写入smem, 4-way 写入冲突, 内层循环float4读取)
   - [x] sgemm_at_bcf_swizzling (向量化读写 + at + swizzle， 无冲突版)
   - [x] sgemm_at_bcf_swizzling_rw (向量化读写 + at + swizzle + c写回事务合并)
   - [x] sgemm_at_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + double buffer流水线, 超越cuBLAS ！)
   - [x] pytorch op bindings && diff check
-- [sgemm_TF32](./kernels/sgemm/)
+- [sgemm_tf32](./kernels/sgemm/)
+  - [x] sgemm_cublas tf32 版
   - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
-  - [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
+  - [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多)
+  - [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多, 96% cuBLAS 性能)
   - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>

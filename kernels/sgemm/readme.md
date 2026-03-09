@@ -16,7 +16,8 @@ sgemm tf32 kernel
 
 - [x] sgemm_cublas tf32 版
 - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
-- [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
+- [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多)
+- [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多, 96% cuBLAS 性能)
 - [x] pytorch op bindings && diff check
 
 ## 测试
@@ -31,11 +32,11 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                          mean time: 14.938668 ms
-sgemm_cublas_tf32              mean time: 8.706780 ms, speedup: 1.72
-sgemm_tf32_bt                  mean time: 16.126631 ms, speedup: 0.93
-sgemm_tf32_bt_swizzle          mean time: 10.361509 ms, speedup: 1.44
-sgemm_tf32_bt_swizzle_dbf      mean time: 9.042201 ms, speedup: 1.65
+torch                          mean time: 15.070608 ms
+sgemm_cublas_tf32              mean time: 8.577164 ms, speedup: 1.76
+sgemm_tf32_bt                  mean time: 16.022065 ms, speedup: 0.94
+sgemm_tf32_bt_swizzle          mean time: 9.965581 ms, speedup: 1.51
+sgemm_tf32_bt_swizzle_dbf      mean time: 8.901148 ms, speedup: 1.69
 ```
 
 ## sgemm 输出
