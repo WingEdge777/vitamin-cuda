@@ -11,7 +11,7 @@ common_flags = ["-O3", "-std=c++17"]
 # Load the CUDA kernel as a python module
 lib = load(
     name="gemm_lib",
-    sources=["sgemm.cu", "cublas.cu"],
+    sources=["sgemm.cu", "cublas.cu", "sgemm_tf32.cu"],
     extra_cuda_cflags=common_flags
     + [
         "-U__CUDA_NO_HALF_OPERATORS__",
@@ -62,16 +62,7 @@ def benchmark(op, a, b, c=None, warmup=0, rep=1, prefix="torch"):
         )
 
 
-def diff_check(a, b, prefix="torch", eps=1e-3):
-    if "tf32" in prefix:
-        eps = 0.2
-    if not torch.allclose(a, b, atol=eps, rtol=eps):
-        print(f"{prefix} result diff: {torch.mean(torch.abs(a - b)).item()}")
-    assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
-
-
-if __name__ == "__main__":
-    # test the kernel
+def run_fp32():
     n, m, k = 4096, 4096, 4096
     print("#" * 100)
     print(f"m: {m}, n: {n}, k: {k}")
@@ -89,15 +80,43 @@ if __name__ == "__main__":
     benchmark(lib.sgemm_tiling, a, b, c_my, prefix="sgemm_tiling")
     benchmark(lib.sgemm_at_tiling, a, b, c_my, prefix="sgemm_at_tiling")
     benchmark(lib.sgemm_at_bcf_swizzling, a, b, c_my, prefix="sgemm_at_bcf_swizzling")
-    benchmark(lib.sgemm_at_bcf_swizzling_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_rw")
-    benchmark(lib.sgemm_at_bcf_swizzling_dbf_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_dbf_rw")
+    benchmark(
+        lib.sgemm_at_bcf_swizzling_rw, a, b, c_my, prefix="sgemm_at_bcf_swizzling_rw"
+    )
+    benchmark(
+        lib.sgemm_at_bcf_swizzling_dbf_rw,
+        a,
+        b,
+        c_my,
+        prefix="sgemm_at_bcf_swizzling_dbf_rw",
+    )
 
-    # Tensor core
-    # benchmark(
-    #     lib.sgemm_cublas_tf32,
-    #     a,
-    #     b,
-    #     c_cublas,
-    #     prefix="sgemm_cublas_tf32",
-    # )
-    # diff_check(c, c_cublas, prefix="sgemm_cublas_tf32")
+
+def run_tf32():
+    n, m, k = 4096, 4096, 4096
+    print("#" * 100)
+    print(f"m: {m}, n: {n}, k: {k}")
+    # a x b = c
+    a = torch.randn(m, k).float().cuda()
+    b = torch.randn(k, n).float().cuda()
+    c = torch.zeros(m, n).float().cuda()
+
+    # cuda core
+    # benchmark(partial(torch.matmul, out=c), a, b)
+    c_cublas = torch.zeros_like(c)
+    benchmark(lib.sgemm_cublas_tf32, a, b, c_cublas, prefix="sgemm_cublas_tf32")
+    c_my = torch.zeros_like(c)
+    # benchmark(lib.sgemm_naive, a, b, c_my, prefix="sgemm_naive")
+    benchmark(lib.sgemm_tf32_bt, a, b, c_my, prefix="sgemm_tf32_bt")
+    benchmark(
+        lib.sgemm_tf32_bt_swizzle,
+        a,
+        b,
+        c_my,
+        prefix="sgemm_tf32_bt_swizzle",
+    )
+
+
+if __name__ == "__main__":
+    # run_fp32()
+    run_tf32()
