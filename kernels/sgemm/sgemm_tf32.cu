@@ -115,12 +115,12 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
 
             // 发射 4 次 ldmatrix 获取 A 矩阵块 (4 * 16 = 64 行)
 #pragma unroll
-            for (int m = 0; m < 4; ++m) {
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
                 // warp_id_m 跨度是 64
-                int a_row = warp_id_m * 64 + m * 16 + (lane_id % 16);
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
                 int a_col = k_offset + (lane_id / 16) * 4;
                 uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][a_col]));
-                LDMATRIX_X4(reg_a[m][0], reg_a[m][1], reg_a[m][2], reg_a[m][3], smem_addr);
+                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
 
             // 发射 4 次 ldmatrix 获取 B 矩阵块 (4 * 8 = 32 列)
@@ -135,17 +135,17 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
 
             // MMA 核心运算：4x4 的 1688
 #pragma unroll
-            for (int m = 0; m < 4; ++m) {
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
                 for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                    M16N8K8(sum[m][n_idx][0],
-                            sum[m][n_idx][1],
-                            sum[m][n_idx][2],
-                            sum[m][n_idx][3],
-                            reg_a[m][0],
-                            reg_a[m][1],
-                            reg_a[m][2],
-                            reg_a[m][3],
+                    M16N8K8(sum[m_idx][n_idx][0],
+                            sum[m_idx][n_idx][1],
+                            sum[m_idx][n_idx][2],
+                            sum[m_idx][n_idx][3],
+                            reg_a[m_idx][0],
+                            reg_a[m_idx][1],
+                            reg_a[m_idx][2],
+                            reg_a[m_idx][3],
                             reg_b[n_idx][0],
                             reg_b[n_idx][1]);
                 }
@@ -159,17 +159,17 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
     int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
 
 #pragma unroll
-    for (int m = 0; m < 4; ++m) {
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
             // 根据新的 Warp 跨度重新计算 Global C 的基址
-            int c_base_row = by * BM + warp_id_m * 64 + m * 16;
+            int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
             int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
 
-            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m][n_idx][0];
-            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m][n_idx][1];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m][n_idx][2];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m][n_idx][3];
+            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m_idx][n_idx][0];
+            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][1];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m_idx][n_idx][2];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
 }
@@ -244,12 +244,12 @@ __global__ __launch_bounds__(256,
 
             // 发射 4 次 ldmatrix 获取 A 矩阵块，利用 SWIZZLE_A 解码地址
 #pragma unroll
-            for (int m = 0; m < 4; ++m) {
-                int a_row = warp_id_m * 64 + m * 16 + (lane_id % 16);
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
                 int a_col = k_offset + (lane_id / 16) * 4;
                 uint32_t smem_addr =
                     static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_A(a_row, a_col)]));
-                LDMATRIX_X4(reg_a[m][0], reg_a[m][1], reg_a[m][2], reg_a[m][3], smem_addr);
+                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
 
             // 发射 4 次 ldmatrix 获取 B 矩阵块，利用 SWIZZLE_B 解码地址
@@ -264,17 +264,17 @@ __global__ __launch_bounds__(256,
 
             // MMA 核心运算：4x4 的 1688
 #pragma unroll
-            for (int m = 0; m < 4; ++m) {
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
                 for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                    M16N8K8(sum[m][n_idx][0],
-                            sum[m][n_idx][1],
-                            sum[m][n_idx][2],
-                            sum[m][n_idx][3],
-                            reg_a[m][0],
-                            reg_a[m][1],
-                            reg_a[m][2],
-                            reg_a[m][3],
+                    M16N8K8(sum[m_idx][n_idx][0],
+                            sum[m_idx][n_idx][1],
+                            sum[m_idx][n_idx][2],
+                            sum[m_idx][n_idx][3],
+                            reg_a[m_idx][0],
+                            reg_a[m_idx][1],
+                            reg_a[m_idx][2],
+                            reg_a[m_idx][3],
                             reg_b[n_idx][0],
                             reg_b[n_idx][1]);
                 }
@@ -288,16 +288,16 @@ __global__ __launch_bounds__(256,
     int t_col = (lane_id % 4) * 2;
 
 #pragma unroll
-    for (int m = 0; m < 4; ++m) {
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int c_base_row = by * BM + warp_id_m * 64 + m * 16;
+            int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
             int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
 
-            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m][n_idx][0];
-            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m][n_idx][1];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m][n_idx][2];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m][n_idx][3];
+            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m_idx][n_idx][0];
+            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][1];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m_idx][n_idx][2];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
 }
@@ -384,12 +384,12 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
             uint32_t reg_b[4][2];
 
 #pragma unroll
-            for (int m = 0; m < 4; ++m) {
-                int a_row = warp_id_m * 64 + m * 16 + (lane_id % 16);
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
                 int a_col = k_offset + (lane_id / 16) * 4;
                 uint32_t smem_addr =
                     static_cast<uint32_t>(__cvta_generic_to_shared(&As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
-                LDMATRIX_X4(reg_a[m][0], reg_a[m][1], reg_a[m][2], reg_a[m][3], smem_addr);
+                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
 
 #pragma unroll
@@ -402,17 +402,17 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
             }
 
 #pragma unroll
-            for (int m = 0; m < 4; ++m) {
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
                 for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                    M16N8K8(sum[m][n_idx][0],
-                            sum[m][n_idx][1],
-                            sum[m][n_idx][2],
-                            sum[m][n_idx][3],
-                            reg_a[m][0],
-                            reg_a[m][1],
-                            reg_a[m][2],
-                            reg_a[m][3],
+                    M16N8K8(sum[m_idx][n_idx][0],
+                            sum[m_idx][n_idx][1],
+                            sum[m_idx][n_idx][2],
+                            sum[m_idx][n_idx][3],
+                            reg_a[m_idx][0],
+                            reg_a[m_idx][1],
+                            reg_a[m_idx][2],
+                            reg_a[m_idx][3],
                             reg_b[n_idx][0],
                             reg_b[n_idx][1]);
                 }
@@ -446,12 +446,12 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         uint32_t reg_b[4][2];
 
 #pragma unroll
-        for (int m = 0; m < 4; ++m) {
-            int a_row = warp_id_m * 64 + m * 16 + (lane_id % 16);
+        for (int m_idx = 0; m_idx < 4; ++m_idx) {
+            int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
             int a_col = k_offset + (lane_id / 16) * 4;
             uint32_t smem_addr =
                 static_cast<uint32_t>(__cvta_generic_to_shared(&As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
-            LDMATRIX_X4(reg_a[m][0], reg_a[m][1], reg_a[m][2], reg_a[m][3], smem_addr);
+            LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
         }
 
 #pragma unroll
@@ -464,17 +464,17 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         }
 
 #pragma unroll
-        for (int m = 0; m < 4; ++m) {
+        for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
             for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                M16N8K8(sum[m][n_idx][0],
-                        sum[m][n_idx][1],
-                        sum[m][n_idx][2],
-                        sum[m][n_idx][3],
-                        reg_a[m][0],
-                        reg_a[m][1],
-                        reg_a[m][2],
-                        reg_a[m][3],
+                M16N8K8(sum[m_idx][n_idx][0],
+                        sum[m_idx][n_idx][1],
+                        sum[m_idx][n_idx][2],
+                        sum[m_idx][n_idx][3],
+                        reg_a[m_idx][0],
+                        reg_a[m_idx][1],
+                        reg_a[m_idx][2],
+                        reg_a[m_idx][3],
                         reg_b[n_idx][0],
                         reg_b[n_idx][1]);
             }
@@ -486,16 +486,16 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
     int t_col = (lane_id % 4) * 2;
 
 #pragma unroll
-    for (int m = 0; m < 4; ++m) {
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int c_base_row = by * BM + warp_id_m * 64 + m * 16;
+            int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
             int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
 
-            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m][n_idx][0];
-            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m][n_idx][1];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m][n_idx][2];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m][n_idx][3];
+            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m_idx][n_idx][0];
+            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][1];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m_idx][n_idx][2];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
 }
