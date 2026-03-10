@@ -516,6 +516,7 @@ extern void sgemm_tf32_bt(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_tf32_bt_swizzle(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_tf32_bt_swizzle_dbf(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 extern void sgemm_tf32_bshfl_swizzle_bcf(torch::Tensor a, torch::Tensor b, torch::Tensor c);
+extern void sgemm_tf32_bshfl_swizzle_bcf_dbf(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 
 binding_func_gen(sgemm_naive, 1, float);
 
@@ -542,4 +543,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(sgemm_tf32_bt_swizzle);
     torch_pybinding_func(sgemm_tf32_bt_swizzle_dbf);
     torch_pybinding_func(sgemm_tf32_bshfl_swizzle_bcf);
+    torch_pybinding_func(sgemm_tf32_bshfl_swizzle_bcf_dbf);
 }
