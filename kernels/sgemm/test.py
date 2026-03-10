@@ -55,11 +55,11 @@ def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
     if prefix == "torch":
         global baseline
         baseline = duration
-        print(f"{prefix:40s} mean time: {duration / rep * 1000:.6f} ms, {tflops:.2f} tflops")
+        print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {tflops:.2f} tflops")
     else:
         speedup = baseline / duration
         print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:.6f} ms, speedup: {speedup:.2f}, tflops: {tflops:.2f}"
+            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, tflops: {tflops:.2f}"
         )
 
 

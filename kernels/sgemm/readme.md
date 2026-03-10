@@ -16,10 +16,10 @@ sgemm tf32 kernel
 
 - [x] sgemm_cublas tf32 版
 - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
-- [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多)
-- [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, Bs 冲突较多, 96% cuBLAS 性能)
-- [x] sgemm_tf32_bshfl_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突， 97% cuBLAS 性能)
-- [x] sgemm_tf32_bshfl_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突，双buffer，性能反而降低了，working)
+- [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
+- [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, grid swizzling, 97~102% cuBLAS 性能)
+- [x] sgemm_tf32_bshfl_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling)
+- [x] sgemm_tf32_bshfl_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling，双buffer，95~98% cuBLAS 性能, stay tuned)
 - [x] pytorch op bindings && diff check
 
 ## 测试
@@ -34,13 +34,13 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 17.204238 ms, 79.89 tflops
-sgemm_cublas_tf32                        mean time: 8.605598 ms, speedup: 2.00, tflops: 159.71
-sgemm_tf32_bt                            mean time: 20.748367 ms, speedup: 0.83, tflops: 66.24
-sgemm_tf32_bt_swizzle                    mean time: 10.097081 ms, speedup: 1.70, tflops: 136.12
-sgemm_tf32_bt_swizzle_dbf                mean time: 9.042513 ms, speedup: 1.90, tflops: 151.99
-sgemm_tf32_bshfl_swizzle_bcf             mean time: 9.340418 ms, speedup: 1.84, tflops: 147.14
-sgemm_tf32_bshfl_swizzle_bcf_dbf         mean time: 8.918675 ms, speedup: 1.93, tflops: 154.10
+torch                                    mean time: 17.201366 ms, 79.90 tflops
+sgemm_cublas_tf32                        mean time: 8.504837 ms, speedup: 2.02, tflops: 161.60
+sgemm_tf32_bt                            mean time: 21.446533 ms, speedup: 0.80, tflops: 64.08
+sgemm_tf32_bt_swizzle                    mean time: 9.900721 ms, speedup: 1.74, tflops: 138.82
+sgemm_tf32_bt_swizzle_dbf                mean time: 8.393742 ms, speedup: 2.05, tflops: 163.74
+sgemm_tf32_bshfl_swizzle_bcf             mean time: 9.260082 ms, speedup: 1.86, tflops: 148.42
+sgemm_tf32_bshfl_swizzle_bcf_dbf         mean time: 8.890798 ms, speedup: 1.93, tflops: 154.59
 ```
 
 ## sgemm 输出
