@@ -11,6 +11,7 @@
 #include <torch/types.h>
 
 #define UINT2(value) (reinterpret_cast<uint2 *>(&(value))[0])
+#define FLOAT2(value) (reinterpret_cast<float2 *>(&(value))[0])
 #define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
@@ -20,7 +21,7 @@
 // B 矩阵: 写入时列跨度大，除以 4 后求余
 #define SWIZZLE_B(row, col) ((col) ^ ((((row) >> 2) & 0x3) << 2))
 
-#define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 2))
+#define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 3))
 
 // ---------------- 内联 PTX 汇编宏定义 ----------------
 // cp.async: 从 gmem (src) 异步拷贝 16 bytes 到 smem (dst_smem_32b)
@@ -632,7 +633,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
         __syncthreads();
     }
 
-    // Tensor Core m16n8k8 C 寄存器碎片的标准排布映射法则
+    // ---------------- 写回 C 矩阵 ----------------
     int t_row = lane_id / 4;       // 0~7
     int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
 
@@ -650,6 +651,46 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
             c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
+    // 复用 As，Bs，有点trick
+    //     float (*Cs)[128] = (float (*)[128])(&As[0][0]);
+
+    //     #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
+
+    //     int t_row = lane_id / 4;
+    //     int t_col = (lane_id % 4) * 2;
+
+    //     for (int m_idx = 0; m_idx < 4; ++m_idx) {
+    //         __syncthreads();
+
+    // #pragma unroll
+    //         for (int n_idx = 0; n_idx < 4; ++n_idx) {
+    //             int smem_row = warp_id_m * 16 + t_row;
+    //             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
+
+    //             // 写入 FLOAT2 矩阵碎片
+    //             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
+    //             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
+    //         }
+
+    //         __syncthreads(); // 等待所有数据落盘
+
+    //         int t_c_row = tid / 32;
+    //         int t_c_col = (tid % 32) * 4;
+
+    // #pragma unroll
+    //         for (int step = 0; step < 4; ++step) {
+    //             int smem_row = t_c_row + step * 8;
+    //             int smem_col = t_c_col;
+
+    //             float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
+
+    //             // 还原物理坐标
+    //             int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
+    //             int global_col = bx * BN + smem_col;
+
+    //             FLOAT4(c[global_row * n + global_col]) = res;
+    //         }
+    //     }
 }
 
 // a block calculate c[128][128]
@@ -870,6 +911,46 @@ __launch_bounds__(256,
             c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
+    // 复用 As，Bs，有点trick
+    //     float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
+
+    //     #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
+
+    //     int t_row = lane_id / 4;
+    //     int t_col = (lane_id % 4) * 2;
+
+    //     for (int m_idx = 0; m_idx < 4; ++m_idx) {
+    //         __syncthreads();
+
+    // #pragma unroll
+    //         for (int n_idx = 0; n_idx < 4; ++n_idx) {
+    //             int smem_row = warp_id_m * 16 + t_row;
+    //             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
+
+    //             // 写入 FLOAT2 矩阵碎片
+    //             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
+    //             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
+    //         }
+
+    //         __syncthreads(); // 等待所有数据落盘
+
+    //         int t_c_row = tid / 32;
+    //         int t_c_col = (tid % 32) * 4;
+
+    // #pragma unroll
+    //         for (int step = 0; step < 4; ++step) {
+    //             int smem_row = t_c_row + step * 8;
+    //             int smem_col = t_c_col;
+
+    //             float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
+
+    //             // 还原物理坐标
+    //             int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
+    //             int global_col = bx * BN + smem_col;
+
+    //             FLOAT4(c[global_row * n + global_col]) = res;
+    //         }
+    //     }
 }
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
