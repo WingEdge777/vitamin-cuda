@@ -661,45 +661,46 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
         }
     }
     // 复用 As，Bs，合并写回c。有点trick
-    //     float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
+    /**
+    float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
 
-    //     #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
+    #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
 
-    //     int t_row = lane_id / 4;
-    //     int t_col = (lane_id % 4) * 2;
+    int t_row = lane_id / 4;
+    int t_col = (lane_id % 4) * 2;
 
-    //     for (int m_idx = 0; m_idx < 4; ++m_idx) {
-    //         __syncthreads();
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+        __syncthreads();
 
-    // #pragma unroll
-    //         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-    //             int smem_row = warp_id_m * 16 + t_row;
-    //             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            int smem_row = warp_id_m * 16 + t_row;
+            int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
 
-    //             // 写入阶段：0 Bank Conflict
-    //             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
-    //             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
-    //         }
+            // 写入阶段：0 Bank Conflict
+            FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
+            FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
+        }
 
-    //         __syncthreads();
+        __syncthreads();
 
-    //         int t_c_row = tid / 32;
-    //         int t_c_col = (tid % 32) * 4;
+        int t_c_row = tid / 32;
+        int t_c_col = (tid % 32) * 4;
 
-    // #pragma unroll
-    //         for (int step = 0; step < 4; ++step) {
-    //             int smem_row = t_c_row + step * 8;
-    //             int smem_col = t_c_col;
+#pragma unroll
+        for (int step = 0; step < 4; ++step) {
+            int smem_row = t_c_row + step * 8;
+            int smem_col = t_c_col;
 
-    //             float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
+            float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
 
-    //             // 还原物理坐标
-    //             int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
-    //             int global_col = bx * BN + smem_col;
+            // 还原物理坐标
+            int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
+            int global_col = bx * BN + smem_col;
 
-    //             FLOAT4(c[global_row * n + global_col]) = res;
-    //         }
-    //     }
+            FLOAT4(c[global_row * n + global_col]) = res;
+        }
+    }*/
 }
 
 // a block calculate c[128][128]
@@ -931,45 +932,46 @@ __launch_bounds__(256,
         }
     }
     // 复用 As，Bs，合并写回c。有点trick
-    //     float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
+    /**
+    float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
 
-    //     #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
+    #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
 
-    //     int t_row = lane_id / 4;
-    //     int t_col = (lane_id % 4) * 2;
+    int t_row = lane_id / 4;
+    int t_col = (lane_id % 4) * 2;
 
-    //     for (int m_idx = 0; m_idx < 4; ++m_idx) {
-    //         __syncthreads();
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+        __syncthreads();
 
-    // #pragma unroll
-    //         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-    //             int smem_row = warp_id_m * 16 + t_row;
-    //             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            int smem_row = warp_id_m * 16 + t_row;
+            int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
 
-    //             // 写入阶段：0 Bank Conflict
-    //             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
-    //             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
-    //         }
+            // 写入阶段：0 Bank Conflict
+            FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
+            FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
+        }
 
-    //         __syncthreads();
+        __syncthreads();
 
-    //         int t_c_row = tid / 32;
-    //         int t_c_col = (tid % 32) * 4;
+        int t_c_row = tid / 32;
+        int t_c_col = (tid % 32) * 4;
 
-    // #pragma unroll
-    //         for (int step = 0; step < 4; ++step) {
-    //             int smem_row = t_c_row + step * 8;
-    //             int smem_col = t_c_col;
+#pragma unroll
+        for (int step = 0; step < 4; ++step) {
+            int smem_row = t_c_row + step * 8;
+            int smem_col = t_c_col;
 
-    //             float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
+            float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
 
-    //             // 还原物理坐标
-    //             int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
-    //             int global_col = bx * BN + smem_col;
+            // 还原物理坐标
+            int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
+            int global_col = bx * BN + smem_col;
 
-    //             FLOAT4(c[global_row * n + global_col]) = res;
-    //         }
-    //     }
+            FLOAT4(c[global_row * n + global_col]) = res;
+        }
+    }*/
 }
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
