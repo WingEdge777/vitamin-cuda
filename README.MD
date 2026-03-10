@@ -23,7 +23,7 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 ## News
 
-- [2026.03.10] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel achiving 98~102% cuBLAS's performance (and stay tuned)🚀
+- [2026.03.10] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
 - [2026.02.27] [sgemm](./kernels/sgemm/) SIMT kernel outperforming cuBLAS with `smem + swizzle + double buffer + coalesced r/w`🚀
 
 ## Contents 📖
@@ -175,8 +175,8 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
   - [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
   - [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, grid swizzling, 97~102% cuBLAS 性能)
-  - [x] sgemm_tf32_bshfl_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling)
-  - [x] sgemm_tf32_bshfl_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling，double buffer，95~98% cuBLAS 性能, stay tuned)
+  - [x] sgemm_tf32_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling)
+  - [x] sgemm_tf32_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling，double buffer，95~98% cuBLAS 性能, stay tuned)
 
 <div id="samples"></div>
 
