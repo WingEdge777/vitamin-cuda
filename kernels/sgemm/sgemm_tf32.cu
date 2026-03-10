@@ -519,8 +519,8 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
-__global__
-__launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, float *b, float *c, int m, int n, int k) {
+__global__ __launch_bounds__(256,
+                             2) void sgemm_tf32_swizzle_bcf_kernel(float *a, float *b, float *c, int m, int n, int k) {
     // grid swizzling
     int linear_block_id = blockIdx.y * gridDim.x + blockIdx.x;
     const int SWIZZLE_W = 8;
@@ -602,32 +602,22 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
                 LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
 
-            // 用float2 load，然后 warp shuffle， 获取 B 矩阵块 (4 * 8 = 32 列)
+// ldmatrix 结果 也就是mma对 b fragments的要求是，一线程两个值，分别在第0、4行，每4线程hold 8行1列的数据
 #pragma unroll
             for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                // 当前处理的 N 维度的基础列号
                 int n_base = warp_id_n * 32 + n_idx * 8;
 
-                int load_row = lane_id / 4;       // 0~7 行，每四线程一行
-                int load_col = (lane_id % 4) * 2; // 读float2：0~1, 2~3, 4~5, 6~7 列
+                // 每四个线程一列
+                int b_col = n_base + (lane_id / 4);
 
-                uint2 loaded_b = UINT2(Bs[k_offset + load_row][SWIZZLE_B_F2(k_offset + load_row, n_base + load_col)]);
+                // k维度的 0~3 行 和 4~7 行
+                int b_row_0 = k_offset + (lane_id % 4);
+                int b_row_1 = k_offset + (lane_id % 4) + 4;
 
-                // shuffle 成 ldmatrix.sync.aligned.m8n8.x2 寄存器结果, 也就是 mma 1688 tf32 的 b fragments：
-                // 8x8 的矩阵转置后，每 4 个线程一列: b[lane_id%4][lane_id/4], b[lane_id%4 + 4][lane_id/4]
-                // T0 : b[0][0], b[4][0]，T1：b[1][0],b[5][0] ...
-                // T4 : b[0][1], b[4][1], T5: b[1][1],b[5][1] ...
-                // ...
-                int src_thread_0 = (lane_id % 4) * 4 + (lane_id / 8);
-                int src_thread_1 = src_thread_0 + 16;
-
-                uint32_t x0 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_0);
-                uint32_t y0 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_0);
-                uint32_t x1 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_1);
-                uint32_t y1 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_1);
-                bool use_y = ((lane_id / 4) % 2) != 0; // 偶数列取x, 奇数列取y
-
-                reg_b[n_idx][0] = use_y ? y0 : x0;
-                reg_b[n_idx][1] = use_y ? y1 : x1;
+                // swizzling 读取
+                reg_b[n_idx][0] = __float_as_uint(Bs[b_row_0][SWIZZLE_B_F2(b_row_0, b_col)]);
+                reg_b[n_idx][1] = __float_as_uint(Bs[b_row_1][SWIZZLE_B_F2(b_row_1, b_col)]);
             }
 
             // MMA 核心运算：4x4 的 1688
@@ -669,52 +659,11 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
             c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
-    // 复用 As，Bs，合并写回c。有点trick
-    /**
-    float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
-
-    #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
-
-    int t_row = lane_id / 4;
-    int t_col = (lane_id % 4) * 2;
-
-    for (int m_idx = 0; m_idx < 4; ++m_idx) {
-        __syncthreads();
-
-#pragma unroll
-        for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int smem_row = warp_id_m * 16 + t_row;
-            int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
-
-            // 写入阶段：0 Bank Conflict
-            FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
-            FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
-        }
-
-        __syncthreads();
-
-        int t_c_row = tid / 32;
-        int t_c_col = (tid % 32) * 4;
-
-#pragma unroll
-        for (int step = 0; step < 4; ++step) {
-            int smem_row = t_c_row + step * 8;
-            int smem_col = t_c_col;
-
-            float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
-
-            // 还原物理坐标
-            int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
-            int global_col = bx * BN + smem_col;
-
-            FLOAT4(c[global_row * n + global_col]) = res;
-        }
-    }*/
 }
 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
-__global__ void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {
+__global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {
     // grid swizzling
     int linear_block_id = blockIdx.y * gridDim.x + blockIdx.x;
     const int SWIZZLE_W = 8;
@@ -821,24 +770,21 @@ __global__ void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, floa
                 LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
 
-            // 用float2 load，然后 warp shuffle， 获取 B 矩阵块 (n纬度 4 * 8 = 32 列)
 #pragma unroll
             for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                // 当前处理的 N 维度的基础列号
                 int n_base = warp_id_n * 32 + n_idx * 8;
 
-                int load_row = lane_id / 4;       // 0~7 行，每四线程一行
-                int load_col = (lane_id % 4) * 2; // 读float2：0~1, 2~3, 4~5, 6~7 列
+                // 每四个线程一列
+                int b_col = n_base + (lane_id / 4);
 
-                uint2 loaded_b =
-                    UINT2(Bs[read_idx][k_offset + load_row][SWIZZLE_B_F2(k_offset + load_row, n_base + load_col)]);
+                // k维度的 0~3 行 和 4~7 行
+                int b_row_0 = k_offset + (lane_id % 4);
+                int b_row_1 = k_offset + (lane_id % 4) + 4;
 
-                uint32_t x0 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_0);
-                uint32_t y0 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_0);
-                uint32_t x1 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_1);
-                uint32_t y1 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_1);
-
-                reg_b[n_idx][0] = use_y ? y0 : x0;
-                reg_b[n_idx][1] = use_y ? y1 : x1;
+                // swizzling 读取
+                reg_b[n_idx][0] = __float_as_uint(Bs[read_idx][b_row_0][SWIZZLE_B_F2(b_row_0, b_col)]);
+                reg_b[n_idx][1] = __float_as_uint(Bs[read_idx][b_row_1][SWIZZLE_B_F2(b_row_1, b_col)]);
             }
 
 #pragma unroll
@@ -883,24 +829,21 @@ __global__ void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, floa
             LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
         }
 
-        // 用float2 load，然后 warp shuffle， 获取 B 矩阵块 (n纬度 4 * 8 = 32 列)
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            // 当前处理的 N 维度的基础列号
             int n_base = warp_id_n * 32 + n_idx * 8;
 
-            int load_row = lane_id / 4;       // 0~7 行，每四线程一行
-            int load_col = (lane_id % 4) * 2; // 读float2：0~1, 2~3, 4~5, 6~7 列
+            // 每四个线程一列
+            int b_col = n_base + (lane_id / 4);
 
-            uint2 loaded_b =
-                UINT2(Bs[read_idx][k_offset + load_row][SWIZZLE_B_F2(k_offset + load_row, n_base + load_col)]);
+            // k维度的 0~3 行 和 4~7 行
+            int b_row_0 = k_offset + (lane_id % 4);
+            int b_row_1 = k_offset + (lane_id % 4) + 4;
 
-            uint32_t x0 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_0);
-            uint32_t y0 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_0);
-            uint32_t x1 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_1);
-            uint32_t y1 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_1);
-
-            reg_b[n_idx][0] = use_y ? y0 : x0;
-            reg_b[n_idx][1] = use_y ? y1 : x1;
+            // swizzling 读取
+            reg_b[n_idx][0] = __float_as_uint(Bs[read_idx][b_row_0][SWIZZLE_B_F2(b_row_0, b_col)]);
+            reg_b[n_idx][1] = __float_as_uint(Bs[read_idx][b_row_1][SWIZZLE_B_F2(b_row_1, b_col)]);
         }
 
 #pragma unroll
@@ -955,7 +898,6 @@ __global__ void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, floa
             int smem_row = warp_id_m * 16 + t_row;
             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
 
-            // 写入阶段：0 Bank Conflict
             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
         }
@@ -1004,5 +946,5 @@ __global__ void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, floa
 binding_tiled_func_gen(sgemm_tf32_bt);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle_dbf);
-binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle_bcf);
-binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle_bcf_dbf);
+binding_tiled_func_gen(sgemm_tf32_swizzle_bcf);
+binding_tiled_func_gen(sgemm_tf32_swizzle_bcf_dbf);

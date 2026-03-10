@@ -52,7 +52,7 @@ def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
 
     duration = time.perf_counter() - start
 
-    tflops = a.shape[0]*b.shape[0]*b.shape[1]*2 / 1e9 / duration
+    tflops = a.shape[0]*b.shape[0]*b.shape[1]*2*rep / 1e12 / duration
     if prefix == "torch":
         global baseline
         baseline = duration
@@ -200,21 +200,21 @@ def test_tf32_4096():
     )
     diff_check(c, c_my, prefix="sgemm_tf32_bt_swizzle_dbf")
     benchmark(
-        lib.sgemm_tf32_bshfl_swizzle_bcf,
+        lib.sgemm_tf32_swizzle_bcf,
         a,
         b,
         c_my,
-        prefix="sgemm_tf32_bshfl_swizzle_bcf",
+        prefix="sgemm_tf32_swizzle_bcf",
     )
-    diff_check(c, c_my, prefix="sgemm_tf32_bshfl_swizzle_bcf")
+    diff_check(c, c_my, prefix="sgemm_tf32_swizzle_bcf")
     benchmark(
-        lib.sgemm_tf32_bshfl_swizzle_bcf_dbf,
+        lib.sgemm_tf32_swizzle_bcf_dbf,
         a,
         b,
         c_my,
-        prefix="sgemm_tf32_bshfl_swizzle_bcf_dbf",
+        prefix="sgemm_tf32_swizzle_bcf_dbf",
     )
-    diff_check(c, c_my, prefix="sgemm_tf32_bshfl_swizzle_bcf_dbf")
+    diff_check(c, c_my, prefix="sgemm_tf32_swizzle_bcf_dbf")
 
 if __name__ == "__main__":
     # test_all()
