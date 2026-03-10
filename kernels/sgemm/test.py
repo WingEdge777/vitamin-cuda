@@ -21,6 +21,7 @@ lib = load(
         "--expt-relaxed-constexpr",
         "--expt-extended-lambda",
         "--use_fast_math",
+        "-Xptxas -v"
     ],
     extra_cflags=common_flags,
     verbose=True,
