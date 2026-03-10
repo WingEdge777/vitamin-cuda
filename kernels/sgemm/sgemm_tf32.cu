@@ -512,7 +512,16 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
 template <const int BM = 128, const int BN = 128, const int BK = 16>
 __global__
 __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, float *b, float *c, int m, int n, int k) {
-    int bx = blockIdx.x, by = blockIdx.y;
+    // grid swizzling
+    int linear_block_id = blockIdx.y * gridDim.x + blockIdx.x;
+    const int SWIZZLE_W = 8;
+    int panel_area = SWIZZLE_W * gridDim.y; // 一个面板里有多少个 Block
+    int panel_id = linear_block_id / panel_area;
+    int bid_in_panel = linear_block_id % panel_area;
+
+    int bx = panel_id * SWIZZLE_W + (bid_in_panel % SWIZZLE_W);
+    int by = bid_in_panel / SWIZZLE_W;
+    // int bx = blockIdx.x, by = blockIdx.y;
     int tid = threadIdx.x; // 0~255
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
@@ -698,7 +707,17 @@ template <const int BM = 128, const int BN = 128, const int BK = 16>
 __global__
 __launch_bounds__(256,
                   2) void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {
-    int bx = blockIdx.x, by = blockIdx.y;
+    // grid swizzling
+    int linear_block_id = blockIdx.y * gridDim.x + blockIdx.x;
+    const int SWIZZLE_W = 8;
+    int panel_area = SWIZZLE_W * gridDim.y; // 一个面板里有多少个 Block
+    int panel_id = linear_block_id / panel_area;
+    int bid_in_panel = linear_block_id % panel_area;
+
+    int bx = panel_id * SWIZZLE_W + (bid_in_panel % SWIZZLE_W);
+    int by = bid_in_panel / SWIZZLE_W;
+
+    // int bx = blockIdx.x, by = blockIdx.y;
     int tid = threadIdx.x;
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
