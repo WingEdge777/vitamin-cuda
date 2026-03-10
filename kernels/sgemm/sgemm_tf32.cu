@@ -714,9 +714,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
-__global__
-__launch_bounds__(256,
-                  2) void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {
+__global__ void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {
     // grid swizzling
     int linear_block_id = blockIdx.y * gridDim.x + blockIdx.x;
     const int SWIZZLE_W = 8;
