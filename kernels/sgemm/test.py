@@ -205,6 +205,14 @@ def test_tf32_4096():
         prefix="sgemm_tf32_bshfl_swizzle_bcf",
     )
     diff_check(c, c_my, prefix="sgemm_tf32_bshfl_swizzle_bcf")
+    benchmark(
+        lib.sgemm_tf32_bshfl_swizzle_bcf_dbf,
+        a,
+        b,
+        c_my,
+        prefix="sgemm_tf32_bshfl_swizzle_bcf_dbf",
+    )
+    diff_check(c, c_my, prefix="sgemm_tf32_bshfl_swizzle_bcf_dbf")
 
 if __name__ == "__main__":
     # test_all()

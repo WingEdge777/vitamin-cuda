@@ -20,10 +20,10 @@
 // B 矩阵: 写入时列跨度大，除以 4 后求余
 #define SWIZZLE_B(row, col) ((col) ^ ((((row) >> 2) & 0x3) << 2))
 
-#define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 3))
+#define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 2))
 
 // ---------------- 内联 PTX 汇编宏定义 ----------------
-// cp.async: 从 Global (src) 异步拷贝 16 Bytes 到 Shared (dst_smem_32b)
+// cp.async: 从 gmem (src) 异步拷贝 16 bytes 到 smem (dst_smem_32b)
 #define CP_ASYNC_CG(dst_smem_32b, src_global_ptr)                                                                      \
     asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n" ::"r"(dst_smem_32b), "l"(src_global_ptr))
 
@@ -64,22 +64,22 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
     int load_b_row = tid / WARP_SIZE;       // 0~7  (K维度)
     int load_b_col = (tid % WARP_SIZE) * 4; // 0~124 (N维度)
 
-    // A 保持 Row-Major [BM][BK]，B 转为 Col-Major [BN][BK]
+    // A 保持 行优先，B 转置为 列优先
     __shared__ float As[BM][BK];
     __shared__ float Bs[BN][BK];
 
-    // warp tiling
-    // 每个 warp 负责  64 x 32 的 C 矩阵块
+    // 2x4 warp tiling
+    // 一行 warp 负责上下64x128， 每个 warp 负责  64 x 32 的 C 矩阵块
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64 个浮点寄存器/线程 (寄存器总量完美保持不变)
+    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64 个浮点寄存器/线程
     float sum[4][4][4] = {0.f};
 
     // 主循环
     for (int bk = 0; bk < k; bk += BK) {
 
-        // 1. 使用 cp.async 加载 A 矩阵 (16 Bytes 对齐)
+        // 1. 使用 cp.async 加载 A 矩阵 (16 bytes 对齐)
         uint32_t smem_a0 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row][load_a_col]));
         uint32_t smem_a1 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row + 64][load_a_col]));
 
@@ -91,11 +91,11 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
         // 提交所有的异步拷贝任务
         CP_ASYNC_COMMIT_GROUP();
 
-        // 2. 加载 B 矩阵并手动转置写入 Shared Memory
+        // 2. 加载 B 矩阵并手动转置写入 smem
         float4 tmp_b0 = FLOAT4(b[(bk + load_b_row) * n + bx * BN + load_b_col]);
         float4 tmp_b1 = FLOAT4(b[(bk + load_b_row + 8) * n + bx * BN + load_b_col]);
 
-        // 将读取的 B 手动打散转置写入 Shared Memory
+        // 将读取的 B 手动转置写入 smem
         Bs[load_b_col + 0][load_b_row] = tmp_b0.x;
         Bs[load_b_col + 1][load_b_row] = tmp_b0.y;
         Bs[load_b_col + 2][load_b_row] = tmp_b0.z;
@@ -193,7 +193,7 @@ __global__ __launch_bounds__(256,
     int load_b_row = tid / WARP_SIZE;       // 0~7  (K维度)
     int load_b_col = (tid % WARP_SIZE) * 4; // 0~124 (N维度)
 
-    // 彻底消灭 PAD！A 保持 Row-Major，B 保持 Col-Major
+    // A 保持 行优先，B 转置为 列优先
     __shared__ float As[BM][BK];
     __shared__ float Bs[BN][BK];
 
@@ -225,7 +225,7 @@ __global__ __launch_bounds__(256,
         float4 tmp_b0 = FLOAT4(b[(bk + load_b_row) * n + bx * BN + load_b_col]);
         float4 tmp_b1 = FLOAT4(b[(bk + load_b_row + 8) * n + bx * BN + load_b_col]);
 
-        // 将读取的 B 手动打散转置写入 Shared Memory，带上 SWIZZLE_B
+        // 将读取的 B 手动打散转置写入 smem，带上 SWIZZLE_B
         Bs[load_b_col + 0][SWIZZLE_B(load_b_col + 0, load_b_row)] = tmp_b0.x;
         Bs[load_b_col + 1][SWIZZLE_B(load_b_col + 1, load_b_row)] = tmp_b0.y;
         Bs[load_b_col + 2][SWIZZLE_B(load_b_col + 2, load_b_row)] = tmp_b0.z;
@@ -320,11 +320,11 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
     int load_b_row = tid / WARP_SIZE;
     int load_b_col = (tid % WARP_SIZE) * 4;
 
-    // 双缓冲：开辟两倍的 Shared Memory
+    // double buffer
     __shared__ float As[2][BM][BK];
     __shared__ float Bs[2][BN][BK];
 
-    // 2x4 行优先完美 Warp 映射
+    // 2x4 warp tiling
     int warp_id_m = warp_id / 4;
     int warp_id_n = warp_id % 4;
 
@@ -381,7 +381,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         CP_ASYNC_CG(smem_a1, global_a1);
         CP_ASYNC_COMMIT_GROUP();
 
-        // 2. 使用【当前轮】的 read_idx 缓冲进行Tensor Core 计算
+        // 2. 使用当前轮的 read_idx 缓冲进行Tensor Core 计算
 #pragma unroll
         for (int k_step = 0; k_step < 2; ++k_step) {
             int k_offset = k_step * 8;
@@ -424,7 +424,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
             }
         }
 
-        // 3. 将预取在寄存器里的【下一轮】 B 矩阵，写入 Shared Memory
+        // 3. 将预取在寄存器里的【下一轮】 B 矩阵，写入 smem
         Bs[write_idx][load_b_col + 0][SWIZZLE_B(load_b_col + 0, load_b_row)] = tmp_b0.x;
         Bs[write_idx][load_b_col + 1][SWIZZLE_B(load_b_col + 1, load_b_row)] = tmp_b0.y;
         Bs[write_idx][load_b_col + 2][SWIZZLE_B(load_b_col + 2, load_b_row)] = tmp_b0.z;
@@ -505,7 +505,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
     }
 }
 
-// -------------------------------------------------------- b cp.async + shfl ---------------------------------------
+// ------------------------------------ a/b cp.async + reg_b shfl---------------------------------------
 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
@@ -652,6 +652,226 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
     }
 }
 
+// a block calculate c[128][128]
+template <const int BM = 128, const int BN = 128, const int BK = 16>
+__global__
+__launch_bounds__(256,
+                  2) void sgemm_tf32_bshfl_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, int m, int n, int k) {
+    int bx = blockIdx.x, by = blockIdx.y;
+    int tid = threadIdx.x;
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+
+    int load_a_row = tid / 4;
+    int load_a_col = (tid % 4) * 4;
+    int load_b_row = tid / WARP_SIZE;
+    int load_b_col = (tid % WARP_SIZE) * 4;
+
+    // for reg b shfl
+    int src_thread_0 = (lane_id % 4) * 4 + (lane_id / 8);
+    int src_thread_1 = src_thread_0 + 16;
+    bool use_y = ((lane_id / 4) % 2) != 0; // 偶数列取x, 奇数列取y
+
+    // double buffer
+    __shared__ float As[2][BM][BK];
+    __shared__ float Bs[2][BK][BM];
+
+    // 2x4 warp tiling
+    int warp_id_m = warp_id / 4;
+    int warp_id_n = warp_id % 4;
+
+    float sum[4][4][4] = {0.f};
+    // ------------------------------------------- 预先加载一块
+    int a_swizzle_col_0 = SWIZZLE_A(load_a_row, load_a_col);
+    int a_swizzle_col_1 = SWIZZLE_A(load_a_row + 64, load_a_col);
+
+    uint32_t smem_a0 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[0][load_a_row][a_swizzle_col_0]));
+    uint32_t smem_a1 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[0][load_a_row + 64][a_swizzle_col_1]));
+
+    float *global_a0 = &a[(by * BM + load_a_row) * k + 0 + load_a_col];
+    float *global_a1 = &a[(by * BM + load_a_row + 64) * k + 0 + load_a_col];
+    CP_ASYNC_CG(smem_a0, global_a0);
+    CP_ASYNC_CG(smem_a1, global_a1);
+
+    uint32_t smem_b0 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[0][load_b_row][SWIZZLE_B_F2(load_b_row, load_b_col)]));
+    uint32_t smem_b1 = static_cast<uint32_t>(
+        __cvta_generic_to_shared(&Bs[0][load_b_row + 8][SWIZZLE_B_F2(load_b_row + 8, load_b_col)]));
+
+    float *global_b0 = &b[(0 + load_b_row) * n + bx * BN + load_b_col];
+    float *global_b1 = &b[(0 + load_b_row + 8) * n + bx * BN + load_b_col];
+
+    CP_ASYNC_CG(smem_b0, global_b0);
+    CP_ASYNC_CG(smem_b1, global_b1);
+
+    CP_ASYNC_COMMIT_GROUP();
+    CP_ASYNC_WAIT_GROUP_0();
+    __syncthreads();
+
+    int read_idx = 0;
+    int write_idx = 1;
+
+    // main loop
+    for (int bk = BK; bk < k; bk += BK) {
+
+        // 1. 发射异步指令，预取【下一轮】的 A 矩阵到 write_idx 缓冲
+        smem_a0 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[write_idx][load_a_row][a_swizzle_col_0]));
+        smem_a1 = static_cast<uint32_t>(__cvta_generic_to_shared(&As[write_idx][load_a_row + 64][a_swizzle_col_1]));
+        global_a0 = &a[(by * BM + load_a_row) * k + bk + load_a_col];
+        global_a1 = &a[(by * BM + load_a_row + 64) * k + bk + load_a_col];
+        CP_ASYNC_CG(smem_a0, global_a0);
+        CP_ASYNC_CG(smem_a1, global_a1);
+
+        // cp.async load B
+        uint32_t smem_b0 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&Bs[write_idx][load_b_row][SWIZZLE_B_F2(load_b_row, load_b_col)]));
+        uint32_t smem_b1 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&Bs[write_idx][load_b_row + 8][SWIZZLE_B_F2(load_b_row + 8, load_b_col)]));
+
+        float *global_b0 = &b[(bk + load_b_row) * n + bx * BN + load_b_col];
+        float *global_b1 = &b[(bk + load_b_row + 8) * n + bx * BN + load_b_col];
+
+        CP_ASYNC_CG(smem_b0, global_b0);
+        CP_ASYNC_CG(smem_b1, global_b1);
+        // 提交所有的异步拷贝任务
+        CP_ASYNC_COMMIT_GROUP();
+
+        // 2. 使用当前轮的 read_idx 缓冲进行Tensor Core 计算
+#pragma unroll
+        for (int k_step = 0; k_step < 2; ++k_step) {
+            int k_offset = k_step * 8;
+            uint32_t reg_a[4][4];
+            uint32_t reg_b[4][2];
+
+            // 4x16 : m 维度 64 行
+#pragma unroll
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
+                int a_col = k_offset + (lane_id / 16) * 4;
+                uint32_t smem_addr =
+                    static_cast<uint32_t>(__cvta_generic_to_shared(&As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
+                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+            }
+
+            // 用float2 load，然后 warp shuffle， 获取 B 矩阵块 (n纬度 4 * 8 = 32 列)
+#pragma unroll
+            for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                int n_base = warp_id_n * 32 + n_idx * 8;
+
+                int load_row = lane_id / 4;       // 0~7 行，每四线程一行
+                int load_col = (lane_id % 4) * 2; // 读float2：0~1, 2~3, 4~5, 6~7 列
+
+                uint2 loaded_b =
+                    UINT2(Bs[read_idx][k_offset + load_row][SWIZZLE_B_F2(k_offset + load_row, n_base + load_col)]);
+
+                uint32_t x0 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_0);
+                uint32_t y0 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_0);
+                uint32_t x1 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_1);
+                uint32_t y1 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_1);
+
+                reg_b[n_idx][0] = use_y ? y0 : x0;
+                reg_b[n_idx][1] = use_y ? y1 : x1;
+            }
+
+#pragma unroll
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+                for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                    M16N8K8(sum[m_idx][n_idx][0],
+                            sum[m_idx][n_idx][1],
+                            sum[m_idx][n_idx][2],
+                            sum[m_idx][n_idx][3],
+                            reg_a[m_idx][0],
+                            reg_a[m_idx][1],
+                            reg_a[m_idx][2],
+                            reg_a[m_idx][3],
+                            reg_b[n_idx][0],
+                            reg_b[n_idx][1]);
+                }
+            }
+        }
+
+        // 3. cp.async 同步
+        CP_ASYNC_WAIT_GROUP_0();
+        __syncthreads();
+
+        // 切换乒乓缓冲指针
+        read_idx ^= 1;
+        write_idx ^= 1;
+    }
+// 最后load的数据还有一次计算
+#pragma unroll
+    for (int k_step = 0; k_step < 2; ++k_step) {
+        int k_offset = k_step * 8;
+        uint32_t reg_a[4][4];
+        uint32_t reg_b[4][2];
+
+#pragma unroll
+        for (int m_idx = 0; m_idx < 4; ++m_idx) {
+            int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
+            int a_col = k_offset + (lane_id / 16) * 4;
+            uint32_t smem_addr =
+                static_cast<uint32_t>(__cvta_generic_to_shared(&As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
+            LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+        }
+
+        // 用float2 load，然后 warp shuffle， 获取 B 矩阵块 (n纬度 4 * 8 = 32 列)
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            int n_base = warp_id_n * 32 + n_idx * 8;
+
+            int load_row = lane_id / 4;       // 0~7 行，每四线程一行
+            int load_col = (lane_id % 4) * 2; // 读float2：0~1, 2~3, 4~5, 6~7 列
+
+            uint2 loaded_b =
+                UINT2(Bs[read_idx][k_offset + load_row][SWIZZLE_B_F2(k_offset + load_row, n_base + load_col)]);
+
+            uint32_t x0 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_0);
+            uint32_t y0 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_0);
+            uint32_t x1 = __shfl_sync(0xffffffff, loaded_b.x, src_thread_1);
+            uint32_t y1 = __shfl_sync(0xffffffff, loaded_b.y, src_thread_1);
+
+            reg_b[n_idx][0] = use_y ? y0 : x0;
+            reg_b[n_idx][1] = use_y ? y1 : x1;
+        }
+
+#pragma unroll
+        for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+            for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                M16N8K8(sum[m_idx][n_idx][0],
+                        sum[m_idx][n_idx][1],
+                        sum[m_idx][n_idx][2],
+                        sum[m_idx][n_idx][3],
+                        reg_a[m_idx][0],
+                        reg_a[m_idx][1],
+                        reg_a[m_idx][2],
+                        reg_a[m_idx][3],
+                        reg_b[n_idx][0],
+                        reg_b[n_idx][1]);
+            }
+        }
+    }
+
+    // ---------------- 写回 C 矩阵 ----------------
+    int t_row = lane_id / 4;
+    int t_col = (lane_id % 4) * 2;
+
+#pragma unroll
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
+            int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
+
+            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m_idx][n_idx][0];
+            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][1];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m_idx][n_idx][2];
+            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
+        }
+    }
+}
+
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
 #define binding_tiled_func_gen(name)                                                                                   \
@@ -676,3 +896,4 @@ binding_tiled_func_gen(sgemm_tf32_bt);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle);
 binding_tiled_func_gen(sgemm_tf32_bt_swizzle_dbf);
 binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle_bcf);
+binding_tiled_func_gen(sgemm_tf32_bshfl_swizzle_bcf_dbf);
