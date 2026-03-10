@@ -660,8 +660,8 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
             c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
-    // 复用 As，Bs，有点trick
-    //     float (*Cs)[128] = (float (*)[128])(&As[0][0]);
+    // 复用 As，Bs，合并写回c。有点trick
+    //     float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
 
     //     #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
 
@@ -676,12 +676,12 @@ __launch_bounds__(256, 2) void sgemm_tf32_bshfl_swizzle_bcf_kernel(float *a, flo
     //             int smem_row = warp_id_m * 16 + t_row;
     //             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
 
-    //             // 写入 FLOAT2 矩阵碎片
+    //             // 写入阶段：0 Bank Conflict
     //             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
     //             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
     //         }
 
-    //         __syncthreads(); // 等待所有数据落盘
+    //         __syncthreads();
 
     //         int t_c_row = tid / 32;
     //         int t_c_col = (tid % 32) * 4;
@@ -930,7 +930,7 @@ __launch_bounds__(256,
             c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
         }
     }
-    // 复用 As，Bs，有点trick
+    // 复用 As，Bs，合并写回c。有点trick
     //     float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
 
     //     #define SWIZZLE_C(row, col) ((col) ^ (((row) << 3) & 127))
@@ -946,12 +946,12 @@ __launch_bounds__(256,
     //             int smem_row = warp_id_m * 16 + t_row;
     //             int smem_col = warp_id_n * 32 + n_idx * 8 + t_col;
 
-    //             // 写入 FLOAT2 矩阵碎片
+    //             // 写入阶段：0 Bank Conflict
     //             FLOAT2(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]) = FLOAT2(sum[m_idx][n_idx][0]);
     //             FLOAT2(Cs[smem_row + 8][SWIZZLE_C(smem_row + 8, smem_col)]) = FLOAT2(sum[m_idx][n_idx][2]);
     //         }
 
-    //         __syncthreads(); // 等待所有数据落盘
+    //         __syncthreads();
 
     //         int t_c_row = tid / 32;
     //         int t_c_col = (tid % 32) * 4;

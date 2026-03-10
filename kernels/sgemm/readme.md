@@ -34,12 +34,13 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                          mean time: 15.936818 ms
-sgemm_cublas_tf32              mean time: 9.032715 ms, speedup: 1.76
-sgemm_tf32_bt                  mean time: 21.636851 ms, speedup: 0.74
-sgemm_tf32_bt_swizzle          mean time: 10.307738 ms, speedup: 1.55
-sgemm_tf32_bt_swizzle_dbf      mean time: 9.304908 ms, speedup: 1.71
-sgemm_tf32_bshfl_swizzle_bcf   mean time: 9.232044 ms, speedup: 1.73
+torch                                    mean time: 17.204238 ms, 79.89 tflops
+sgemm_cublas_tf32                        mean time: 8.605598 ms, speedup: 2.00, tflops: 159.71
+sgemm_tf32_bt                            mean time: 20.748367 ms, speedup: 0.83, tflops: 66.24
+sgemm_tf32_bt_swizzle                    mean time: 10.097081 ms, speedup: 1.70, tflops: 136.12
+sgemm_tf32_bt_swizzle_dbf                mean time: 9.042513 ms, speedup: 1.90, tflops: 151.99
+sgemm_tf32_bshfl_swizzle_bcf             mean time: 9.340418 ms, speedup: 1.84, tflops: 147.14
+sgemm_tf32_bshfl_swizzle_bcf_dbf         mean time: 8.918675 ms, speedup: 1.93, tflops: 154.10
 ```
 
 ## sgemm 输出
