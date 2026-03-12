@@ -10,7 +10,7 @@
 >
 在如今 Tensor Core 满天飞的时代，要是你还不知道怎么用 Tensor Core 进行 GEMM 计算，那你可能已经落后于时代了。
 
-本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等规模）的GEMM tf32为例，在 RTX 5060 移动版显卡上，本人将使用 cp.async、ldmatrix、mma 等 PTX 指令，使用 Tensor-Core TF32加速  计算，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS。本文将复盘这场与 cuBLAS 较量（真较量，ncu 一步一步profile+迭代优化）过程。细节会具体到 cp.async 指令的运用，ldmatrix/mma warp 级别 PTX 指令，
+本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等规模）的 GEMM tf32 为例，在 RTX 5060 移动版显卡上，本人将使用 cp.async、ldmatrix、mma 等 PTX 指令，使用 Tensor-Core TF32 加速  计算，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS。本文将复盘这场与 cuBLAS 较量（真较量，ncu 一步一步 profile+迭代优化）过程。细节会具体到 cp.async 指令的运用，ldmatrix/mma warp 级别 PTX 指令，
 
 本文会给出 5 个 kernel 实现，从基础的 cp.async + 双 ldmatrix + mma，到 swizzle 解决 bank conflict，分析 ldmatrix/mma 的 b fragments layout 从而直接使用 shared load 更进一步解决 bank conflict，使用 grid swizzling 复用 L2，double buffer 隐藏时延 等手段完成最终对 cuBLAS 的超越。整个过程涉及对指令需求用法的介绍和分析，精巧的 swizzle 设计，隐藏时延的哲学，希望能帮助读者深入理解 Tensor Core 的使用和优化技巧。
 
@@ -31,23 +31,90 @@ kernel 大纲如下（第一个是 cublas kernel）
 
 ### PTX 指令
 
-PTX（parallel-thread-execution）官方文档：<https://docs.nvidia.com/cuda/parallel-thread-execution/index.html>，是 nv 提供的虚拟汇编指令语法集。在本文中主要用到的指令有：cp.async、ldmatrix、mma，cp.async 是异步拷贝指令，ldmatrix/mma 是 warp 级别协同搬运计算指令。具体如下：
+PTX（parallel-thread-execution）官方文档：<https://docs.nvidia.com/cuda/parallel-thread-execution/index.html>，是 nv 提供的虚拟汇编指令语法集。在本文中主要用到的指令有：cp.async、ldmatrix、mma，cp.async 是异步拷贝指令，ldmatrix/mma 是 warp 级别协同搬运计算指令。
 
-- cp.async：异步拷贝指令，支持bypass L1/register， 从gmem直达 smem，节省大量寄存器资源，并且异步性非常适合与计算重叠作为多级流水线实现的基础
-- mma：说 ldmatrix 之前要先说 mma，因为 ldmatrix 就是为 mma 服务的
-- ldmatrix：一个 warp 从 smem 协同加载一个小矩阵分块（fragment，）
+具体讲解指令之前，先说明一下在 C++ (CUDA) 代码中嵌入 PTX 汇编指令的语法结构。它使用的是 GCC 扩展内联汇编（Extended Asm）语法，一般为：
+
+```c++
+asm volatile(
+    "汇编指令模板；"
+    : 逗号分隔的输出操作数   /* 可选 */
+    : 逗号分隔的输入操作数   /* 可选 */
+    : 破坏描述符 (Clobbers) /* 可选 */
+);
+```
+
+比如我们即将用的到 cp.async:
+
+```cpp
+asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n" ::"r"(dst_smem_32b), "l"(src_global_ptr))
+```
+
+核心关键字解析：
+
+- asm：内联汇编的关键字，告诉编译器这里开始是一段汇编代码。
+- volatile：告诉编译器不要对这段代码进行优化（比如不要随意改变执行顺序，或者认为没有使用其输出就将其删除）。这对异步拷贝、矩阵乘法等涉及底层硬件调度的指令至关重要。
+
+标点与占位符解析：
+
+- %0, %1：这些是汇编字符串里的占位符。编译器会按照下面输出和输入操作数列表的顺序，从 0 开始依次将 C++ 变量映射到这些占位符上。
+- 换行符 \n：有些指令末尾会带有 \n。这纯粹是为了排版。当编译器把 C++ 编译成 .ptx 汇编文件时，加了 \n 能保证生成的汇编代码优雅地换行。
+- 冒号 : 与 :: 用法：冒号用于分隔汇编代码、输出、输入等部分。如果一条指令只有输入，没有输出，为了让编译器知道后面的参数是输入，就必须用两个冒号 :: 跳过输出部分。
+- 破坏描述符是开发者主动告诉编译器，该汇编指令会影响特定的物理寄存器、系统内存 ("memory") 或状态标志位中的值，以此强制编译器放弃对这些资源的旧缓存，重新读取，从而避免后续复用时出现严重的逻辑错误。
+
+约束字符 (Constraints)，在绑定 C++ 变量和汇编操作数时，我们需要用字符串（如 "r", "=f"）告诉编译器该如何分配寄存器：
+
+- = （修饰符）：表示“只写”，通常用于输出操作数。如果不带 =，则默认是“只读”，用于输入操作数。
+- r (Register)：表示将变量放入一个 32 位的通用整数寄存器中。
+- l (Long)：表示 64 位寄存器（在 CUDA 中通常用来存储 64 位全局内存指针，比如 src_global_ptr）。
+- f (Float)：表示 32 位浮点寄存器。
+- "=r"：将结果输出到一个 32 位通用寄存器。
+- "r"：从一个 32 位通用寄存器中读取输入。
+- "=f","f": 同理
+
+好了，下面介绍下我们即将用到的指令,只说我们用到的具体用法，免得太枯燥冗长，各指令其他用法还是参考官方文档：
+
+```cpp
+
+cp.async.cg.shared.global.L2::128B [%0], [%1], 16; // cg： (Cache at Global level)：bypass L1，拷贝 16 字节
+cp.async.commit_group;  // 提交异步拷贝任务
+
+cp.async.wait_group 0;  // 表示允许当前线程后台异步的 group 数，0 表示不允许后台，要等待到全部完成
+```
+
+- cp.async：异步拷贝指令，支持 bypass L1/register， 从 gmem 到L2直达 smem，节省大量寄存器资源，并且异步性非常适合与计算重叠作为多级流水线实现的基础
+
+```cpp
+mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32        d, a, b, c;
+```
+
+- mma：介绍 ldmatrix 之前要先说 mma，因为 ldmatrix 就是为 mma 服务的
+  - 根据官方文档，我们这个后天加入的 tf32 计算，只支持 shape m16n8k8 计算，A为行优先矩阵，B为列优先矩阵
+  - shape 定了后，输入的fragment A,B,C(后面会详细说)的 shape 和 下标值也确定了
+  - 总之，mma 是有一点死板（个人感觉）
+
+```cpp
+ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4]; //协同加载4个8x8矩阵，每个线程最终hold 2个值
+ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; //协同加载2个8x8矩阵，每个线程最终hold 2个值
+```
+
+- ldmatrix：一个 warp 从 smem 协同加载一个小矩阵分块到所有线程，所有线程一起 hold 着的寄存器结果叫做一个 fragment （死板+1）
+  - 注意x2，x4，表示读取线程数为16，32。ldmatrix 读取数据，提供地址的每个线程永远是读 16 字节！读取完后会分发到各个线程，组成一个 fragment。（理解这一点，才能理解如何解决 bank conflict）
+  - 由于 tf32 mma 只支持 m16n8k8，为了加载16x8的A和8x8的B矩阵，所以我们只能用 m8n8 shape + .b16 去搬运 32bit 的数据
+  - 同样由于 tf32，我们也无法使用 trans 转置（这也是个坑，手动转置和尝试寄存器shuffle转置折腾了我很久）
 
 ### cuBLAS kernel ncu report
 
-说实话，第一眼看到cuBLAS的 ncu report时，我是有点发虚的。根据shared memory table显示，它使用了cp.async，ldmatrix，shared load，但是 0个 shared memory bank conflict，平衡的compute 和 memory throughput，全合并的global memory访问。看起来似乎没有优化空间了，这如何match上它的性能啊，所以最初想着能达到95%性能以上就差不多了。
+说实话，第一眼看到 cuBLAS 的 ncu report 时，我是有点发虚的。根据 shared memory table 显示，它使用了 cp.async，ldmatrix，shared load，但是 0 个 shared memory bank conflict，平衡的 compute 和 memory throughput，全合并的 global memory 访问。看起来似乎没有优化空间了，这如何 match 上它的性能啊，所以最初想着能达到 95%性能以上就差不多了。
 
-再看一眼kernel名字，还是调用的cutlass kernel `void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_64x256_16x4_nn_align4>(T1::Params)`, 嗯，tensor core mma m16n8k8，,4x256的tiling（m=64，n=256），16的k维度切块，4级流水线。
+再看一眼 kernel 名字，还是调用的 cutlass kernel `void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_64x256_16x4_nn_align4>(T1::Params)`, 嗯，tensor core mma m16n8k8，,4x256 的 tiling（m=64，n=256），16 的 k 维度切块，4 级流水线。
 
 ## 0x1. sgemm_tf32_bt
-这个初版kernel，我的想法很简单，就是把cp.async用上，ldmatrix + mma启动起来，就算成功。其他bankconflict，合并访存什么的就先不管了。当然，也没有那么粗暴。虽然大概猜出cublas是用的cutlass的实现，但是我并不想照抄他的，抄，抄还能超得过师傅吗，何况逆推的策略也不一定完整，起码4级流水线我就不想写（要改smem大小），然后调度4个stage，放弃。
 
-我还是按我原来SIMT kernel 的思路，128x128的tiling，256的thread block（选择这两的策略，详细情况见我上一篇文章）
-然后也没有太多要点，As矩阵用cp.async bypass L1直达 smem，Bs 矩阵用 LDG + 手动转置写入smem。然后用 ldmatrix 加载到寄存器，然后 mma 计算。
+这个初版 kernel，我的想法很简单，就是把 cp.async 用上，ldmatrix + mma 启动起来，就算成功。其他 bankconflict，合并访存什么的就先不管了。当然，也没有那么粗暴。虽然大概猜出 cublas 是用的 cutlass 的实现，但是我并不想照抄他的，抄，抄还能超得过师傅吗，何况逆推的策略也不一定完整，起码 4 级流水线我就不想写（要改 smem 大小），然后调度 4 个 stage，放弃。
+
+我还是按我原来 SIMT kernel 的思路，128x128 的 tiling，256 的 thread block（选择这两的策略，详细情况见我上一篇文章）
+然后也没有太多要点，As 矩阵用 cp.async bypass L1 直达 smem，Bs 矩阵用 LDG + 手动转置写入 smem。然后用 ldmatrix 加载到寄存器，然后 mma 计算。
 
 ```cpp
 

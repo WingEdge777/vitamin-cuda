@@ -16,9 +16,8 @@
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 
-// A 矩阵: 写入时跨度小，按行求余
 #define SWIZZLE_A(row, col) ((col) ^ (((row >> 1) & 0x3) << 2))
-// B 矩阵: 写入时列跨度大，除以 4 后求余
+
 #define SWIZZLE_B(row, col) ((col) ^ ((((row) >> 2) & 0x3) << 2))
 
 #define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 3))
@@ -515,7 +514,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
     }
 }
 
-// ------------------------------------ a/b cp.async + reg_b shfl---------------------------------------
+// ------------------------------------ a/b cp.async + shared load Bs ---------------------------------------
 
 // a block calculate c[128][128]
 template <const int BM = 128, const int BN = 128, const int BK = 16>
@@ -683,11 +682,6 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
     int load_a_col = (tid % 4) * 4;
     int load_b_row = tid / WARP_SIZE;
     int load_b_col = (tid % WARP_SIZE) * 4;
-
-    // for reg b shfl
-    int src_thread_0 = (lane_id % 4) * 4 + (lane_id / 8);
-    int src_thread_1 = src_thread_0 + 16;
-    bool use_y = ((lane_id / 4) % 2) != 0; // 偶数列取x, 奇数列取y
 
     // double buffer
     __shared__ float As[2][BM][BK];
