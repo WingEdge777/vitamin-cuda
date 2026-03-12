@@ -34,13 +34,13 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 17.212911 ms, 7.98 tflops
-sgemm_cublas_tf32                        mean time: 8.713501 ms, speedup: 1.98, tflops: 15.77
-sgemm_tf32_bt                            mean time: 21.272245 ms, speedup: 0.81, tflops: 6.46
-sgemm_tf32_bt_swizzle                    mean time: 10.061464 ms, speedup: 1.71, tflops: 13.66
-sgemm_tf32_bt_swizzle_dbf                mean time: 8.521197 ms, speedup: 2.02, tflops: 16.13
-sgemm_tf32_swizzle_bcf                   mean time: 8.357622 ms, speedup: 2.06, tflops: 16.44
-sgemm_tf32_swizzle_bcf_dbf               mean time: 8.308098 ms, speedup: 2.07, tflops: 16.54
+torch                                    mean time: 15.146454 ms, 9.07 tflops
+sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, tflops: 16.10
+sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95, tflops: 8.63
+sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, tflops: 14.04
+sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, tflops: 15.76
+sgemm_tf32_swizzle_bcf                   mean time: 8.402071 ms, speedup: 1.89, tflops: 16.36
+sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, tflops: 16.61
 ```
 
 ## sgemm 输出
