@@ -120,8 +120,8 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
 #pragma unroll
             for (int m_idx = 0; m_idx < 4; ++m_idx) {
                 // warp_id_m 跨度是 64
-                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
-                int a_col = k_offset + (lane_id / 16) * 4;
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16); // 0~15, 0~15
+                int a_col = k_offset + (lane_id / 16) * 4;                // 0,4  8,12
                 uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][a_col]));
                 LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
@@ -449,7 +449,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         read_idx ^= 1;
         write_idx ^= 1;
     }
-// 最后load的数据还有一次计算
+    // 最后load的数据还有一次计算
 #pragma unroll
     for (int k_step = 0; k_step < 2; ++k_step) {
         int k_offset = k_step * 8;
@@ -595,7 +595,7 @@ __global__ __launch_bounds__(256,
                 LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
             }
 
-// ldmatrix 结果 也就是mma对 b fragments的要求是，一线程两个值，分别在第0、4行，每4线程hold 8行1列的数据
+            // ldmatrix 结果 也就是mma对 b fragments的要求是，一线程两个值，分别在第0、4行，每4线程hold 8行1列的数据
 #pragma unroll
             for (int n_idx = 0; n_idx < 4; ++n_idx) {
                 // 当前处理的 N 维度的基础列号
@@ -798,7 +798,7 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
         read_idx ^= 1;
         write_idx ^= 1;
     }
-// 最后load的数据还有一次计算
+    // 最后load的数据还有一次计算
 #pragma unroll
     for (int k_step = 0; k_step < 2; ++k_step) {
         int k_offset = k_step * 8;
