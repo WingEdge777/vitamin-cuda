@@ -2,7 +2,7 @@
 
 ## 0. 序 - 向量化计算的时代
 
-（干货核能预警，大量配图，涉及硬核的 swizzle 地址坐标映射推导代码，建议在 PC 端阅读以获得最佳体验）
+（干货核能预警，大量配图，涉及硬核的 swizzle 地址坐标映射推导代码，layout 分析，指令说明，建议在 PC 端阅读以获得最佳体验）
 （本文适用于有一定 CUDA 编程基础，熟悉 GEMM 优化，对进阶 tensor core / 嵌入 PTX 指令 性能调优感兴趣的读者阅读）
 （所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：）
 >
@@ -10,13 +10,13 @@
 >
 在如今 Tensor Core 满天飞的时代，要是你还不知道怎么用 Tensor Core 进行 GEMM 计算，那你可能已经落后于时代了。
 
-本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等规模）的 GEMM tf32 为例，在 RTX 5060 移动版显卡上，本人将使用 cp.async、ldmatrix、mma 等 PTX 指令，使用 Tensor-Core TF32 加速计算，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS。本文将复盘这场与 cuBLAS 较量（真较量，ncu 一步一步 profile+迭代优化）过程。细节会具体到 cp.async 指令的运用，ldmatrix/mma warp 级别 PTX 指令，
+本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等规模）的 GEMM tf32 为例，在 RTX 5060 移动版显卡上，本人将使用 cp.async、ldmatrix、mma 等 PTX 指令，使用 Tensor-Core TF32 加速计算，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS。本文将复盘这场与 cuBLAS 较量（是真较量，用 ncu 一步步 profile+迭代优化出来的）过程。细节会具体到 cp.async 指令的运用，ldmatrix/mma warp 级别 PTX 指令，极其硬核的 swizzle 推导（虽然最后没用上）, layout 分析等等
 
-本文会给出 5 个 kernel 实现，从基础的 cp.async + 双 ldmatrix + mma，到 swizzle 解决 bank conflict，分析 ldmatrix/mma 的 b fragments layout 从而直接使用 shared load 更进一步解决 bank conflict，使用 grid swizzling 复用 L2，double buffer 隐藏时延 等手段完成最终对 cuBLAS 的超越。整个过程涉及对指令需求用法的介绍和分析，精巧的 swizzle 设计，隐藏时延的哲学，希望能帮助读者深入理解 Tensor Core 的使用和优化技巧。
+本文会给出 5 个 kernel 实现，从基础的 cp.async + 双 ldmatrix + mma，用 swizzle 解决 bank conflict，逆推 cuBLAS 策略更进一步优化 smem 访问，使用 grid swizzling 复用 L2，double buffer 隐藏时延 等手段完成最终对 cuBLAS 的超越。整个过程涉及对指令要求/用法的介绍和分析，精巧的 swizzle 设计，希望能帮助读者深入理解 Tensor Core 的使用和优化技巧。
 
-和之前 sgemm simt kernel 相比，本人是先有的优化路径然后写代码，但由于本人对 tensor core 也并不熟悉，这一次是 ncu profile 驱动型演进。并且我先 profile 了 cuBLAS 的实现，从他的 kernel 名字和 shared memory table 逆推+参考其优化策略，最终实现了性能超越。（本人有合理理由怀疑 cuBLAS 应该是很久未更新，或者说未针对消费级显卡进行优化，因为本人在还有优化策略没全部用上的时候就已经匹配上了 cuBLAS 的性能）
+和之前 sgemm simt kernel 相比不太一样，之前本人是先有的优化路径然后写的几版代码（比较熟悉 gemm 优化手段），但由于本人对 tensor core 也并不熟悉，这一次是 ncu profile 驱动型演进。并且我先 profile 了 cuBLAS 的实现，从他的 kernel 名字和 shared memory table 逆推+参考其优化策略，最终实现了性能超越。（本人有合理理由怀疑 cuBLAS 应该是很久未更新，或者说未针对消费级显卡进行优化，因为本人在还有优化策略没全部用上的时候就已经匹配上了 cuBLAS 的性能）
 
-kernel 大纲如下（第一个是 cublas kernel）
+kernel 大纲如下（第一个是 cuBLAS kernel）
 
 - sgemm_cublas tf32 版
 - sgemm_tf32_bt（向量化读 A/B，B 转置写入 smem, ldmatrix + mma）
@@ -25,9 +25,9 @@ kernel 大纲如下（第一个是 cublas kernel）
 - sgemm_tf32_swizzle_bcf (cp.async 读写 A/B，swizzle， As/Bs 无冲突，grid swizzling)
 - sgemm_tf32_swizzle_bcf_dbf (cp.async 读写 A/B，swizzle， As/Bs 无冲突，grid swizzling，双 buffer，超越 cuBLAS)
 
-## 1. PTX 指令 && ncu profile cublas kernel
+## 1. PTX 指令 && ncu profile cuBLAS kernel
 
-当我准备开始写 sgemm tf32 kernel 时，先去搜索了下 ldmatrix、mma 指令相关的博客文章想好好学一下。等大概翻了下发现，怎么都是讲的半精度的 GEMM（倒也合理，毕竟是 Tensor Core 最初就是为半精度设计的），但是难道大家从半精度开始学起的，就不管 tf32 了（我丢）。无奈，只好自己开始翻 nvidia 的 PTX 文档，以及先 profile 一下 cublas kernel 作为参考。
+当我准备开始写 sgemm tf32 kernel 时，先去搜索了下 ldmatrix、mma 指令相关的博客文章想好好学一下。大概翻了下发现，大多讲的是半精度的 GEMM（倒也合理，毕竟是 Tensor Core 最初就是为半精度设计的），但是难道大家从半精度开始学起的，就不管 tf32 了嘛（我丢）。无奈，只好自己开始翻 nvidia 的 PTX 文档，以及 profile 一下 cuBLAS kernel 作为参考。
 
 ### PTX 指令
 
@@ -58,7 +58,7 @@ asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n" ::"r"(dst_sm
 标点与占位符解析：
 
 - %0, %1：这些是汇编字符串里的占位符。编译器会按照下面输出和输入操作数列表的顺序，从 0 开始依次将 C++ 变量映射到这些占位符上。
-- 换行符 \n：有些指令末尾会带有 \n。这纯粹是为了排版。当编译器把 C++ 编译成 .ptx 汇编文件时，加了 \n 能保证生成的汇编代码优雅地换行。
+- 换行符 \n：这纯粹是为了排版。当编译器把 C++ 编译成汇编文件时，加了 \n 能保证生成的汇编代码优雅地换行。
 - 冒号 : 与 :: 用法：冒号用于分隔汇编代码、输出、输入等部分。如果一条指令只有输入，没有输出，为了让编译器知道后面的参数是输入，就必须用两个冒号 :: 跳过输出部分。
 - 破坏描述符是开发者主动告诉编译器，该汇编指令会影响特定的物理寄存器、内存或状态标志位中的值，以此强制编译器放弃相应的 cache，而重新读取，避免后续复用时出现严重的逻辑错误。
 
@@ -72,23 +72,22 @@ asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n" ::"r"(dst_sm
 - "r"：从一个 32 位通用寄存器中读取输入。
 - "=f","f": 同理
 
-好了，下面介绍下我们即将用到的指令，只说我们用到指令的具体用法，免得太枯燥冗长，各指令的其他用法还是请参考官方文档：
+好了，下面介绍下我们即将用到的指令，只说我们用到指令的具体用法，输入输出列表也省了，免得太冗长枯燥，各指令的其他用法还是请参考官方文档：
 
 ```cpp
 
 cp.async.cg.shared.global.L2::128B [%0], [%1], 16; // cg： (Cache at Global level)：bypass L1，拷贝 16 字节
 cp.async.commit_group;  // 提交异步拷贝任务
-
 cp.async.wait_group 0;  // 表示允许当前线程后台异步的 group 数，0 表示不允许后台，要等待到全部完成
 ```
 
-- `cp.async`：异步拷贝指令，支持 bypass L1/register， 从 gmem 到 L2 直达 smem，节省大量寄存器资源，并且异步性非常适合与计算重叠作为多级流水线实现的基础
+- `cp.async`：异步拷贝指令，支持 bypass L1/register，从 gmem 到 L2 直达 smem，节省寄存器资源，并且异步性非常适合与计算重叠作为流水线实现的基础
 
 ```cpp
 mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32        d, a, b, c;
 ```
 
-- mma：介绍 ldmatrix 之前要先说 mma，因为 ldmatrix 就是为 mma 服务的
+- `mma`指令：介绍 ldmatrix 之前要先说 mma，因为 ldmatrix 就是为 mma 服务的
   - mma 的 AB 矩阵，A 为行优先矩阵，B 为列优先矩阵。
   - 根据官方文档，我们这个后来才加入 tf32 精度计算，只支持 shape m16n8k8
   - shape 定了后，输入的 fragment A,B,C（后面会详细说）的 shape 和 下标值也确定了
@@ -100,16 +99,17 @@ ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; //协同加载 2 个 8x
 ```
 
 - ldmatrix：一个 warp 从 smem 协同加载一个小矩阵分块到所有线程，所有线程一起 hold 着的寄存器结果叫做一个 fragment （死板+1）
-  - 注意 x2，x4，表示读取线程数为 16，32。ldmatrix 读取数据，提供地址的每个线程永远是读 16 字节！读取完后会分发到各个线程，组成一个 fragment。（理解这一点，才能理解如何解决 bank conflict）
+  - 注意 x2，x4，表示读取线程数为 16，32。ldmatrix 读取数据，提供地址的每个线程永远是读 16 字节！读取完后会分发到各个线程，组成一个 fragment。
+    - 理解这一点，才能理解如何解决 bank conflict
   - 由于 tf32 mma 只支持 m16n8k8，为了加载 16x8 的 A 和 8x8 的 B 矩阵，所以我们只能用 m8n8 shape + .b16 类型去搬运 32bit 的数据
   - 同样由于 tf32，我们也无法使用 trans 转置（这也是个坑，手动转置和尝试寄存器 shuffle 转置折腾了我很久）
 
 ### cuBLAS kernel ncu report
 
-![](static/cublas_tf32_ncu_0.png)
-![](static/cublas_tf32_ncu_1.png)
+![](static/cuBLAS_tf32_ncu_0.png)
+![](static/cuBLAS_tf32_ncu_1.png)
 
-说实话，第一眼看到 cuBLAS 的 ncu report 时，我是有点发虚的。充分的算力访存比，完美的 shared memory table 结果，它使用了 cp.async，ldmatrix，shared load，但是 0 个 shared memory bank conflict，全合并的 global memory 访问。看起来似乎没有优化空间了，这如何赶上它的性能啊。所以最初想着能达到 95% 性能以上就差不多了。
+说实话，第一眼看到 cuBLAS 的 ncu report 时，我是有点发虚的。compute/momery 吞吐不低，完美的 shared memory table，它使用了 cp.async，ldmatrix，shared load，但是 0 个 bank conflict，全合并的 global memory 访问，四级流水线，寄存器用了228个（压榨得这么狠）。看起来似乎没有优化空间了，这如何赶上它的性能啊。所以最初想着能达到 95% 性能以上就差不多了。
 
 再看一眼 kernel 名字，调用的 cutlass kernel `void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_64x256_16x4_nn_align4>(T1::Params)`, 嗯，mma m16n8k8，64x256 的 tiling（m=64，n=256），16 的 k 维度切块，4 级流水线。
 
@@ -117,7 +117,7 @@ ok, 初步摸清对手底细了，开始手搓我们自己的 kernel。
 
 ## 2. sgemm_tf32_bt
 
-这个初版 kernel，我的想法很简单，就是把 cp.async 用上，ldmatrix + mma 启动起来，就算完事。其他 bank conflict，合并访存什么的就先不管了。虽然大概猜出 cublas 的 cutlass 的实现，但是我并不想照抄他的。抄，抄还能超得过师傅吗，何况逆推的策略也不一定完整，起码 4 级流水线我就不想写（要改 smem 大小），然后 4 个 stage 的调度，我表示放弃。
+这个初版 kernel，我的想法很简单，就是把 cp.async 用上，ldmatrix + mma 启动起来，就算完事。其他 bank conflict，合并访存什么的就先不管了。虽然大概猜出 cuBLAS 的 cutlass 的实现，但是我并不想照抄他的。抄，抄还能超得过师傅吗，何况逆推的策略也不一定完整，起码 4 级流水线我就不想写（要改 smem 大小），然后 4 个 stage 的调度，我表示放弃。
 
 当然，也没有那么粗糙。我还是按着我原来 SIMT kernel 的思路
 
@@ -446,7 +446,7 @@ sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, 
 sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, tflops: 15.23
 ```
 
-![](static/cublas_l2.png)
+![](static/cuBLAS_l2.png)
 ![](static/L2.png)
 更接近了，可惜还差 0.xms。继续对比 ncu 报告，我发现 cuBLAS 的 L2 cache 命中极高（85%+），我只有（30%+）。这个是不是有很大影响呢？
 
@@ -481,7 +481,7 @@ sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, 
 ## 5. sgemm_tf32_swizzle_bcf
 
 就还差一点点了，shared memory 读写 swizzle，double buffer，grid swizzle 技巧都用上了，还怎么办。我重新翻开 cuBLAS 的 ncu profile 进行对比。仔细观察，苦思冥想，最大区别在哪？
-![](static/cublas_sh.png)
+![](static/cuBLAS_sh.png)
 ![](static/sh.png)
 
 cuBLAS 0 bank conflict，我 1.5+ 亿次冲突！没理由 cuBLAS 能做到 0 冲突，我们做不到呀。cuBLAS 怎么做到的呢？通过分析对比 shared memory table，我发现：
@@ -575,20 +575,26 @@ sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, 
 
 ## 7. 一些讨论
 
-- 实际 benchmark 结果绝对值会有波动（因为是 RTX 5060 移动版，无法排除动态频率，桌面和系统的影响），本文为了行文流畅不发生前后矛盾考虑，使用了同一组测试结果（但请放心，绝对值会波动，但每次执行终版 kernel 都比 cuBLAS 快）
+- 实际 benchmark 结果绝对值会有波动（测试设备为 RTX 5060 移动版，无法排除动态频率、桌面和系统应用的影响），本文为了行文流畅，避免前后结果矛盾，使用了同一组测试结果展示（但请放心，测试绝对值会波动，但终版 kernel 每次执行的速度都稳压 cuBLAS 一头）
+- 优化过程中有一段很坎坷的经历，我花了很多时间死磕寄存器 shuffle，当时钻进牛角尖里了，一定要转置 Bs，先试了写入阶段转置，又试了直接读取 float2 后在寄存器里转置
+  - 虽然最终写出来了（用了四条__shfl_xor_sync）, 但是性能不咋地，就放弃了，然后才回头逆推了 cuBLAS shared load的策略。不过这段经历倒也加深了我对 warp shuffle 的理解
 - 终版 kernel 已经稳定超越 cuBLAS，还有优化空间吗？当然是有的。比如，由于 mma 死板的 c fragment 输出，在写回 c 矩阵时，我还没有做到完美的事务合并。
-  - 这里可以用 As/Bs smem 作为中转 buffer，先在 smem 中排整齐，再合并写入到 global memory。但是我暂时不想写了，经历上面的过程，理解 ldmatrix/mma，以及 fragment 排布，各种映射，swizzling，我的脑子快要发烧了。读写一次 smem，又要考虑冲突问题，算了，既然性能超过 cuBLAS 就先缓缓吧~
+  - 标准解法是用 As/Bs smem 作为中转 buffer，先在 smem 中排整齐，再合并写入到 global memory。但是我暂时不想写了，经历上面的过程，理解 ldmatrix/mma，以及 fragment 排布，各种映射，swizzling，我的脑子快要发烧了。读写一次 smem，又要考虑冲突问题，算了，既然性能超过 cuBLAS 就先缓缓吧~
 - Callback 一下开头，为什么 cuBLAS 的 0 冲突、4 级流水线、L2 命中率也拉得很高 的 kernel 性能还没我们两级流水线的性能好？
-  - 我个人认为流水线是为了隐藏时延用的，并不是说越多级就越好，他为了调度安排 4 级流水线应该用了更多的寄存器资源（ncu 显示 228），只有一个 block 活跃
-  - 我们的两级流水线，每个线程负责的计算量远比 cuBLAS 的 tiling 策略高，指令级并行度更高，而且有两个 block 活跃
-  - 如果有 nv 的专家路过，可以留言讨论一下~
-- 使用 mma tf32 的过程中，我一直有种别扭感，ldmatrix 没有 tf32 dtype，也用不了 transpose（ldmatrix 并不关心上层的高级数据类型（无论是 FP16 还是 TF32），它操作的是 .b16 级别的数据块）
+  - 首先我认为 NV 没有专门为消费级显卡做优化，这个 kernel 不是最佳 kernel；
+  - 其次，个人认为流水线是为了隐藏时延用的，并不是说越多级就越好，它为了调度 4 级流水线用了更多的寄存器资源（ncu 显示 228），只有一个 block 活跃
+  - 我们的 tiling 策略使得 kernel 的计算访存比要比 cuBLAS 的更高
+    - 我是用的 128x128，cuBLAS 用的 64x256，这意味着每个 block 分别需要搬运 128+128 和 64+256 单位的数据量
+    - 我的计算访存比是 cuBLAS 的 (128*128 / (128+128)) / (64*256 / (64+256)) = 1.25 倍
+    - 再加上两级流水线降低了寄存器压力，可以有两个活跃的 block。让 SM 有充足的 warp 进行调度，从而更好地隐藏访存的时延。
+  - 如果有 nv 的专家路过，可以留言点评一下~
+- 使用 mma tf32 的过程中，我一直有种别扭感，ldmatrix 没有 tf32 dtype，也用不了 .trans转置修饰符（ldmatrix 并不关心上层的高级数据类型（无论是 FP16 还是 TF32），它操作的是 .b16 级别的数据块）
   - Ampere 引入的 tf32 tensor core 加速确实不完美，但经过这一番洗礼，后续写 hgemm 应该更顺畅了
 
-## 总结
+## 8. 结束
 
 最后，相信经过这一轮下来，我们对 tensor core 相关指令的使用、warp 级协作、smem 的高效利用、以及如何通过 swizzling 和双 buffer 技术来优化性能都有了更深入的理解。
-其实本文虽然对 mma/ldmatrix 的部分情况（比如 B fragment) 做了详细介绍，但没有完全解释所有细节，ldmatrix/mma 的 fragment A/B/C 的排布，不同精度 shape 下其实都可能不同，这些具体细节还是参考 NVIDIA 的官方文档和 PTX 手册。
+其实本文虽然对 mma/ldmatrix 的某些部分（比如 B fragment) 做了详细介绍，但没有完全解释所有细节，ldmatrix/mma 的 fragment A/B/C 的排布，不同精度 shape 下其实都可能不同，这些具体细节还是请参考 NVIDIA 的官方文档和 PTX 手册看看吧。
 
 如有错误，请大家指正。完整 kernel 和测试代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：
 
