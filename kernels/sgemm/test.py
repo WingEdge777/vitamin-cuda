@@ -30,7 +30,7 @@ lib = load(
 baseline = None
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
+def benchmark(op, a, b, c=None, warmup=10, rep=200, prefix="torch"):
     if c is not None:
         # warm up
         for i in range(warmup):
