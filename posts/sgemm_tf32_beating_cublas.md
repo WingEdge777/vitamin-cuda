@@ -3,25 +3,28 @@
 ## 0. 序 - 向量化计算的时代
 
 （干货核能预警，大量配图，涉及硬核的 swizzle 地址坐标映射推导代码，layout 分析，指令说明，建议在 PC 端阅读以获得最佳体验）
+
 （本文适用于有一定 CUDA 编程基础，熟悉 GEMM 优化，对进阶 tensor core / 嵌入 PTX 指令 性能调优感兴趣的读者阅读）
+
 （所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：）
 >
 > 怎么感觉要写出超越 cuBLAS 系列合集呢
 >
-在如今 Tensor Core 满天飞的时代，要是你还不知道怎么用 Tensor Core 进行 GEMM 计算，那你可能已经落后于时代了。
+> 在如今 Tensor Core 满天飞的时代，要是你还不知道怎么用 Tensor Core 进行 GEMM 计算，那你可能已经落后于时代了。
+
 
 本文以 M=N=K=4096（MxKxN, 这是 cuBLAS 最擅长的中等规模）的 GEMM tf32 为例，在 RTX 5060 移动版显卡上，本人将使用 cp.async、ldmatrix、mma 等 PTX 指令，使用 Tensor-Core TF32 加速计算，在同精度赛道上成功超越了 NVIDIA 原厂的 cuBLAS。本文将复盘这场与 cuBLAS 较量（是真较量，用 ncu 一步步 profile+迭代优化出来的）过程。细节会具体到 cp.async 指令的运用，ldmatrix/mma warp 级别 PTX 指令，极其硬核的 swizzle 推导（虽然最后没用上）, layout 分析等等
 
 本文会给出 5 个 kernel 实现，从基础的 cp.async + 双 ldmatrix + mma，用 swizzle 解决 bank conflict，逆推 cuBLAS 策略更进一步优化 smem 访问，使用 grid swizzling 复用 L2，double buffer 隐藏时延 等手段完成最终对 cuBLAS 的超越。整个过程涉及对指令要求/用法的介绍和分析，精巧的 swizzle 设计，希望能帮助读者深入理解 Tensor Core 的使用和优化技巧。
 
-和之前 sgemm simt kernel 相比不太一样，之前本人是先有的优化路径然后写的几版代码（比较熟悉 gemm 优化手段），但由于本人对 tensor core 也并不熟悉，这一次是 ncu profile 驱动型演进。并且我先 profile 了 cuBLAS 的实现，从他的 kernel 名字和 shared memory table 逆推+参考其优化策略，最终实现了性能超越。（本人有合理理由怀疑 cuBLAS 应该是很久未更新，或者说未针对消费级显卡进行优化，因为本人在还有优化策略没全部用上的时候就已经匹配上了 cuBLAS 的性能）
+和之前 sgemm simt kernel 相比不太一样，之前本人是先有的优化路径然后写的几版代码（比较熟悉 gemm 优化手段），但由于本人对 tensor core 也并不熟悉，这一次是 ncu profile 驱动型演进。并且我先 profile 了 cuBLAS 的kernel，从他的 kernel 名字和 shared memory table结果逆推+参考其优化策略，最终实现了性能超越。（本人有合理理由怀疑 cuBLAS 应该是很久未更新，或者说未针对消费级显卡进行优化，因为本人在还有优化策略没全部用上的时候就已经匹配上了 cuBLAS 的性能）
 
 kernel 大纲如下（第一个是 cuBLAS kernel）
 
 - sgemm_cublas tf32 版
-- sgemm_tf32_bt（向量化读 A/B，B 转置写入 smem, ldmatrix + mma）
-- sgemm_tf32_bt_swizzle （向量化读 A/B，B 转置写入 smem, ldmatrix + mma, As 0 冲突）
-- sgemm_tf32_bt_swizzle_dbf （向量化读 A/B，B 转置写入 smem, ldmatrix + mma, As 0 冲突，grid swizzling, 97~102% cuBLAS 性能）
+- sgemm_tf32_bt（向量化读 A/B，B 转置写入 smem, 双ldmatrix + mma）
+- sgemm_tf32_bt_swizzle （向量化读 A/B，B 转置写入 smem, 双ldmatrix + mma, As 0 冲突）
+- sgemm_tf32_bt_swizzle_dbf （向量化读 A/B，B 转置写入 smem, 双ldmatrix + mma, As 0 冲突，grid swizzling, 97~102% cuBLAS 性能）
 - sgemm_tf32_swizzle_bcf (cp.async 读写 A/B，swizzle， As/Bs 无冲突，grid swizzling)
 - sgemm_tf32_swizzle_bcf_dbf (cp.async 读写 A/B，swizzle， As/Bs 无冲突，grid swizzling，双 buffer，超越 cuBLAS)
 
@@ -31,7 +34,7 @@ kernel 大纲如下（第一个是 cuBLAS kernel）
 
 ### PTX 指令
 
-PTX（parallel-thread-execution）官方文档：<https://docs.nvidia.com/cuda/parallel-thread-execution/index.html>，是 nv 提供的虚拟汇编指令语法集。在本文中主要用到的指令有：cp.async、ldmatrix、mma，cp.async 是异步拷贝指令，ldmatrix/mma 是 warp 级别协同搬运计算指令。
+PTX（parallel-thread-execution）官方文档：<https://docs.nvidia.com/cuda/parallel-thread-execution/index.html>，是 nv 提供的虚拟汇编指令语法集。在本文中主要用到的指令有：cp.async、ldmatrix、mma，cp.async 是异步拷贝指令，ldmatrix/mma 是 warp 级别协同搬运/计算指令。
 
 具体讲解指令之前，先说明一下在 C++ (CUDA) 代码中嵌入 PTX 汇编指令的语法结构。它使用的是 GCC 扩展内联汇编（Extended Asm）语法，一般为：
 
@@ -72,10 +75,9 @@ asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n" ::"r"(dst_sm
 - "r"：从一个 32 位通用寄存器中读取输入。
 - "=f","f": 同理
 
-好了，下面介绍下我们即将用到的指令，只说我们用到指令的具体用法，输入输出列表也省了，免得太冗长枯燥，各指令的其他用法还是请参考官方文档：
+好了，下面介绍下我们即将用到的指令，只说我们用到指令的具体用法，输入输出列表也省了，免得太冗长枯燥，各指令的其他用法还是请参考官方文档
 
 ```cpp
-
 cp.async.cg.shared.global.L2::128B [%0], [%1], 16; // cg： (Cache at Global level)：bypass L1，拷贝 16 字节
 cp.async.commit_group;  // 提交异步拷贝任务
 cp.async.wait_group 0;  // 表示允许当前线程后台异步的 group 数，0 表示不允许后台，要等待到全部完成
@@ -99,8 +101,7 @@ ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; //协同加载 2 个 8x
 ```
 
 - ldmatrix：一个 warp 从 smem 协同加载一个小矩阵分块到所有线程，所有线程一起 hold 着的寄存器结果叫做一个 fragment （死板+1）
-  - 注意 x2，x4，表示读取线程数为 16，32。ldmatrix 读取数据，提供地址的每个线程永远是读 16 字节！读取完后会分发到各个线程，组成一个 fragment。
-    - 理解这一点，才能理解如何解决 bank conflict
+  - 注意：x2，x4，表示读取线程数为 16，32。ldmatrix 读取数据，提供地址的每个线程永远是读 16 字节！读取完后会分发到各个线程，组成一个 fragment。理解这一点，才能理解如何解决 bank conflict
   - 由于 tf32 mma 只支持 m16n8k8，为了加载 16x8 的 A 和 8x8 的 B 矩阵，所以我们只能用 m8n8 shape + .b16 类型去搬运 32bit 的数据
   - 同样由于 tf32，我们也无法使用 trans 转置（这也是个坑，手动转置和尝试寄存器 shuffle 转置折腾了我很久）
 
@@ -113,11 +114,13 @@ ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; //协同加载 2 个 8x
 
 再看一眼 kernel 名字，调用的 cutlass kernel `void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_64x256_16x4_nn_align4>(T1::Params)`, 嗯，mma m16n8k8，64x256 的 tiling（m=64，n=256），16 的 k 维度切块，4 级流水线。
 
-ok, 初步摸清对手底细了，开始手搓我们自己的 kernel。
+ok, 初步摸清对手底细了，开始手搓我们自己的 kernel
 
 ## 2. sgemm_tf32_bt
 
 这个初版 kernel，我的想法很简单，就是把 cp.async 用上，ldmatrix + mma 启动起来，就算完事。其他 bank conflict，合并访存什么的就先不管了。虽然大概猜出 cuBLAS 的 cutlass 的实现，但是我并不想照抄他的。抄，抄还能超得过师傅吗，何况逆推的策略也不一定完整，起码 4 级流水线我就不想写（要改 smem 大小），然后 4 个 stage 的调度，我表示放弃。
+
+![](static/tiling.svg)
 
 当然，也没有那么粗糙。我还是按着我原来 SIMT kernel 的思路
 
@@ -127,9 +130,12 @@ ok, 初步摸清对手底细了，开始手搓我们自己的 kernel。
 然后整个流程也没有太多要点：
 
 - As 矩阵用 cp.async 从 global memory bypass L1 直达 smem，Bs 矩阵用 LDG + 手动转置写入 smem
-- 然后用 ldmatrix 加载 As，Bs 到寄存器， mma 计算，
-- 得到 c fragment，写回 c。
-唯一要提一下的是，mma 的结果 fragment c 的布局（就是每个线程 hold 哪些值），不然你都不知道怎么映射回全局坐标，这个具体见：<https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688>
+- 然后用 ldmatrix 加载 As，Bs 到寄存器， mma 计算
+- 得到 c fragment，写回 c
+
+唯一要先提一下的是，mma 的结果 fragment c 的布局（就是每个线程 hold 哪些值），不然你都不知道怎么映射回全局坐标，这个具体见：<https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688>
+
+代码：
 
 ```cpp
 // a block calculate c[128][128]
@@ -272,36 +278,38 @@ sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95,
 ```
 
 我去，惨不忍睹啊，比 pytorch 的 fp32 矩阵乘法还要慢。ncu profile 一下
+
 ![](static/bt.png)
 
-醒目的 bank conflicts 比例，不过也是意料之中了。接下来优化 smem 访问
+醒目的 bank conflicts 比例（avg 32.6-way冲突，都不知道算怎么出来的），不过也是意料之中了。接下来优化 smem 访问
 
 ## 3. sgemm_tf32_bt_swizzle
 
 ### As 优化
 
-先说一下，数据是如何搬运到 As，以及 ldmatrix 是如何访问 As 的。128x16 行数据，cp.async 部分可以先忽略，因为就类似于我们之前平铺线程 float4 向量化访问（区别在于这里我们 bypass 了 L1 和寄存器）
-重点下需要理解一下 ldmatrix load As 的过程。通过阅读官方文档，我总结一下
-一个 warp 执行 ldmatrix 有两个阶段
+先说一下，数据是如何搬运到 As，以及 ldmatrix 是如何访问 As 的。128x16 行数据，cp.async 部分可以先忽略，因为类似于我们之前平铺线程 float4 向量化访问（区别在于这里我们 bypass 了 L1 和寄存器）
+重点下需要理解一下 ldmatrix load As 的过程。通过阅读官方文档，我简单总结一下。
+
+一个 warp 执行 ldmatrix 有两个阶段：
 
 - 指定的读取线程从对应的地址读取 16 字节数据（x1，x2，x4，指定的线程数分别为前 8，16，32 个线程）
 - 读取完的数据划分给 32 个线程
 
-这里我们 warping tiling 划分得比较好，正好可以用 ldmatrix x4，即 32 个线程读取 16x8 个数据。
+这里我们 warp tiling 划分得比较好，正好可以用 ldmatrix x4，即 32 个线程读取 16x8 个数据。
 
 ```cpp
 int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
 int a_col = k_offset + (lane_id / 16) * 4;
 ```
 
-As 是 128x16 float 数组。从 As 读取 16x8 的矩阵，我们给了 16 行 2 列共 32 个地址（每个地址是连续 16 字节数据的首地址，两列之间相距 4 列，意思是 16 行连续的 8 个 float），计算一下每个线程读取的地址：（以 warp 0, m_idx=0，k_offset=0 为例）
+As 是 128x16 float 数组。从 As 读取 16x8 的矩阵，我们给了 16 行 2 列共 32 个地址（每个地址是连续 16 字节数据的首地址，两列之间相距 4 列，其实就是 16 行连续的 8 个 float），计算一下每个线程读取的地址：（以 warp 0, m_idx=0，k_offset=0 为例）
 
 ```yaml
 row:0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 col:0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
 ```
 
-首先 512bytes 宽内存事务，gpu 会拆分为 4 个 wavefronts，每 8 个线程一组一个内存事务周期，可以只看前 8 个线程，情况是：
+首先 512bytes 宽内存事务，gpu 会拆分为 4 个 phases，每 8 个线程一组一个内存事务周期，可以只看前 8 个线程，情况是：
 
 - 显然，隔行同列就会冲突，所以是 4-way bank conflict.
 
@@ -310,9 +318,11 @@ col:0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
 - row 的二进制为 00000~01111(0xxxx)，前 8 个线程为 00000~00111
 - col 完全相同，00000（只看前 8 线程）
 
+![](static/swizzle_a.svg)
+
 冲突是因为相同 bank id 的不同地址导致的，更进一步，我们这里是由于隔行的 col 值相同导致的（因为我们这里宽度是 16，所以理解起来费劲一点儿），那 row 不同，我们就想办法用 row 的 bit 位去扰动 col。
 
-首先，我们已经知道每两行是 32 个 bank，每两行一组也就是说 row 的 bit0 不起作用，手动把每两行绑定（绑定的意思是这两行最终的列偏移一致，这样能留出空间给其他行错开），所以有 `(row>>1)<<1`；
+首先，我们已经知道每两行是 32 个 bank，每两行一组也就是说 row 的 bit0 不起作用，把row的bit0抹为0，把每两行绑定（绑定的意思是这两行最终的列偏移一致，这样能留出空间与其他行错开），所以有 `(row>>1)<<1`；
 其次， cp.async 是 16 字节（即 float4）对齐，即我们不能扰动 col 的低 2bit。那我们能直接 用 `col^((row>>1) <<2)` 吗？不行，为什么？因为我们数组大小是 128x16，一行里 float4 对齐的地址只能是 0，4, 8, 12 四个值，而且 col 最大不能超过 15（即二进制里 1 不能左移到 bit5 及以上的位置，不然越界了），因此我们只能保留 row>>1 的两个有效位 bit0~1, 即 `((row >> 1) & 0x3)<<2`；
 这样，row 的 bit1~2 被推到了 bit2~3，即 00xx0, 正好是 0，4，8，12 四个值；
 而 col 全相同，因此异或后，依然是遍历了 bit2~3 的四种排列；
@@ -370,18 +380,21 @@ row:0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7
 col:0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4
 ```
 
-依然是宽内存事务请求，会展开 2 个 wavefronts，8 线程一组，可以只看前 8 个线程，同理 4-way bank conflict.
+依然是宽内存事务请求，会展开 2 个 phases，8 线程一组，可以只看前 8 个线程，同理 4-way bank conflict.
 
-这里我其实有点弃疗了，一门心思两头堵，感觉根本不可能同时解决两边的冲突。但是无奈，只能硬着头皮，先从简单的看起。
+这里我其实有点弃疗了，一门心思两头堵，感觉根本不可能同时解决ldg和ldmatrix的冲突。但是无奈，只能硬着头皮，先从简单的看起。
 
 先看 ldmatrix 读取，这个比较好理解，ldmatrix x2 相当于 之前 ldmatrix x4 As 的前 16 线程，所以 Bs 的读取模式相当于 As 读取模式的子集。那么 As 的 swizzle 可以直接拿过来用， Bs 的读取冲突就被优化掉了。
 
 好，我们现在有 `new_col = col ^ (((row >> 1) & 0x3) << 2)`，还算不错，一步就把 Bs 读取干掉了
+
 但是，这个 swizzle 对前面 ldg 写入管用吗？仔细观察，ldg 写入时 row 的二进制为：
 
 ```yaml
-00000，,00100，01000，01100，10000，10100，11000，11100...
+00000，00100，01000，01100，10000，10100，11000，11100...
 ```
+
+![](static/swizzle_b.svg)
 
 可以发现，实际上我们是取了 row 的 bit1~2 左移到 bit2~3 的位置，结果只有 00010 和 00100 两种状态，所以和 col（全 0）异或，都撞到两个 bank 里了，16-way 冲突。
 那怎么办呢，再仔细观察，注意到 row 是 4 的整数倍，它的有效变量位其实在 bit2~4。如果考虑直接取 bit2~4 的话，那么有 `((row>>2)&0x7) <<2`。发现依然不行，因为首先数组直接越界了（推导 As 中也说过了），我们必须让扰动范围保持在 bit2~3，那么再限制一下就得到 `((row>>2)&0x3) <<2` 。
@@ -423,7 +436,7 @@ LDMATRIX_X2(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
 
 跑一下 benchmark：
 
-```bash
+```yaml
 n: 4096, m: 4096, k: 4096
 torch                                    mean time: 15.146454 ms, 9.07 tflops
 sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, tflops: 16.10
@@ -437,12 +450,10 @@ sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, 
 
 通过之前的修改，我们做到了无 bank conflict 的 As 读写，Bs 读写冲突下降了许多。一时想不到办法解决 Bs 的冲突，而且我听传闻说 ldmatrix 走的是不同的硬件电路，和 ldg 不同。内心抱着意思侥幸心理，双 buffer 也许能掩盖这些冲突时延开销（毕竟之前 cuBLAS SIMT 也没解决冲突啊），所以我死马当作活马医，先上双 buffer 流水线看一下。流水线流程参考我的上一篇文章，详细代码也不贴了。直接跑一下 benchmark：
 
-```bash
+```yaml
 n: 4096, m: 4096, k: 4096
 torch                                    mean time: 15.146454 ms, 9.07 tflops
 sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, tflops: 16.10
-sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95, tflops: 8.63
-sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, tflops: 14.04
 sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, tflops: 15.23
 ```
 
@@ -452,7 +463,16 @@ sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, 
 
 ### grid swizzling
 
-是不是 L2 cache 起的作用，试试就知道，上技巧 grid swizzle。grid swizzle 的意思就是把 block 访问 global memory 的顺序重新排列一下。默认情况下 cuda 是按照 grid 的 x，y 维度顺序发射的。我们手动调整一下 block 访问的实际分块。每 8 个一组。
+是不是 L2 cache 起的作用，试试就知道，上技巧 grid swizzle。grid swizzle 的意思就是把 block 访问 global memory tile 的顺序重新排列一下。默认情况下 cuda 是按照 grid 的  x （N）维度，再 y（M）维度顺序发射的。
+
+![](static/grid_swizzle.png)
+
+我们手动调整一下 block 访问的实际分块，强行将遍历轨迹折叠成一个宽度为 8 的垂直长条（Panel）。使得其在 x 维度上遍历 8 块后，就立刻向下进入下一行的 tile。完整一行A/一列B矩阵tile大小为 128*4096*4 bytes = 2MB。如果不限制宽度，GPU 会先执行第 0 行的 32 个 Block。这 32 个 Block 共享同 1 个 A tile（2 MB），但它们分别需要读取 32 个不同的 B tile
+也就是说，为了算完第 0 行的 Block，GPU 总共读取了 66 MB 的数据, 这超过了我的L2 cache 大小（32MB）！(说明在中途，L2已经被B tile冲刷掉了)
+
+限制x维度执行8块后，GPU 就会先执行完第 0 行的前 8 个 block，再执行第 1 行的前 8 个 Block，以此类推。这样，每 8 个 Block 会读取 1 个 A tile（2 MB）和 8 个 B tile（16 MB），总大小为18MB，小于 L2 cache 大小，可以完整驻留。在极短时间窗口内，发射的下一行8个block会读取新的A tile，但是可以完全复用这8个B tile，避免了重复读取 global memory开销，吃满L2红利。
+
+具体实现如下：
 
 ```cpp
     // grid swizzling
@@ -463,14 +483,12 @@ sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, 
     int by = (linear_id / SWIZZLE_W) % gridDim.y;
 ```
 
-这样，相邻发射的 block（极短的时间窗口内），访问 A/B 矩阵的 block，其实是复用到 A 的行块，B 的列块，这部分还在 L2 cache 中，不需要从 global memory 读取。跑一下 benchmark：
+跑一下 benchmark：
 
-```bash
+```yaml
 n: 4096, m: 4096, k: 4096
 torch                                    mean time: 15.146454 ms, 9.07 tflops
 sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, tflops: 16.10
-sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95, tflops: 8.63
-sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, tflops: 14.04
 sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, tflops: 15.76
 ```
 
@@ -545,19 +563,17 @@ benchmark 结果：
 n: 4096, m: 4096, k: 4096
 torch                                    mean time: 15.146454 ms, 9.07 tflops
 sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, tflops: 16.10
-sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95, tflops: 8.63
-sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, tflops: 14.04
 sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, tflops: 15.76
 sgemm_tf32_swizzle_bcf                   mean time: 8.650843 ms, speedup: 1.83, tflops: 15.89
 ```
 
-起飞，单 buffer 甚至比双 buffer 还快了
+起飞，单 buffer 实现甚至比双 buffer 还快了
 ![](static/sh_opt.png)
 ncu report bank conflict 也降低为 0（实际还显示冲突 48618/100715659 ~=0.4%, 具体原因是不同 warp 间的冲突，这个在我上篇文章说过，可以忽略）
 
 ## 6. sgemm_tf32_swizzle_bcf_dbf
 
-好，再给我们的无冲突版加上 double buffer 流水线优化，就是目前最终版的优化 kenel 了。最后贴一下完整 benchmark，和 ncu report
+好，再给我们的无冲突版加上 double buffer 流水线优化，就是目前最终版的完全体 kenel 了。最后贴一下完整 benchmark，和 ncu report
 ![](static/final.png)
 
 ```bash
@@ -578,6 +594,8 @@ sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, 
 - 实际 benchmark 结果绝对值会有波动（测试设备为 RTX 5060 移动版，无法排除动态频率、桌面和系统应用的影响），本文为了行文流畅，避免前后结果矛盾，使用了同一组测试结果展示（但请放心，测试绝对值会波动，但终版 kernel 每次执行的速度都稳压 cuBLAS 一头）
 - 优化过程中有一段很坎坷的经历，我花了很多时间死磕寄存器 shuffle，当时钻进牛角尖里了，一定要转置 Bs，先试了写入阶段转置，又试了直接读取 float2 后在寄存器里转置
   - 虽然最终写出来了（用了四条__shfl_xor_sync）, 但是性能不咋地，就放弃了，然后才回头逆推了 cuBLAS shared load的策略。不过这段经历倒也加深了我对 warp shuffle 的理解
+- 为什么gemm tf32用了grid swizzle，而在sgemm simt中我就没用？其实我之前也用了，但是发现没什么效果，应该是cuda core计算速度慢一些，计算时延已经完美隐藏访存时延了
+  - 但使用tensor core后，算力加强，计算时延掩盖不了访存时延了，这里L2的作用就凸显出来了
 - 终版 kernel 已经稳定超越 cuBLAS，还有优化空间吗？当然是有的。比如，由于 mma 死板的 c fragment 输出，在写回 c 矩阵时，我还没有做到完美的事务合并。
   - 标准解法是用 As/Bs smem 作为中转 buffer，先在 smem 中排整齐，再合并写入到 global memory。但是我暂时不想写了，经历上面的过程，理解 ldmatrix/mma，以及 fragment 排布，各种映射，swizzling，我的脑子快要发烧了。读写一次 smem，又要考虑冲突问题，算了，既然性能超过 cuBLAS 就先缓缓吧~
 - Callback 一下开头，为什么 cuBLAS 的 0 冲突、4 级流水线、L2 命中率也拉得很高 的 kernel 性能还没我们两级流水线的性能好？
