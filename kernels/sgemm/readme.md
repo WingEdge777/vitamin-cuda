@@ -39,7 +39,7 @@ sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, 
 sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95, tflops: 8.63
 sgemm_tf32_bt_swizzle                    mean time: 9.786451 ms, speedup: 1.55, tflops: 14.04
 sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, tflops: 15.76
-sgemm_tf32_swizzle_bcf                   mean time: 8.402071 ms, speedup: 1.89, tflops: 16.36
+sgemm_tf32_swizzle_bcf                   mean time: 8.650843 ms, speedup: 1.83, tflops: 15.89
 sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, tflops: 16.61
 ```
 

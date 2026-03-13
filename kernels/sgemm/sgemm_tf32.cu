@@ -18,7 +18,7 @@
 
 #define SWIZZLE_A(row, col) ((col) ^ (((row >> 1) & 0x3) << 2))
 
-#define SWIZZLE_B(row, col) ((col) ^ ((((row) >> 2) & 0x3) << 2))
+#define SWIZZLE_B(row, col) ((col) ^ (((((((row) >> 1)) ^ ((row) >> 3))) & 0x3) << 2))
 
 #define SWIZZLE_B_F2(row, col) ((col) ^ (((row) & 0x7) << 3))
 
