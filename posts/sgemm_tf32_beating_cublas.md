@@ -106,9 +106,9 @@ ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; //协同加载 2 个 8x
 
 ### cuBLAS kernel ncu report
 
-![](static/cuBLAS_tf32_ncu_0.png)
+![](static/cublas_tf32_ncu_0.png)
 
-![](static/cuBLAS_tf32_ncu_1.png)
+![](static/cublas_tf32_ncu_1.png)
 
 说实话，第一眼看到 cuBLAS 的 ncu report 时，我是有点发虚的。compute/memory 吞吐不低，完美的 shared memory 统计表，使用了 cp.async，ldmatrix，shared load，还做到了 0 个 bank conflict！再加上全合并的 global memory 访问，四级流水线，单线程寄存器更是被狠命压榨到了 228 个。看起来似乎没有优化空间了，这如何赶上它的性能啊。所以最初，心想着能达到 95% 性能就差不多了。
 
@@ -468,7 +468,7 @@ sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, 
 sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, tflops: 15.23
 ```
 
-![](static/cuBLAS_l2.png)
+![](static/cublas_l2.png)
 
 ![](static/L2.png)
 
@@ -518,7 +518,7 @@ sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, 
 
 我仔细观察，苦思冥想。重新翻开 cuBLAS 的 ncu profile 进行对比。寻找最大区别在哪。
 
-![](static/cuBLAS_sh.png)
+![](static/cublas_sh.png)
 ![](static/sh.png)
 
 cuBLAS 0 bank conflict，我 1.5+ 亿次冲突！这就是最大的区别，没理由 cuBLAS 能做到 0 冲突，我们做不到呀。cuBLAS 怎么做到的呢？通过分析对比 shared memory 统计表，我发现：
