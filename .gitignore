@@ -8,4 +8,3 @@ build
 tmp
 *.ncu-rep
 test_.py
-static
