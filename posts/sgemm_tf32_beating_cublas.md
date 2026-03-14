@@ -107,6 +107,7 @@ ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; //协同加载 2 个 8x
 ### cuBLAS kernel ncu report
 
 ![](static/cuBLAS_tf32_ncu_0.png)
+
 ![](static/cuBLAS_tf32_ncu_1.png)
 
 说实话，第一眼看到 cuBLAS 的 ncu report 时，我是有点发虚的。compute/memory 吞吐不低，完美的 shared memory 统计表，使用了 cp.async，ldmatrix，shared load，还做到了 0 个 bank conflict！再加上全合并的 global memory 访问，四级流水线，单线程寄存器更是被狠命压榨到了 228 个。看起来似乎没有优化空间了，这如何赶上它的性能啊。所以最初，心想着能达到 95% 性能就差不多了。
@@ -468,7 +469,9 @@ sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, 
 ```
 
 ![](static/cuBLAS_l2.png)
+
 ![](static/L2.png)
+
 更接近了，可惜还差 0.xms。继续对比 ncu 报告，我发现 cuBLAS 的 L2 cache 命中极高（85%+），我只有（30%+）。这个是不是有很大影响呢？
 
 ### Grid Swizzling
