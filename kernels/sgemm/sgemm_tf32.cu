@@ -73,7 +73,7 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64 个浮点寄存器/线程
+    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
     float sum[4][4][4] = {0.f};
 
     // 主循环
@@ -167,7 +167,7 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            // 根据新的 Warp 跨度重新计算 Global C 的基址
+
             int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
             int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
 
@@ -202,7 +202,7 @@ __global__ __launch_bounds__(256,
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64 个浮点寄存器/线程
+    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
     float sum[4][4][4] = {0.f};
 
     // 主循环
@@ -445,7 +445,7 @@ __launch_bounds__(256, 2) void sgemm_tf32_bt_swizzle_dbf_kernel(float *a, float 
         CP_ASYNC_WAIT_GROUP_0();
         __syncthreads();
 
-        // 切换乒乓缓冲指针
+        // 切换缓冲
         read_idx ^= 1;
         write_idx ^= 1;
     }
@@ -543,7 +543,7 @@ __global__ __launch_bounds__(256,
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64 个浮点寄存器/线程 (寄存器总量完美保持不变)
+    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
     float sum[4][4][4] = {0.f};
 
     // 主循环
@@ -642,7 +642,6 @@ __global__ __launch_bounds__(256,
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            // 根据新的 Warp 跨度重新计算 Global C 的基址
             int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
             int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
 
@@ -794,7 +793,7 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
         CP_ASYNC_WAIT_GROUP_0();
         __syncthreads();
 
-        // 切换乒乓缓冲指针
+        // 切换缓冲
         read_idx ^= 1;
         write_idx ^= 1;
     }
