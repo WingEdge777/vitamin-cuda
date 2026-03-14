@@ -643,6 +643,6 @@ sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, 
 最后，相信经过这一轮下来，我们对 tensor core 相关指令的使用、warp 级协作、smem 的高效利用、以及如何通过 swizzling 和双 buffer 技术来优化性能都有了更深入的理解。
 其实本文虽然对 mma/ldmatrix 的某些部分（比如 B fragment) 做了详细介绍，但没有完全解释所有细节，ldmatrix/mma 的 fragment A/B/C 的排布，不同精度 shape 下其实都可能不同，这些具体细节还是请参考 NVIDIA 的官方文档和 PTX 手册看看吧。
 
-如有错误，请大家指正。完整 kernel 和测试代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：
+如有错误，请大家指正。完整 kernel 和测试代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitamin-cuda 项目：
 
 以上。
