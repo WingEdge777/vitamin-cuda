@@ -259,10 +259,8 @@ __global__ __launch_bounds__(256, 2) void sgemm_tf32_bt_kernel(float *a, float *
             int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
             int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
 
-            c[(c_base_row + t_row) * n + c_base_col + t_col] = sum[m_idx][n_idx][0];
-            c[(c_base_row + t_row) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][1];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col] = sum[m_idx][n_idx][2];
-            c[(c_base_row + t_row + 8) * n + c_base_col + t_col + 1] = sum[m_idx][n_idx][3];
+            FLOAT2(c[(c_base_row + t_row) * n + c_base_col + t_col]) = FLOAT2(sum[m_idx][n_idx][0]);
+            FLOAT2(c[(c_base_row + t_row + 8) * n + c_base_col + t_col]) = FLOAT2(sum[m_idx][n_idx][2]);
         }
     }
 }
