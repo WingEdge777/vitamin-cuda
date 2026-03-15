@@ -1,12 +1,12 @@
 # [CUDA 优化实战] sgemm tf32 - 超越 cuBLAS：Tensor-core、cp.async、ldmatrix、mma
 
 ## 0. 序 - 向量化计算的时代
-
-（干货核能预警，大量配图，涉及硬核的 swizzle 推导过程，layout 地址坐标映射分析，指令说明，建议在 PC 端阅读以获得最佳体验）
-
-（本文适用于有一定 CUDA 编程基础，熟悉 GEMM 优化，对进阶 tensor core / 嵌入 PTX 指令 性能调优感兴趣的读者阅读）
-
-（所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：）
+>
+>干货核能预警，大量配图，涉及硬核的 swizzle 推导过程(看完还不懂xor swizzle，可以顺着网线来打我)，layout 地址坐标映射分析，指令说明，建议在 PC 端阅读以获得最佳体验
+>
+>本文适用于有一定 CUDA 编程基础，熟悉 GEMM 优化，对进阶 tensor core / 嵌入 PTX 指令 性能调优感兴趣的读者阅读
+>
+>所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：
 >
 > 怎么感觉要写出超越 cuBLAS 系列合集呢
 >
