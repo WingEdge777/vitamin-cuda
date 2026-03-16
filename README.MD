@@ -178,6 +178,9 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] sgemm_tf32_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling)
   - [x] sgemm_tf32_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling，双buffer，超越cuBLAS)
   - [x] pytorch op bindings && diff check
+- [hgemm](./kernels/hgemm/)
+  - [x] hgemm_cublas bf16/fp16 版
+  - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
 
