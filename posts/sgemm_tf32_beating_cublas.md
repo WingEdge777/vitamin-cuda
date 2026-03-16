@@ -283,7 +283,7 @@ sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95,
 
 ## 3. sgemm_tf32_bt_swizzle
 
-### As 优化
+### As 共享内存优化
 
 先说一下，数据是如何搬运到 As，以及 ldmatrix 是如何访问 As 的。128x16 行数据，cp.async 部分可以先忽略，因为类似于我们之前平铺线程 float4 向量化访问（区别在于这里我们 bypass 了 L1 和寄存器）
 重点下需要理解一下 ldmatrix load As 的过程。通过阅读官方文档，我简单总结一下。
@@ -353,7 +353,7 @@ uint32_t smem_addr =
 LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
 ```
 
-### Bs 优化
+### Bs 共享内存优化
 
 看一下从 global memory 写入到 Bs。由于我们的转置操作，数组也是 128x16 布局（现在看到这个 layout 就 PTSD），并且还是标量写入
 
