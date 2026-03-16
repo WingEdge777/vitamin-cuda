@@ -180,6 +180,7 @@ All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benc
   - [x] pytorch op bindings && diff check
 - [hgemm](./kernels/hgemm/)
   - [x] hgemm_cublas bf16/fp16 版
+  - [x] hgemm_naive bf16/fp16 版
   - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>

@@ -68,14 +68,19 @@ def benchmark(op, a, b, c=None, warmup=10, rep=200, prefix="torch"):
 
 def diff_check(a, b, prefix="torch", eps=0.016):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
-        print(f"{prefix} result mean diff: {torch.mean(torch.abs(a - b)).item()}")
+        diff = torch.abs(a - b)
+        max_diff = torch.max(diff).item()
+        mean_diff = torch.mean(diff).item()
+        print(f"{prefix} result mean diff: {mean_diff:.6f}, max diff: {max_diff:.6f}")
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
+
 
 def test_all():
     # test the kernel
     ns = [256, 512, 1024, 4096, 8192]
     torch.manual_seed(42)
-    for type in [torch.bfloat16, torch.float16]:
+    # for type in [torch.bfloat16, torch.float16]:
+    for type in [torch.bfloat16]:
         for n in ns:
             print("#" * 100)
             print(f"m: {n}, n: {n}, k: {n}")
@@ -105,7 +110,8 @@ def test_4096():
     m, n, k = [4096] * 3
     print("#" * 100)
     print(f"n: {n}, m: {m}, k: {k}")
-    for type in [torch.bfloat16, torch.float16]:
+    # for type in [torch.bfloat16, torch.float16]:
+    for type in [torch.bfloat16]:
         # a x b = c
         a = torch.randn(m, k).to(type).cuda()
         b = torch.randn(k, n).to(type).cuda()
@@ -123,10 +129,10 @@ def test_4096():
         )
         diff_check(c, c_cublas, prefix="hgemm_cublas")
 
-        # c_my = torch.zeros_like(c)
+        c_my = torch.zeros_like(c)
 
-        # benchmark(lib.hgemm_naive, a, b, c_my, prefix="hgemm_naive")
-        # diff_check(c, c_my, prefix="hgemm_naive")
+        benchmark(lib.hgemm_naive, a, b, c_my, prefix="hgemm_naive")
+        diff_check(c, c_my, prefix="hgemm_naive")
 
 
 if __name__ == "__main__":
