@@ -134,6 +134,9 @@ def test_4096():
         benchmark(lib.hgemm_naive, a, b, c_my, prefix="hgemm_naive")
         diff_check(c, c_my, prefix="hgemm_naive")
 
+        benchmark(lib.hgemm_bcf, a, b, c_my, prefix="hgemm_bcf")
+        diff_check(c, c_my, prefix="hgemm_bcf")
+
 
 if __name__ == "__main__":
     # test_all()

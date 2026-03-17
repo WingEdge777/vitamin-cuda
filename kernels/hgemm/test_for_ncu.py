@@ -85,6 +85,7 @@ def run():
     c_my = torch.zeros_like(c)
 
     benchmark(lib.hgemm_naive, a, b, c_my, prefix="hgemm_naive")
+    benchmark(lib.hgemm_bcf, a, b, c_my, prefix="hgemm_bcf")
 
 
 if __name__ == "__main__":
