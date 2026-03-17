@@ -6,6 +6,7 @@ sgemm kernel
 
 - [x] hgemm_cublas bf16/fp16 版
 - [x] hgemm_naive bf16/fp16 版
+- [] hgemm_bcf bf16/fp16 版
 - [x] pytorch op bindings && diff check
 
 ## 测试
@@ -20,7 +21,8 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 4.442411 ms, 30.94 tflops
-hgemm_cublas                             mean time: 4.468129 ms, speedup: 0.99, tflops: 30.76
-hgemm_naive                              mean time: 5.522855 ms, speedup: 0.80, tflops: 24.89
+torch                                    mean time: 4.114296 ms, 33.41 tflops
+hgemm_cublas                             mean time: 4.219122 ms, speedup: 0.98, tflops: 32.58
+hgemm_naive                              mean time: 5.238569 ms, speedup: 0.79, tflops: 26.24
+hgemm_bcf                                mean time: 4.333340 ms, speedup: 0.95, tflops: 31.72
 ```
