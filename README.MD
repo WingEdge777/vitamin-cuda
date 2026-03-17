@@ -44,7 +44,7 @@ I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <
 
 ## Kernels (100+ kernels)
 
-All kernels were tested on an RTX 5060 GPU (unless otherwise specified) and benchmarked against PyTorch 2.9
+All kernels were tested on an RTX 5060 laptop (unless otherwise specified) and benchmarked against PyTorch 2.9
 
 <div id="easy"></div>
 
