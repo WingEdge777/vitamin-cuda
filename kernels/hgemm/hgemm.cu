@@ -16,7 +16,7 @@
 #define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 
-#define SWIZZLE_A(row, col) ((col) ^ (((row >> 2) & 0x3) << 3))
+#define SWIZZLE_A(row, col) ((col) ^ (((row >> 1) & 0x3) << 3))
 
 #define SWIZZLE_B(row, col) ((col) ^ (((row) & 0x7) << 3))
 
@@ -288,7 +288,7 @@ __global__ void hgemm_bcf_kernel(T *a, T *b, T *c, int m, int n, int k) {
             // 4 次 ldmatrix B (4 * 8 = 32 列)
 #pragma unroll
             for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                // Lane 0~15 的线程恰好覆盖了 16 行 (两块 8x8 的首地址)
+                // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
                 int b_row = k_offset + (lane_id % 16);
                 int b_col = warp_id_n * 32 + n_idx * 8;
 
