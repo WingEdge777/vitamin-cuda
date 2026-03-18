@@ -354,6 +354,255 @@ __global__ void hgemm_bcf_kernel(T *a, T *b, T *c, int m, int n, int k) {
     }
 }
 
+// a block calculate c[128][128]
+template <const int BM = 128, const int BN = 128, const int BK = 32, typename T>
+__global__ void hgemm_bcf_dbf_kernel(T *a, T *b, T *c, int m, int n, int k) {
+    // grid swizzling
+    int linear_id = blockIdx.y * gridDim.x + blockIdx.x;
+    const int SWIZZLE_W = 8; // 将执行块设置为 8 的宽度
+
+    int bx = (linear_id % SWIZZLE_W) + (linear_id / (SWIZZLE_W * gridDim.y)) * SWIZZLE_W;
+    int by = (linear_id / SWIZZLE_W) % gridDim.y;
+
+    int tid = threadIdx.x; // 0~255
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+
+    // 搬运映射
+    int load_a_row = tid / 4;        // 0~63
+    int load_a_col = (tid % 4) * 8;  // 0,8,16,24
+    int load_b_row = tid / 16;       // 0~15 (K维度)
+    int load_b_col = (tid % 16) * 8; // 0,8,16 ... 120 (N维度)
+
+    // A/B 都行优先
+    __shared__ T As[2][BM][BK];
+    __shared__ T Bs[2][BK][BN];
+
+    // warp tiling
+    // 每个 warp 负责  64 x 32 的 C 矩阵块
+    int warp_id_m = warp_id / 4; // 0, 1
+    int warp_id_n = warp_id % 4; // 0, 1, 2, 3
+
+    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
+    float sum[4][4][4] = {0.f};
+
+    // ----------------------------- Prologue 先加载一次As/Bs
+    // cp.async load A
+    uint32_t smem_a0 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&As[0][load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
+    uint32_t smem_a1 = static_cast<uint32_t>(
+        __cvta_generic_to_shared(&As[0][load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
+
+    T *global_a0 = &a[(by * BM + load_a_row) * k + load_a_col];
+    T *global_a1 = &a[(by * BM + load_a_row + 64) * k + load_a_col];
+
+    CP_ASYNC_CG(smem_a0, global_a0);
+    CP_ASYNC_CG(smem_a1, global_a1);
+
+    // cp.async load B
+    uint32_t smem_b0 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[0][load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
+    uint32_t smem_b1 = static_cast<uint32_t>(
+        __cvta_generic_to_shared(&Bs[0][load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
+
+    T *global_b0 = &b[(load_b_row)*n + bx * BN + load_b_col];
+    T *global_b1 = &b[(load_b_row + 16) * n + bx * BN + load_b_col];
+
+    CP_ASYNC_CG(smem_b0, global_b0);
+    CP_ASYNC_CG(smem_b1, global_b1);
+
+    CP_ASYNC_COMMIT_GROUP();
+    CP_ASYNC_WAIT_GROUP_0();
+    __syncthreads();
+
+    int read_idx = 0;
+    int write_idx = 1;
+
+    // 主循环
+    for (int bk = 32; bk < k; bk += BK) {
+
+        // 1. cp.async load A
+        smem_a0 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&As[write_idx][load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
+        smem_a1 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&As[write_idx][load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
+
+        // 全局地址改为跨步，降低寄存器压力
+        global_a0 += BK;
+        global_a1 += BK;
+
+        CP_ASYNC_CG(smem_a0, global_a0);
+        CP_ASYNC_CG(smem_a1, global_a1);
+
+        // 2. cp.async load B
+        smem_b0 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&Bs[write_idx][load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
+        smem_b1 = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&Bs[write_idx][load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
+
+        global_b0 += BK * n;
+        global_b1 += BK * n;
+
+        CP_ASYNC_CG(smem_b0, global_b0);
+        CP_ASYNC_CG(smem_b1, global_b1);
+
+        CP_ASYNC_COMMIT_GROUP();
+
+        // 3. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
+#pragma unroll
+        for (int k_step = 0; k_step < 2; ++k_step) {
+            int k_offset = k_step * 16;
+
+            uint32_t reg_a[4][4];
+            uint32_t reg_b[4][2];
+
+            // 4 次 ldmatrix A (4 * 16 = 64 行)
+#pragma unroll
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+                // ldmatrix x4 读 16x16
+                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
+                int a_col = k_offset + (lane_id / 16) * 8;
+                uint32_t smem_addr =
+                    static_cast<uint32_t>(__cvta_generic_to_shared(&As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
+                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+            }
+
+            // 4 次 ldmatrix B (4 * 8 = 32 列)
+#pragma unroll
+            for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
+                int b_row = k_offset + (lane_id % 16);
+                int b_col = warp_id_n * 32 + n_idx * 8;
+
+                uint32_t smem_addr =
+                    static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[read_idx][b_row][SWIZZLE_B(b_row, b_col)]));
+                LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
+            }
+
+            // MMA 核心运算：4x4 次 m16n8k16
+#pragma unroll
+            for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+                for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                    if constexpr (std::is_same_v<T, __half>) {
+                        M16N8K16_F16(sum[m_idx][n_idx][0],
+                                     sum[m_idx][n_idx][1],
+                                     sum[m_idx][n_idx][2],
+                                     sum[m_idx][n_idx][3],
+                                     reg_a[m_idx][0],
+                                     reg_a[m_idx][1],
+                                     reg_a[m_idx][2],
+                                     reg_a[m_idx][3],
+                                     reg_b[n_idx][0],
+                                     reg_b[n_idx][1]);
+                    } else {
+                        M16N8K16_BF16(sum[m_idx][n_idx][0],
+                                      sum[m_idx][n_idx][1],
+                                      sum[m_idx][n_idx][2],
+                                      sum[m_idx][n_idx][3],
+                                      reg_a[m_idx][0],
+                                      reg_a[m_idx][1],
+                                      reg_a[m_idx][2],
+                                      reg_a[m_idx][3],
+                                      reg_b[n_idx][0],
+                                      reg_b[n_idx][1]);
+                    }
+                }
+            }
+        }
+        CP_ASYNC_WAIT_GROUP_0();
+        __syncthreads();
+        read_idx ^= 1;
+        write_idx ^= 1;
+    }
+    // ------------------- Epilogue 最后计算一次再写回
+#pragma unroll
+    for (int k_step = 0; k_step < 2; ++k_step) {
+        int k_offset = k_step * 16;
+
+        uint32_t reg_a[4][4];
+        uint32_t reg_b[4][2];
+
+        // 4 次 ldmatrix A (4 * 16 = 64 行)
+#pragma unroll
+        for (int m_idx = 0; m_idx < 4; ++m_idx) {
+            // ldmatrix x4 读 16x16
+            int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
+            int a_col = k_offset + (lane_id / 16) * 8;
+            uint32_t smem_addr =
+                static_cast<uint32_t>(__cvta_generic_to_shared(&As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
+            LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+        }
+
+        // 4 次 ldmatrix B (4 * 8 = 32 列)
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
+            int b_row = k_offset + (lane_id % 16);
+            int b_col = warp_id_n * 32 + n_idx * 8;
+
+            uint32_t smem_addr =
+                static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[read_idx][b_row][SWIZZLE_B(b_row, b_col)]));
+            LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
+        }
+
+        // MMA 核心运算：4x4 次 m16n8k16
+#pragma unroll
+        for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+            for (int n_idx = 0; n_idx < 4; ++n_idx) {
+                if constexpr (std::is_same_v<T, __half>) {
+                    M16N8K16_F16(sum[m_idx][n_idx][0],
+                                 sum[m_idx][n_idx][1],
+                                 sum[m_idx][n_idx][2],
+                                 sum[m_idx][n_idx][3],
+                                 reg_a[m_idx][0],
+                                 reg_a[m_idx][1],
+                                 reg_a[m_idx][2],
+                                 reg_a[m_idx][3],
+                                 reg_b[n_idx][0],
+                                 reg_b[n_idx][1]);
+                } else {
+                    M16N8K16_BF16(sum[m_idx][n_idx][0],
+                                  sum[m_idx][n_idx][1],
+                                  sum[m_idx][n_idx][2],
+                                  sum[m_idx][n_idx][3],
+                                  reg_a[m_idx][0],
+                                  reg_a[m_idx][1],
+                                  reg_a[m_idx][2],
+                                  reg_a[m_idx][3],
+                                  reg_b[n_idx][0],
+                                  reg_b[n_idx][1]);
+                }
+            }
+        }
+    }
+
+    // ---------------- 写回 C 矩阵 ----------------
+    int t_row = lane_id / 4;       // 0~7
+    int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
+
+#pragma unroll
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            int c_base_row = by * BM + warp_id_m * 64 + m_idx * 16;
+            int c_base_col = bx * BN + warp_id_n * 32 + n_idx * 8;
+            if constexpr (std::is_same_v<T, __half>) {
+                HALF2(c[(c_base_row + t_row) * n + c_base_col + t_col]) =
+                    __float22half2_rn(FLOAT2(sum[m_idx][n_idx][0]));
+                HALF2(c[(c_base_row + t_row + 8) * n + c_base_col + t_col]) =
+                    __float22half2_rn(FLOAT2(sum[m_idx][n_idx][2]));
+            } else {
+                BFLOAT2(c[(c_base_row + t_row) * n + c_base_col + t_col]) =
+                    __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][0]));
+                BFLOAT2(c[(c_base_row + t_row + 8) * n + c_base_col + t_col]) =
+                    __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][2]));
+            }
+        }
+    }
+}
+
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
 #define binding_tiled_func_gen(name)                                                                                   \
@@ -391,6 +640,7 @@ __global__ void hgemm_bcf_kernel(T *a, T *b, T *c, int m, int n, int k) {
 
 binding_tiled_func_gen(hgemm_naive);
 binding_tiled_func_gen(hgemm_bcf);
+binding_tiled_func_gen(hgemm_bcf_dbf);
 
 extern void hgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 
@@ -401,4 +651,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(hgemm_cublas);
     torch_pybinding_func(hgemm_naive);
     torch_pybinding_func(hgemm_bcf);
+    torch_pybinding_func(hgemm_bcf_dbf);
 }
