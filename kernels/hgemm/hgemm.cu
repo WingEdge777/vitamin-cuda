@@ -626,7 +626,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     int load_b_col = (tid % 16) * 8; // 0,8,16 ... 120 (N维度)
 
     // A/B 都行优先
-    __shared__ union {
+    __shared__ __align__(128) union {
         // 前半段计算用的 A 和 B
         struct {
             T As[2][BM][BK];
