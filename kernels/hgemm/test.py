@@ -138,6 +138,8 @@ def test_4096():
         diff_check(c, c_my, prefix="hgemm_bcf")
         benchmark(lib.hgemm_bcf_dbf, a, b, c_my, prefix="hgemm_bcf_dbf")
         diff_check(c, c_my, prefix="hgemm_bcf_dbf")
+        benchmark(lib.hgemm_bcf_dbf_rw, a, b, c_my, prefix="hgemm_bcf_dbf_rw")
+        diff_check(c, c_my, prefix="hgemm_bcf_dbf_rw")
 
 
 if __name__ == "__main__":

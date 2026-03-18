@@ -184,6 +184,7 @@ All kernels were tested on an RTX 5060 laptop (unless otherwise specified) and b
   - [x] hgemm_naive bf16/fp16 版 (ldmatrix + mma)
   - [x] hgemm_bcf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, 95~99% cuBLAS' performance)
   - [x] hgemm_bcf_dbf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, outperforming cuBLAS)
+  - [x] hgemm_bcf_dbf_rw bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, coalesced r/w gmem, outperforming cuBLAS)
   - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
