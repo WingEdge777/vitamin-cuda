@@ -6,7 +6,7 @@
 >
 >本文适用于有一定 CUDA 编程基础，熟悉 GEMM 优化，对进阶 tensor core / 嵌入 PTX 指令 性能调优感兴趣的读者阅读
 >
->所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitmin-cuda 项目：
+>所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitamin-cuda 项目：
 >
 > 怎么感觉要写出超越 cuBLAS 系列合集呢
 >
