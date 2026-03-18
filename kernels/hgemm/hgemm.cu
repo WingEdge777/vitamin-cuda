@@ -625,7 +625,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     int load_b_row = tid / 16;       // 0~15 (K维度)
     int load_b_col = (tid % 16) * 8; // 0,8,16 ... 120 (N维度)
 
-    // A/B 都行优先
+    // A/B 都行优先,用union复用同一块内存，写法优雅
     __shared__ __align__(128) union {
         // 前半段计算用的 A 和 B
         struct {
@@ -848,9 +848,10 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int c_base_row = warp_id_m * 64 + m_idx * 16;
-            int c_base_col = warp_id_n * 32 + n_idx * 8;
+            int c_base_row = warp_id_m * 64 + m_idx * 16; // m 跨16行
+            int c_base_col = warp_id_n * 32 + n_idx * 8;  // n 跨8列
 
+            // 16行我们分成两次8行写入
             int c_row_0 = c_base_row + t_row;
             int c_row_2 = c_base_row + t_row + 8;
             int c_col = c_base_col + t_col;
@@ -870,12 +871,12 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     __syncthreads();
 
     // smem to gmem
-    // 每个线程负责搬运 64 个元素 (fp16/bf16)，即 8 个 float4
+    // 每个线程负责搬运 64 个元素 (fp16/bf16)，即 8 个 float4，每次 一个 warp 读写 32*4*4=512B， 256个线程一次写 4096B
     T *c_block = &c[by * BM * n + bx * BN];
 
 #pragma unroll
     for (int step = 0; step < 8; ++step) {
-        // 保证同一个 Warp 的 32 个线程，此时读取的 elem_idx 是绝对连续的
+        // 保证同一个 warp 的 32 个线程，此时读取的 elem_idx 是绝对连续的
         int elem_idx = (step * 256 + tid) * 8;
         int row = elem_idx / 128;
         int col = elem_idx % 128;
