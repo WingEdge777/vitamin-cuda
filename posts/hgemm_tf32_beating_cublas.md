@@ -46,13 +46,14 @@ mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32        d, a, b, c;
 
 ```cpp
 ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];
-ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2];
+ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16 {%0, %1}, [%2];
 ```
 
 - ldmatrix：一个 warp 从 smem 协同加载一个小矩阵分块到所有线程，所有线程一起 hold 着的寄存器结果叫做一个 fragment（输出所以线程 hold 着的值叫 fragment c）
   - 注意：x2，x4，表示读取线程数为 16，32。ldmatrix 读取数据，提供地址的每个线程永远是读 16 字节！读取完后会分发到各个线程，组成一个 fragment。
     - 理解这一点，才能理解如何解决 bank conflict
   - 由于半精度计算我们使用 mma 的 m16n8k16 shape，所以要 从 As 读取 16x16 的 tile，和 Bs 的 16x8 的 tile
+  - ldmatrix 半精度我们也能用.trans转置了（狂喜~）
 
 本次我们有 tf32 的经验，所以再简单说下 tiling 策略，就直接上代码。
 
@@ -412,6 +413,8 @@ hgemm_bcf_dbf_rw                         mean time: 4.075860 ms, speedup: 1.01, 
   - cuBLAS 和我选择了不同的妥协方向，孰优孰劣，欢迎朋友们评价一下
 
 ## 6. 结束
+
+总结一下我们使用了技巧列表，首先是cp.async、ldmatrix、mma 等 PTX 指令，配合 Tensor Core 加速计算，grid swizzle 拉满L2，swizzle 解决 bank conflict，double buffer 异步流水线隐藏时延，利用As/Bs中转 完成c 矩阵写回事务合并。成功超越 cuBLAS。
 
 本文应该是纯血 gemm 系列最后一篇了，从 fp32 到 tf32，再到半精度，从 naive 到超越 cuBLAS，整个过程相信大家对 GPU 架构、CUDA 编程、性能优化有了更深刻的理解。
 
