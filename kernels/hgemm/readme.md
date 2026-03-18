@@ -22,8 +22,9 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 4.137898 ms, 33.21 tflops
-hgemm_cublas                             mean time: 4.232377 ms, speedup: 0.98, tflops: 32.47
-hgemm_naive                              mean time: 5.141741 ms, speedup: 0.80, tflops: 26.73
-hgemm_bcf                                mean time: 4.235186 ms, speedup: 0.98, tflops: 32.45
+torch                                    mean time: 4.139693 ms, 33.20 tflops
+hgemm_cublas                             mean time: 4.265322 ms, speedup: 0.97, tflops: 32.22
+hgemm_naive                              mean time: 5.176603 ms, speedup: 0.80, tflops: 26.55
+hgemm_bcf                                mean time: 4.259930 ms, speedup: 0.97, tflops: 32.26
+hgemm_bcf_dbf                            mean time: 4.055756 ms, speedup: 1.02, tflops: 33.89
 ```
