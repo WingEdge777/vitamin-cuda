@@ -23,7 +23,8 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 ## News
 
-- [2026.03.10] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀(and stay tuned!)
+- [2026.03.18] [hgemm](./kernels/hgemm/) fp16/bf16 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
+- [2026.03.10] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
 - [2026.02.27] [sgemm](./kernels/sgemm/) SIMT kernel outperforming cuBLAS with `smem + swizzle + double buffer + coalesced r/w`🚀
 
 ## Contents 📖
@@ -181,7 +182,8 @@ All kernels were tested on an RTX 5060 laptop (unless otherwise specified) and b
 - [hgemm](./kernels/hgemm/)
   - [x] hgemm_cublas bf16/fp16 版
   - [x] hgemm_naive bf16/fp16 版 (ldmatrix + mma)
-  - [x] hgemm_bcf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf)
+  - [x] hgemm_bcf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, 95~99% cuBLAS' performance)
+  - [x] hgemm_bcf_dbf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, outperforming cuBLAS)
   - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
