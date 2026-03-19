@@ -4,7 +4,7 @@
 >
 > 本文适用于有一定 CUDA 编程基础，熟悉 GEMM 优化，对进阶 tensor core / 嵌入 PTX 指令 性能调优感兴趣的读者阅读
 >
-> 所有 kernel 完整代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitamin-cuda 项目：
+> 完整 kernel 和测试代码可以点击[hgemm](/kernels/hgemm) 查看
 >
 > 没错，这是超越 cuBLAS 系列之三（NV 还不针对移动端显卡调优的话，我们就还是超越。不过这估计是 GEMM 系列最后一篇了，也可能会写 fp8 的 kernel 但应该不会是纯血 fp8 gemm 了，感觉有点同质化。而且 fp8 本身就要搭配各种量化姿势使用）
 >
@@ -418,6 +418,6 @@ hgemm_bcf_dbf_rw                         mean time: 4.075860 ms, speedup: 1.01, 
 
 本文应该是纯血 gemm 系列最后一篇了，从 fp32 到 tf32，再到半精度，从 naive 到超越 cuBLAS，整个过程相信大家对 GPU 架构、CUDA 编程、性能优化有了更深刻的理解。
 
-如有错误，请大家指正。完整 kernel 和测试代码可以从 github 获取，欢迎大家关注我的手撕算子系列 vitamin-cuda 项目：
+如有错误，请大家指正。完整 kernel 和测试代码可以点击[hgemm](/kernels/hgemm) 查看
 
 以上。
