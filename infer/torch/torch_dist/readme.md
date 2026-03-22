@@ -299,9 +299,11 @@ Rank 1: 20 ──┘
      └──irecv     最终输出
 ```
 
-Layer 切分到不同 GPU，数据依次流过各阶段，使用点对点通信传输激活值。
+PP 将模型按层切分到不同 GPU，数据像流水线一样依次穿过。但这种天然的顺序依赖会导致一个致命代价：流水线气泡 (Pipeline Bubble)。
+如图所示，当 Rank 0 在埋头苦算时，Rank 1 只能干瞪眼等待。两卡 PP 的理论空转时间高达 50%，这也解释了为什么在我们的基准测试中，PP 的延迟远高于 TP。
+为了榨干硬件算力、压缩气泡，工业界引入了微批次 (Micro-batch) 技术。其核心思想是：不要等一整批数据 (Batch) 慢吞吞地全走完 Layer 0，而是把它切成更小的碎片。 Layer 0 算完第一个小块就赶紧发走，让下游的 GPU 提前‘转起来’。
 
-如图所示，当 Rank 0 在计算时，Rank 1 处于等待状态，这种算力闲置的真空期被称为流水线气泡 (Pipeline Bubble)。两阶段 PP 的理论气泡率 ≈ 50%（一半时间有 GPU 空闲），这也解释了为什么运行结果中 PP 的延迟远高于 TP。工业界通常引入微批次 (Micro-batch) 配合 1F1B 调度来压缩气泡。例如，不需要等一整批数据（Batch）全走完 Layer 0 才传给 Layer 1。而是把 Batch 拆成更小的 Micro-batch，Layer 0 处理完第一个小块就赶紧发过去，让下游 GPU 先转起来。
+需要注意的是，填补气泡的调度策略在训练和推理中截然不同：在训练场景下，通常采用 1F1B (一前向一反向) 调度来兼顾显存压力；而在我们关注的纯推理场景中，则演变为 Chunked Prefill (分块预填充) 或连续的前向 Micro-Batch 派发，通过让数据块无缝衔接地流过各层，从而最大化吞吐量。
 
 ### 5.2 代码实现
 
@@ -398,22 +400,22 @@ python test.py
 ==================================================
 Demo 0: Single GPU
 ==================================================
-[Single GPU] Output match reference: True, Avg time: 0.094 ms
+[Single GPU] Output match reference: True, Avg time: 10.009 ms
 
 ==================================================
 Demo 1: DP
 ==================================================
-[DP] Output match reference: True, Avg time: 0.101 ms
+[DP] Output match reference: True, Avg time: 5.123 ms
 
 ==================================================
 Demo 2: TP
 ==================================================
-[TP] Output match reference: True, Avg time: 0.067 ms
+[TP] Output match reference: True, Avg time: 5.748 ms
 
 ==================================================
 Demo 3: PP
 ==================================================
-[PP] Output match reference: True, Avg time: 0.251 ms
+[PP] Output match reference: True, Avg time: 11.032 ms
 ```
 
 ---
