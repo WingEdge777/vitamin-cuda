@@ -10,7 +10,8 @@ import torch.nn as nn
 def setup_dist(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "29500"
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+    dist.init_process_group("nccl", rank=rank, world_size=world_size, device_id=rank)
     torch.cuda.set_device(rank)
 
 
@@ -60,7 +61,9 @@ class ColumnParallelLinear(nn.Module):
         world_size = dist.get_world_size()
         out_per_rank = linear.out_features // world_size
         self.weight = nn.Parameter(
-            linear.weight.detach()[rank * out_per_rank : (rank + 1) * out_per_rank].clone()
+            linear.weight.detach()[
+                rank * out_per_rank : (rank + 1) * out_per_rank
+            ].clone()
         )
 
     def forward(self, x):
@@ -74,7 +77,9 @@ class RowParallelLinear(nn.Module):
         world_size = dist.get_world_size()
         in_per_rank = linear.in_features // world_size
         self.weight = nn.Parameter(
-            linear.weight.detach()[:, rank * in_per_rank : (rank + 1) * in_per_rank].clone()
+            linear.weight.detach()[
+                :, rank * in_per_rank : (rank + 1) * in_per_rank
+            ].clone()
         )
 
     def forward(self, x):
@@ -100,8 +105,8 @@ class PPModel(nn.Module):
         world_size = dist.get_world_size()
         self.rank = rank
         self.world_size = world_size
-        self.is_first = (rank == 0)
-        self.is_last = (rank == world_size - 1)
+        self.is_first = rank == 0
+        self.is_last = rank == world_size - 1
 
         layers_per_rank = len(model.layers) // world_size
         start_layer = rank * layers_per_rank
@@ -120,9 +125,7 @@ class PPModel(nn.Module):
             req.wait()
 
     def _recv(self, src):
-        reqs = dist.batch_isend_irecv(
-            [dist.P2POp(dist.irecv, self.buf, src)]
-        )
+        reqs = dist.batch_isend_irecv([dist.P2POp(dist.irecv, self.buf, src)])
         for req in reqs:
             req.wait()
         return self.buf
@@ -161,6 +164,8 @@ def benchmark(fn, *args, ref=None, warmup=3, repeat=10):
     for _ in range(warmup):
         fn(*args)
     torch.cuda.synchronize()
+    if dist.is_initialized():
+        dist.barrier()
     start = time.perf_counter()
     for _ in range(repeat):
         out = fn(*args)
@@ -187,8 +192,9 @@ def run_demo(rank, cls, label, world_size, model, x, ref):
 
 if __name__ == "__main__":
     world_size = 2
-    hidden_size = 64
-    batch_size = 8
+    hidden_size = 8192
+    batch_size = 1024
+    # 注意这里使用了较大的batch_size，为了体现DP/TP的加速作用，如果数据规模较小的话通信开销反而更大会导致DP/TP更慢，但在大模型里几乎不存在这个问题
 
     torch.manual_seed(42)
     model = TwoLayerModel(hidden_size)
