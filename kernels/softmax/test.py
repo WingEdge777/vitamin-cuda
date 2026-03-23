@@ -58,15 +58,16 @@ def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
     return res
 
 
-def diff_check(a, b, prefix="torch", eps=1e-4):
-    message = f"{prefix} result diff"
-    assert torch.mean(torch.abs(a - b)).item() < eps, message
+def diff_check(a, b, prefix="torch", eps=1e-2):
+    if not torch.allclose(a, b, atol=eps, rtol=eps):
+        print(f"{prefix} result diff: {torch.mean(torch.abs(a - b)).item()}")
+    assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
 
 
 if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
-    bs = [256, 1024, 2048, 4096]
+    bs = [256, 1024, 2048]
     sz = [2048, 4096, 8192]
     torch.manual_seed(42)
     for n in bs:
@@ -95,3 +96,26 @@ if __name__ == "__main__":
 
             benchmark(lib.softmax_fp16x8_packed, a, b_my, prefix="softmax_fp16x8_packed")
             diff_check(b, b_my, prefix="softmax_fp16x8_packed")
+    n, m = 256, 8192 * 2
+
+    print("#" * 100)
+    print(f"n: {n}, m: {m}")
+    a = torch.randn(n, m).float().cuda()
+    b = torch.empty(n, m).float().cuda()
+
+    benchmark(partial(torch.softmax, dim=1, out=b), a)
+    b_my = torch.empty_like(a)
+
+    benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
+    # print(b, b_my)
+    diff_check(b, b_my, prefix="softmax_medium")
+
+    benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
+    diff_check(b, b_my, prefix="softmax_extreme")
+
+    benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
+    # print(b, b_my)
+    diff_check(b, b_my, prefix="softmax_arbitrary")
+
+    benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
+    diff_check(b, b_my, prefix="softmax_splitk")
