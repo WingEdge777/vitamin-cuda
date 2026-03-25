@@ -1,12 +1,10 @@
 # local memory test
 
-# [CUDA 优化实践] 认识 CUDA “不存在的存储层级” - local memory
-
-## 概念
+## 0. 概念
 
 网上关于 NVIDIA 存储层次架构的介绍文章数不胜数，但大多集中在 global memory、shared memory、constant memory、texture memory、L2/L1 cache 以及 registers 等。提及 local memory 的文章相对较少。前置基础暂且略过，今天我们直奔主题，聊聊个人对 local memory 的理解。
 
-首先，local memory 的 local 是**逻辑上的 local**，指的是对每个线程来说，local memory 是其私有的，但其逻辑和物理上的地址（相当于“户口地址”）实际上是在 global memory 空间中的。local memory 变量的访问模式遵从 global memory 的规则，比如访问会经过 L1、L2 cache。此外，NV 保证了 local memory 是根据线程 ID 在 global memory 中以 32 字节连续分布的。因此，warp 对于 local memory 的访问能够自动做到事务合并（Coalesced）。
+首先，local memory 的 local 是**逻辑上的 local**，指的是对每个线程来说，local memory 是其私有的，但其逻辑和物理上的地址（相当于“户口地址”）实际上是在 global memory 空间中的。local memory 变量的访问模式遵从 global memory 的规则，比如访问会经过 L1、L2 cache。此外，NV 保证了 local memory 是根据线程 ID 在 global memory 中以 32 bits 连续分布的。因此，warp 对于 local memory 的访问能够自动做到事务合并（Coalesced）。
 
 但是要注意，global memory 访问的时延数量级是寄存器的几百倍，而 L1/L2 cache 的访问时延数量级也是寄存器的几十倍。因此，即使 local memory 的访问是合并的，甚至命中了 L1/L2 cache，其性能也远低于寄存器访问。
 
@@ -55,7 +53,7 @@
 
 这里的第二点是个隐蔽的大坑。
 
-#### 踩坑示例
+## 1. 踩坑示例
 
 当你想用向量化 load/store fp16/bf16 来提升算子的 global memory 访问性能时，你可能会习惯性的写下如下代码：
 
@@ -83,7 +81,7 @@ xxx bytes bytes spill stores/loads # 寄存器溢出
 
 恭喜你，你中招了~
 
-#### 正确姿势
+### 正确姿势
 
 - 方式1：直接使用原生向量类型
 - 方式2：使用 union 强绑定（实质上还是使用原生向量类型）
@@ -118,7 +116,7 @@ __device__ __forceinline__ void load_fp16x8(const half* input) {
 
 原因很简单：物理寄存器是不存在内存地址的。 如果变量留在了寄存器中，而你还在使用不同类型的指针（如 float4* 和 half2*）对它进行跨类型强转和访问，这属于未定义行为（UB）。编译器为了极致性能，可能会利用严格别名规则（Strict Aliasing）将这两条认为“不相干”的指令进行乱序重排，直接导致程序读取到寄存器的垃圾比特流，吐出 NaN。这种幽灵 Bug 的排查难度，远比性能下降要可怕得多。
 
-## 测试验证
+## 2. 测试验证
 
 我们用具体的代码来验证一下：
 
@@ -208,7 +206,7 @@ ptxas info    : Compile time = 0.767 ms
 - good_kernel 和 native_kernel 的 stack frame 都是 0 bytes，说明变量留在/被优化回了寄存器。
 - 而发生指针逃逸的 bad_kernel，出现了明确的 16 bytes stack frame，且使用了 16 bytes cumulative stack size，验证了强转取地址导致的 Local Memory 溢出
 
-## 警示
+## 3. 警示
 
 除了部分特殊情况，大部分人在大部分时候都不会在主观意图上使用 local memory。恰恰相反，我们更需要警惕的是**意外触发 local memory 分配**，尤其是以下三类高频“坑”：
 
@@ -223,7 +221,7 @@ ptxas info    : Compile time = 0.767 ms
   - 编译器内心戏：“刚才用 float4 *写数据，现在用 half* 读。合理假设：既然类型不同，它们必然不关联！”
   - 于是，编译器为了极致性能，大胆地将寄存器读取指令提前到了写入指令之前。你的代码读到了寄存器里还没被初始化的垃圾比特流，生成了 NaN，最终导致整个计算逻辑完全崩溃！
 
-### 总结
+## 4. 总结
 
 本文介绍了 CUDA 中 local memory 的概念及其产生的场景，并通过一段直观的代码验证了 local memory 溢出的确认方法以及底层潜藏的 UB 风险。
 
