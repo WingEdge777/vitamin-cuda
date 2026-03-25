@@ -40,9 +40,9 @@ __global__ void load_fp16x8_native_kernel(half *input, half *output, int N) {
     if (idx >= N)
         return;
     half2 pack[4];
-    FLOAT4(pack[0]) = FLOAT4(input[idx]); // ❌ 对pack取地址 → 强制溢出到 local memory
+    FLOAT4(pack[0]) = FLOAT4(input[idx]); // ❌ 对pack取地址 → 强制分配到 local memory
 
-    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对pack取地址 → 强制溢出到 local memory
+    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对pack取地址 → 强制分配到 local memory
 }
 
 // bad示例：外部函数调用，指针逃逸，避免编译器优化回物理寄存器
@@ -51,10 +51,10 @@ __global__ void load_fp16x8_bad_kernel(half *input, half *output, int N) {
     if (idx >= N)
         return;
     half2 pack[4];
-    FLOAT4(pack[0]) = FLOAT4(input[idx]);               // ❌ 对pack取地址 → 强制溢出到 local memory
-    scale_by_ptr(reinterpret_cast<float4 *>(&pack[0])); // ❌ 对pack取地址 → 强制溢出到 local memory
+    FLOAT4(pack[0]) = FLOAT4(input[idx]);               // ❌ 对pack取地址 → 强制分配到 local memory
+    scale_by_ptr(reinterpret_cast<float4 *>(&pack[0])); // ❌ 对pack取地址 → 强制分配到 local memory
 
-    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对pack取地址 → 强制溢出到 local memory
+    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对pack取地址 → 强制分配到 local memory
 }
 // good示例
 __global__ void load_fp16x8_good_kernel(half *input, half *output, int N) {
