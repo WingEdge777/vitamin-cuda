@@ -48,7 +48,7 @@
 除了该官方文档提到的三种情况，还有一些其他场景可能导致变量被分配到 local memory：
 
 - 某些数学函数（如 sin(), cos()）的底层实现路径中可能隐式地使用了 local memory；
-- 还有一个大坑点：对变量进行取地址（&）操作，会导致变量被强制溢出到 local memory；
+- 还有一个大坑点：对变量进行取地址（&）操作，会导致变量被强制分配到 local memory；
 - 其他一些编译器认为无法进行有效优化并映射到物理寄存器的情况等等。
 
 这里的第二点是个隐蔽的大坑。
@@ -62,7 +62,7 @@
 
 __device__ __forceinline__ void load_fp16x8(const half* input) {
   half2 pack[4];
-  FLOAT4(pack[0]) = FLOAT4(input[idx]);  // ❌ 取地址 → 强制溢出到 local memory
+  FLOAT4(pack[0]) = FLOAT4(input[idx]);  // ❌ 取地址 → 强制分配到 local memory
   //后续操作中 计算使用的是 local memory
 }
 ```
@@ -148,9 +148,9 @@ __global__ void load_fp16x8_native_kernel(half *input, half *output, int N) {
     if (idx >= N)
         return;
     half2 pack[4];
-    FLOAT4(pack[0]) = FLOAT4(input[idx]); // ❌ 对 pack 取地址 → 强制溢出到 local memory
+    FLOAT4(pack[0]) = FLOAT4(input[idx]); // ❌ 对 pack 取地址 → 强制分配到 local memory
 
-    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对 pack 取地址 → 强制溢出到 local memory
+    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对 pack 取地址 → 强制分配到 local memory
 }
 
 // bad 示例：外部函数调用，指针逃逸，避免编译器优化回物理寄存器
@@ -159,10 +159,10 @@ __global__ void load_fp16x8_bad_kernel(half *input, half *output, int N) {
     if (idx >= N)
         return;
     half2 pack[4];
-    FLOAT4(pack[0]) = FLOAT4(input[idx]);               // ❌ 对 pack 取地址 → 强制溢出到 local memory
-    scale_by_ptr(reinterpret_cast<float4 *>(&pack[0])); // ❌ 对 pack 取地址 → 强制溢出到 local memory
+    FLOAT4(pack[0]) = FLOAT4(input[idx]);               // ❌ 对 pack 取地址 → 强制分配到 local memory
+    scale_by_ptr(reinterpret_cast<float4 *>(&pack[0])); // ❌ 对 pack 取地址 → 强制分配到 local memory
 
-    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对 pack 取地址 → 强制溢出到 local memory
+    FLOAT4(output[idx]) = FLOAT4(pack[0]); // ❌ 对 pack 取地址 → 强制分配到 local memory
 }
 // good 示例
 __global__ void load_fp16x8_good_kernel(half *input, half *output, int N) {
@@ -216,7 +216,7 @@ ptxas info    : Compile time = 0.767 ms
 
 再加上编译器的“神通广大”，当我们为了向量化，对变量进行取地址和指针强转（如 `float4*` 写，`half2*` 读）时，我们甚至可能在毫无察觉的情况下收获编译器准备的两个“惊喜”：
 
-- 性能杀手（Local Memory 溢出）：如果 Kernel 逻辑复杂、发生指针逃逸，编译器无法追踪生命周期，就会将变量强制溢出到 Local Memory，性能瞬间雪崩。
+- 性能杀手（Local Memory 溢出）：如果 Kernel 逻辑复杂、发生指针逃逸，编译器无法追踪生命周期，就会将变量强制分配到 Local Memory，性能瞬间雪崩。
 - 逻辑爆炸（静默的 NaN）：如果编译器强大的 SROA（Scalar Replacement of Aggregates，聚合体标量替换）优化帮你兜底，把变量留在了物理寄存器中。此时，致命的**严格别名规则（Strict Aliasing）**生效了。
   - 编译器内心戏：“刚才用 float4 *写数据，现在用 half* 读。合理假设：既然类型不同，它们必然不关联！”
   - 于是，编译器为了极致性能，大胆地将寄存器读取指令提前到了写入指令之前。你的代码读到了寄存器里还没被初始化的垃圾比特流，生成了 NaN，最终导致整个计算逻辑完全崩溃！
