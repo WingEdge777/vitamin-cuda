@@ -76,7 +76,7 @@ xxx bytes stack frame / xxx bytes cumulative stack size # 栈上变量，也是 
 
 xxx bytes lmem # local memory 缩写
 
-xxx bytes bytes spill stores/loads # 寄存器溢出
+xxx bytes spill stores/loads # 寄存器溢出
 ```
 
 恭喜你，你中招了~
