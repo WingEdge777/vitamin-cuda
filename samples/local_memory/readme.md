@@ -60,7 +60,7 @@
 ```cpp
 #define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
 
-__device__ __forceinline__ void load_fp16x8(const half* input) {
+__global__ void load_fp16x8(const half* input) {
   half2 pack[4];
   FLOAT4(pack[0]) = FLOAT4(input[idx]);  // ❌ 取地址 → 强制分配到 local memory
   //后续操作中 计算使用的是 local memory
@@ -90,7 +90,7 @@ xxx bytes spill stores/loads # 寄存器溢出
 #define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
 
 // 方式 1：直接使用原生向量类型
-__device__ __forceinline__ void load_fp16x8(const half* input) {
+__global__ void load_fp16x8(const half* input) {
   float4 pack;
   pack = FLOAT4(input[idx]);  // ✅ 直接加载到 float4 寄存器
   // 后续操作：将 pack.x, pack.y ... 拆分为 half2
@@ -101,7 +101,7 @@ union alignas(16) Pack128 {
     float4 f4;
     half2 h2[4];
 };
-__device__ __forceinline__ void load_fp16x8(const half* input) {
+__global__ void load_fp16x8(const half* input) {
   Pack128 pack;
   pack.f4 = FLOAT4(input[idx]);  // ✅ 直接加载到 float4 寄存器
   // 后续操作：使用 pack.h2
@@ -218,7 +218,7 @@ ptxas info    : Compile time = 0.767 ms
 
 - 性能杀手（Local Memory 溢出）：如果 Kernel 逻辑复杂、发生指针逃逸，编译器无法追踪生命周期，就会将变量强制分配到 Local Memory，性能瞬间雪崩。
 - 逻辑爆炸（静默的 NaN）：如果编译器强大的 SROA（Scalar Replacement of Aggregates，聚合体标量替换）优化帮你兜底，把变量留在了物理寄存器中。此时，致命的**严格别名规则（Strict Aliasing）**生效了。
-  - 编译器内心戏：“刚才用 float4 *写数据，现在用 half* 读。合理假设：既然类型不同，它们必然不关联！”
+  - 编译器内心戏：“刚才用 float4* 写数据，现在用 half* 读。合理假设：既然类型不同，它们必然不关联！”
   - 于是，编译器为了极致性能，大胆地将寄存器读取指令提前到了写入指令之前。你的代码读到了寄存器里还没被初始化的垃圾比特流，生成了 NaN，最终导致整个计算逻辑完全崩溃！
 
 ## 4. 总结
