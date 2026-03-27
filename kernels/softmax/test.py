@@ -29,6 +29,7 @@ lib = load(
 
 baseline = None
 
+
 def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
     if b is not None:
         # warm up
@@ -55,7 +56,9 @@ def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
     else:
         duration = time.perf_counter() - start
         speedup = baseline / duration
-        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms, speedup: {speedup:.2f}")
+        print(
+            f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms, speedup: {speedup:.2f}"
+        )
     return res
 
 
@@ -65,9 +68,7 @@ def diff_check(a, b, prefix="torch", eps=1e-2):
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
 
 
-if __name__ == "__main__":
-    # test the kernel
-    device = torch.device("cuda")
+def test_small():
     bs = [256, 1024, 2048]
     sz = [2048, 4096, 8192]
     torch.manual_seed(42)
@@ -95,9 +96,13 @@ if __name__ == "__main__":
             benchmark(lib.softmax, a, b_my, prefix="softmax_fp16")
             diff_check(b, b_my, prefix="softmax_fp16")
 
-            benchmark(lib.softmax_fp16x8_packed, a, b_my, prefix="softmax_fp16x8_packed")
+            benchmark(
+                lib.softmax_fp16x8_packed, a, b_my, prefix="softmax_fp16x8_packed"
+            )
             diff_check(b, b_my, prefix="softmax_fp16x8_packed")
-    n, m = 256, 8192 * 2
+
+def test_large():
+    n, m = 4096, 8192 * 2
 
     print("#" * 100)
     print(f"n: {n}, m: {m}")
@@ -120,3 +125,8 @@ if __name__ == "__main__":
 
     benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
     diff_check(b, b_my, prefix="softmax_splitk")
+
+if __name__ == "__main__":
+    # test the kernel
+    # test_small()
+    test_large()
