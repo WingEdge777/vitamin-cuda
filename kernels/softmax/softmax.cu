@@ -16,126 +16,27 @@
 
 const int WARP_SIZE = 32;
 
+struct __align__(16) Pack128 {
+    union {
+        float4 f4;
+        half2 h2[4];
+    };
+    __device__ __host__ __forceinline__ Pack128() {}
+
+    __device__ __host__ __forceinline__ Pack128(const Pack128 &other) {
+        f4 = other.f4; // 走 float4 赋值，底层映射为 128-bit 向量拷贝
+    }
+
+    __device__ __host__ __forceinline__ Pack128 &operator=(const Pack128 &other) {
+        f4 = other.f4;
+        return *this;
+    }
+};
+
 struct __align__(8) MD {
     float m;
     float d;
 };
-
-// help func
-template <typename T, int VEC_SIZE>
-__device__ __forceinline__ float vec_max(T *ptr);
-
-template <>
-__device__ __forceinline__ float vec_max<float, 4>(float *ptr) {
-    float4 v = LDST128BITS(ptr[0]);
-    return fmaxf(fmaxf(v.x, v.y), fmaxf(v.z, v.w));
-}
-
-template <>
-__device__ __forceinline__ float vec_max<half, 8>(half *ptr) {
-    float4 v = LDST128BITS(ptr[0]);
-    half2 *pack = reinterpret_cast<half2 *>(&v);
-    float m = -FLT_MAX;
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        float2 f2 = __half22float2(pack[i]);
-        m = fmaxf(m, fmaxf(f2.x, f2.y));
-    }
-    return m;
-}
-
-template <typename T, int VEC_SIZE>
-__device__ __forceinline__ void vec_exp_sum(T *ptr, float max_val, float &sum);
-
-template <>
-__device__ __forceinline__ void vec_exp_sum<float, 4>(float *ptr, float max_val, float &sum) {
-    float4 v = LDST128BITS(ptr[0]);
-    sum += __expf(v.x - max_val) + __expf(v.y - max_val) + __expf(v.z - max_val) + __expf(v.w - max_val);
-}
-
-template <>
-__device__ __forceinline__ void vec_exp_sum<half, 8>(half *ptr, float max_val, float &sum) {
-    float4 v = LDST128BITS(ptr[0]);
-    half2 *pack = reinterpret_cast<half2 *>(&v);
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        float2 f2 = __half22float2(pack[i]);
-        sum += __expf(f2.x - max_val) + __expf(f2.y - max_val);
-    }
-}
-
-template <typename T, int VEC_SIZE>
-__device__ __forceinline__ void online_softmax_update(T *ptr, float &max_val, float &sum_val);
-
-template <>
-__device__ __forceinline__ void online_softmax_update<half, 8>(half *ptr, float &max_val, float &sum_val) {
-    float4 v = LDST128BITS(ptr[0]);
-    half2 *pack = reinterpret_cast<half2 *>(&v);
-    float m = -FLT_MAX;
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        float2 f2 = __half22float2(pack[i]);
-        m = fmaxf(m, fmaxf(f2.x, f2.y));
-    }
-    float new_max = fmaxf(m, max_val);
-    float scale = __expf(max_val - new_max);
-    sum_val *= scale;
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        float2 f2 = __half22float2(pack[i]);
-        sum_val += __expf(f2.x - new_max) + __expf(f2.y - new_max);
-    }
-    max_val = new_max;
-}
-
-template <typename T, int VEC_SIZE>
-__device__ __forceinline__ void vec_store_softmax(T *ptr, float max_val, float sum_val);
-
-template <>
-__device__ __forceinline__ void vec_store_softmax<float, 4>(float *ptr, float max_val, float sum_val) {
-    float4 v = LDST128BITS(ptr[0]);
-    float4 out;
-    out.x = __expf(v.x - max_val) / sum_val;
-    out.y = __expf(v.y - max_val) / sum_val;
-    out.z = __expf(v.z - max_val) / sum_val;
-    out.w = __expf(v.w - max_val) / sum_val;
-    LDST128BITS(ptr[0]) = out;
-}
-
-template <>
-__device__ __forceinline__ void vec_store_softmax<half, 8>(half *ptr, float max_val, float sum_val) {
-    float4 v = LDST128BITS(ptr[0]);
-    half2 *h2 = reinterpret_cast<half2 *>(&v);
-    float4 out;
-    half2 *out_h2 = reinterpret_cast<half2 *>(&out);
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        float2 f2 = __half22float2(h2[i]);
-        f2.x = __expf(f2.x - max_val) / sum_val;
-        f2.y = __expf(f2.y - max_val) / sum_val;
-        out_h2[i] = __float22half2_rn(f2);
-    }
-    LDST128BITS(ptr[0]) = out;
-}
-
-template <typename T, int VEC_SIZE>
-__device__ __forceinline__ void vec_compute_softmax(T *in, T *out, float max_val, float sum_val);
-
-template <>
-__device__ __forceinline__ void vec_compute_softmax<half, 8>(half *in, half *out, float max_val, float sum_val) {
-    float4 v = LDST128BITS(in[0]);
-    half2 *pack = reinterpret_cast<half2 *>(&v);
-    float4 res;
-    half2 *res_h2 = reinterpret_cast<half2 *>(&res);
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        float2 f2 = __half22float2(pack[i]);
-        f2.x = __expf(f2.x - max_val) / sum_val;
-        f2.y = __expf(f2.y - max_val) / sum_val;
-        res_h2[i] = __float22half2_rn(f2);
-    }
-    LDST128BITS(out[0]) = res;
-}
 
 template <const int warp_size = WARP_SIZE>
 __device__ __forceinline__ MD _warp_online_softmax_reduce(MD val) {
@@ -237,20 +138,23 @@ __global__ void softmax_fp32x4_kernel(float *a, float *b, int hidden_size) {
 #pragma unroll
     for (; (tid + i * BLOCK_SIZE) * 4 < hidden_size; i++) {
         in[i] = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 4]);
-        val.m = fmaxf(val.m, vec_max<float, 4>(reinterpret_cast<float *>(&in[i])));
+        val.m = fmaxf(val.m, fmaxf(fmaxf(in[i].x, in[i].y), fmaxf(in[i].z, in[i].w)));
     }
     int cnt = i;
 #pragma unroll
     for (int i = 0; i < cnt; i++) {
-        vec_exp_sum<float, 4>(reinterpret_cast<float *>(&in[i]), val.m, val.d);
+        val.d += __expf(in[i].x - val.m) + __expf(in[i].y - val.m) + __expf(in[i].z - val.m) + __expf(in[i].w - val.m);
     }
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
 #pragma unroll
     for (int i = 0; i < cnt; i++) {
-        int offset = tid + i * BLOCK_SIZE;
-        vec_store_softmax<float, 4>(reinterpret_cast<float *>(&in[i]), val.m, val.d);
-        LDST128BITS(b[row_offset + offset * 4]) = in[i];
+        float4 out;
+        out.x = __expf(in[i].x - val.m) / val.d;
+        out.y = __expf(in[i].y - val.m) / val.d;
+        out.z = __expf(in[i].z - val.m) / val.d;
+        out.w = __expf(in[i].w - val.m) / val.d;
+        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 4]) = out;
     }
 }
 
@@ -259,28 +163,43 @@ __global__ void softmax_fp16x8_packed_kernel(half *a, half *b, int hidden_size) 
     int row_offset = blockIdx.x * hidden_size;
     int tid = threadIdx.x;
 
-    __align__(16) half pack[WARP_SIZE * 4];
+    Pack128 pack[16];
 
     MD val{-FLT_MAX, 0.f};
 
     int i = 0;
     for (; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        LDST128BITS(pack[i * 8]) = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
-        val.m = fmaxf(val.m, vec_max<half, 8>(&pack[i * 8]));
+        pack[i].f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float2 f2 = __half22float2(pack[i].h2[j]);
+            val.m = fmaxf(val.m, fmaxf(f2.x, f2.y));
+        }
     }
     int cnt = i;
 
 #pragma unroll
     for (int i = 0; i < cnt; i++) {
-        vec_exp_sum<half, 8>(&pack[i * 8], val.m, val.d);
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float2 f2 = __half22float2(pack[i].h2[j]);
+            val.d += __expf(f2.x - val.m) + __expf(f2.y - val.m);
+        }
     }
 
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
 #pragma unroll
     for (int i = 0; i < cnt; i++) {
-        vec_compute_softmax<half, 8>(&pack[i * 8], &pack[i * 8], val.m, val.d);
-        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = LDST128BITS(pack[i * 8]);
+        Pack128 out;
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float2 f2 = __half22float2(pack[i].h2[j]);
+            f2.x = __expf(f2.x - val.m) / val.d;
+            f2.y = __expf(f2.y - val.m) / val.d;
+            out.h2[j] = __float22half2_rn(f2);
+        }
+        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out.f4;
     }
 }
 
@@ -292,9 +211,10 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     int row_offset = blockIdx.x * hidden_size;
     int tid = threadIdx.x;
 
-    __align__(16) half reg_pack[REG_VECS * 8];
-    extern __shared__ __align__(16) half smem_dynamic[];
-    half(*smem_pack)[BLOCK_SIZE * 8] = reinterpret_cast<half(*)[BLOCK_SIZE * 8]>(smem_dynamic);
+    // 核心修复：使用 Pack128 数组
+    Pack128 reg_pack[REG_VECS];
+    extern __shared__ Pack128 smem_pack_flat[];
+    Pack128(*smem_pack)[BLOCK_SIZE] = reinterpret_cast<Pack128(*)[BLOCK_SIZE]>(smem_pack_flat);
 
     float local_m = -FLT_MAX;
 
@@ -302,8 +222,12 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     for (int i = 0; i < REG_VECS; i++) {
         int col_idx = (tid + i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            LDST128BITS(reg_pack[i * 8]) = LDST128BITS(a[row_offset + col_idx]);
-            local_m = fmaxf(local_m, vec_max<half, 8>(&reg_pack[i * 8]));
+            reg_pack[i].f4 = LDST128BITS(a[row_offset + col_idx]);
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(reg_pack[i].h2[j]);
+                local_m = fmaxf(local_m, fmaxf(f2.x, f2.y));
+            }
         }
     }
 
@@ -312,8 +236,14 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         int global_i = i + REG_VECS;
         int col_idx = (tid + global_i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            LDST128BITS(smem_pack[i][tid * 8]) = LDST128BITS(a[row_offset + col_idx]);
-            local_m = fmaxf(local_m, vec_max<half, 8>(&smem_pack[i][tid * 8]));
+            Pack128 tmp;
+            tmp.f4 = LDST128BITS(a[row_offset + col_idx]);
+            smem_pack[i][tid] = tmp;
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(tmp.h2[j]);
+                local_m = fmaxf(local_m, fmaxf(f2.x, f2.y));
+            }
         }
     }
 
@@ -322,7 +252,11 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     for (int i = 0; i < REG_VECS; i++) {
         int col_idx = (tid + i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            vec_exp_sum<half, 8>(&reg_pack[i * 8], local_m, local_d);
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(reg_pack[i].h2[j]);
+                local_d += __expf(f2.x - local_m) + __expf(f2.y - local_m);
+            }
         }
     }
 #pragma unroll
@@ -330,7 +264,12 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         int global_i = i + REG_VECS;
         int col_idx = (tid + global_i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            vec_exp_sum<half, 8>(&smem_pack[i][tid * 8], local_m, local_d);
+            Pack128 tmp = smem_pack[i][tid];
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(tmp.h2[j]);
+                local_d += __expf(f2.x - local_m) + __expf(f2.y - local_m);
+            }
         }
     }
 
@@ -341,8 +280,15 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     for (int i = 0; i < REG_VECS; i++) {
         int col_idx = (tid + i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            vec_compute_softmax<half, 8>(&reg_pack[i * 8], &reg_pack[i * 8], val.m, val.d);
-            LDST128BITS(b[row_offset + col_idx]) = LDST128BITS(reg_pack[i * 8]);
+            Pack128 out;
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(reg_pack[i].h2[j]);
+                f2.x = __expf(f2.x - val.m) / val.d;
+                f2.y = __expf(f2.y - val.m) / val.d;
+                out.h2[j] = __float22half2_rn(f2);
+            }
+            LDST128BITS(b[row_offset + col_idx]) = out.f4;
         }
     }
 #pragma unroll
@@ -350,13 +296,21 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         int global_i = i + REG_VECS;
         int col_idx = (tid + global_i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            vec_compute_softmax<half, 8>(&smem_pack[i][tid * 8], &smem_pack[i][tid * 8], val.m, val.d);
-            LDST128BITS(b[row_offset + col_idx]) = LDST128BITS(smem_pack[i][tid * 8]);
+            Pack128 tmp = smem_pack[i][tid];
+            Pack128 out;
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(tmp.h2[j]);
+                f2.x = __expf(f2.x - val.m) / val.d;
+                f2.y = __expf(f2.y - val.m) / val.d;
+                out.h2[j] = __float22half2_rn(f2);
+            }
+            LDST128BITS(b[row_offset + col_idx]) = out.f4;
         }
     }
 }
 
-// two pass, no cache
+// two pass :
 template <const int BLOCK_SIZE = 256>
 __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
     int row_offset = blockIdx.x * hidden_size;
@@ -365,19 +319,43 @@ __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
     MD val{-FLT_MAX, 0.f};
 
     for (int i = 0; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        // 【修复】：强制 16 字节对齐
-        __align__(16) half tmp[8];
-        LDST128BITS(tmp[0]) = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
-        online_softmax_update<half, 8>(tmp, val.m, val.d);
+        Pack128 tmp;
+        tmp.f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+
+        float local_m = -FLT_MAX;
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float2 f2 = __half22float2(tmp.h2[j]);
+            local_m = fmaxf(local_m, fmaxf(f2.x, f2.y));
+        }
+
+        float new_m = fmaxf(val.m, local_m);
+        float scale = __expf(val.m - new_m);
+        val.d *= scale;
+
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float2 f2 = __half22float2(tmp.h2[j]);
+            val.d += __expf(f2.x - new_m) + __expf(f2.y - new_m);
+        }
+        val.m = new_m;
     }
 
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
     for (int i = 0; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        __align__(16) half tmp[8];
-        LDST128BITS(tmp[0]) = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
-        vec_compute_softmax<half, 8>(tmp, tmp, val.m, val.d);
-        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = LDST128BITS(tmp[0]);
+        Pack128 tmp;
+        tmp.f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+        Pack128 out;
+
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float2 f2 = __half22float2(tmp.h2[j]);
+            f2.x = __expf(f2.x - val.m) / val.d;
+            f2.y = __expf(f2.y - val.m) / val.d;
+            out.h2[j] = __float22half2_rn(f2);
+        }
+        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out.f4;
     }
 }
 
@@ -393,13 +371,17 @@ __global__ void softmax_grid_pass1(half *a, float *ws_m, float *ws_d, int hidden
 
     MD val{-FLT_MAX, 0.f};
 
-    __align__(16) half cache[VECS_PER_THREAD * 8];
+    Pack128 cache[VECS_PER_THREAD];
 #pragma unroll
     for (int i = 0; i < VECS_PER_THREAD; i++) {
         int col_idx = col_offset + i * BLOCK_SIZE * 8;
         if (col_idx < hidden_size) {
-            LDST128BITS(cache[i * 8]) = LDST128BITS(a[row * hidden_size + col_idx]);
-            val.m = fmaxf(val.m, vec_max<half, 8>(&cache[i * 8]));
+            cache[i].f4 = LDST128BITS(a[row * hidden_size + col_idx]);
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(cache[i].h2[j]);
+                val.m = fmaxf(val.m, fmaxf(f2.x, f2.y));
+            }
         }
     }
 
@@ -407,7 +389,11 @@ __global__ void softmax_grid_pass1(half *a, float *ws_m, float *ws_d, int hidden
     for (int i = 0; i < VECS_PER_THREAD; i++) {
         int col_idx = col_offset + i * BLOCK_SIZE * 8;
         if (col_idx < hidden_size) {
-            vec_exp_sum<half, 8>(&cache[i * 8], val.m, val.d);
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(cache[i].h2[j]);
+                val.d += __expf(f2.x - val.m) + __expf(f2.y - val.m);
+            }
         }
     }
 
@@ -445,11 +431,17 @@ __global__ void softmax_grid_pass2(half *a, half *b, float *ws_m, float *ws_d, i
     for (int i = 0; i < VECS_PER_THREAD; i++) {
         int col_idx = col_offset + i * BLOCK_SIZE * 8;
         if (col_idx < hidden_size) {
-            // 【修复】：强制 16 字节对齐
-            __align__(16) half tmp[8];
-            LDST128BITS(tmp[0]) = LDST128BITS(a[row * hidden_size + col_idx]);
-            vec_compute_softmax<half, 8>(tmp, tmp, global_val.m, global_val.d);
-            LDST128BITS(b[row * hidden_size + col_idx]) = LDST128BITS(tmp[0]);
+            Pack128 tmp;
+            tmp.f4 = LDST128BITS(a[row * hidden_size + col_idx]);
+            Pack128 out;
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                float2 f2 = __half22float2(tmp.h2[j]);
+                f2.x = __expf(f2.x - global_val.m) / global_val.d;
+                f2.y = __expf(f2.y - global_val.m) / global_val.d;
+                out.h2[j] = __float22half2_rn(f2);
+            }
+            LDST128BITS(b[row * hidden_size + col_idx]) = out.f4;
         }
     }
 }

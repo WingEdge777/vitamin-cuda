@@ -21,6 +21,7 @@ lib = load(
         "--expt-relaxed-constexpr",
         "--expt-extended-lambda",
         "--use_fast_math",
+        "-Xptxas -v",
     ],
     extra_cflags=common_flags,
     verbose=True,
@@ -100,8 +101,8 @@ if __name__ == "__main__":
 
     print("#" * 100)
     print(f"n: {n}, m: {m}")
-    a = torch.randn(n, m).float().cuda()
-    b = torch.empty(n, m).float().cuda()
+    a = torch.randn(n, m).half().cuda()
+    b = torch.empty(n, m).half().cuda()
 
     benchmark(partial(torch.softmax, dim=1, out=b), a)
     b_my = torch.empty_like(a)
