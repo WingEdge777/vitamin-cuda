@@ -62,7 +62,7 @@ def benchmark(op, a, b=None, warmup=10, rep=100, prefix="torch"):
     return res
 
 
-def diff_check(a, b, prefix="torch", eps=1e-2):
+def diff_check(a, b, prefix="torch", eps=1e-3):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
         print(f"{prefix} result diff: {torch.mean(torch.abs(a - b)).item()}")
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
@@ -101,8 +101,13 @@ def test_small():
             )
             diff_check(b, b_my, prefix="softmax_fp16x8_packed")
 
-            benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
+            benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
+            diff_check(b, b_my, prefix="softmax_medium")
 
+            benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
+            diff_check(b, b_my, prefix="softmax_extreme")
+
+            benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
             diff_check(b, b_my, prefix="softmax_arbitrary")
 
 def test_large():
@@ -120,14 +125,12 @@ def test_large():
 
             if m <= 32768:
                 benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
-                # print(b, b_my)
                 diff_check(b, b_my, prefix="softmax_medium")
             if m <= 114688:
                 benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
                 diff_check(b, b_my, prefix="softmax_extreme")
 
             benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
-            # print(b, b_my)
             diff_check(b, b_my, prefix="softmax_arbitrary")
 
             benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
@@ -164,6 +167,6 @@ def test_run():
 
 if __name__ == "__main__":
     # test the kernel
-    # test_small()
+    test_small()
     # test_large()
-    test_run()
+    # test_run()

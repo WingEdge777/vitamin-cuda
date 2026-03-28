@@ -159,7 +159,7 @@ __global__ void softmax_fp32x4_kernel(float *a, float *b, int hidden_size) {
         }
     }
 }
-
+// pure register cache, hidden_size <= 8192
 template <const int BLOCK_SIZE = 256>
 __global__ void softmax_fp16x8_packed_kernel(half *a, half *b, int hidden_size) {
     int row_offset = blockIdx.x * hidden_size;
@@ -552,6 +552,7 @@ binding_splitk_gen(softmax_splitk, softmax_grid_pass1, softmax_grid_pass2);
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    // register only, one pass, fp32/fp16
     torch_pybinding_func(softmax);
     torch_pybinding_func(softmax_fp32x4);
     torch_pybinding_func(softmax_fp16x8_packed);
