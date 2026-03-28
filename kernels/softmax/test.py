@@ -69,8 +69,8 @@ def diff_check(a, b, prefix="torch", eps=1e-3):
 
 
 def test_small():
-    bs = [256, 1024, 2048]
-    sz = [2048, 4096, 8192]
+    bs = [128, 256, 1024, 2048]
+    sz = [1024, 2048, 4096, 8192]
     torch.manual_seed(42)
     for n in bs:
         for m in sz:
@@ -79,15 +79,15 @@ def test_small():
             a = torch.randn(n, m).float().cuda()
             b = torch.empty(n, m).float().cuda()
 
-            benchmark(partial(torch.softmax, dim=1, out=b), a)
+            # benchmark(partial(torch.softmax, dim=1, out=b), a)
             b_my = torch.empty_like(a)
-            benchmark(lib.softmax, a, b_my, prefix="softmax")
-            # print(b, b_my)
-            diff_check(b, b_my, prefix="softmax")
+            # benchmark(lib.softmax, a, b_my, prefix="softmax")
+            # # print(b, b_my)
+            # diff_check(b, b_my, prefix="softmax")
 
-            benchmark(lib.softmax_fp32x4, a, b_my, prefix="softmax_fp32x4")
-            # print(b, b_my)
-            diff_check(b, b_my, prefix="softmax_fp32x4")
+            # benchmark(lib.softmax_fp32x4, a, b_my, prefix="softmax_fp32x4")
+            # # print(b, b_my)
+            # diff_check(b, b_my, prefix="softmax_fp32x4")
 
             a = a.half()
             b = b.half()
@@ -151,14 +151,12 @@ def test_run():
 
             if m <= 32768:
                 benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
-                # print(b, b_my)
                 diff_check(b, b_my, prefix="softmax_medium")
             if m <= 114688:
                 benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
                 diff_check(b, b_my, prefix="softmax_extreme")
 
             benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
-            # print(b, b_my)
             diff_check(b, b_my, prefix="softmax_arbitrary")
 
             benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
@@ -168,5 +166,5 @@ def test_run():
 if __name__ == "__main__":
     # test the kernel
     # test_small()
-    # test_large()
-    test_run()
+    test_large()
+    # test_run()

@@ -28,9 +28,9 @@ union pack128 {
 template <const int warp_size = WARP_SIZE>
 __device__ __forceinline__ MD _warp_online_softmax_reduce(MD val) {
 #pragma unroll
-    for (int offset = warp_size >> 1; offset > 0; offset >>= 1) {
-        float other_m = __shfl_xor_sync(0xffffffff, val.m, offset);
-        float other_d = __shfl_xor_sync(0xffffffff, val.d, offset);
+    for (int mask = warp_size >> 1; mask > 0; mask >>= 1) {
+        float other_m = __shfl_xor_sync(0xffffffff, val.m, mask);
+        float other_d = __shfl_xor_sync(0xffffffff, val.d, mask);
 
         float new_m = fmaxf(val.m, other_m);
         val.d = val.d * __expf(val.m - new_m) + other_d * __expf(other_m - new_m);
@@ -39,7 +39,7 @@ __device__ __forceinline__ MD _warp_online_softmax_reduce(MD val) {
     return val;
 }
 
-template <const int BLOCK_SIZE>
+template <const int BLOCK_SIZE = 256>
 __device__ __forceinline__ MD block_online_softmax_reduce(MD val) {
     constexpr int NUM_WARPS = BLOCK_SIZE / WARP_SIZE;
     val = _warp_online_softmax_reduce<WARP_SIZE>(val);
@@ -326,7 +326,7 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     }
 }
 
-// two pass :
+// two pass : valina
 template <const int BLOCK_SIZE = 256>
 __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
     int row_offset = blockIdx.x * hidden_size;
@@ -540,7 +540,7 @@ binding_func_gen(softmax, 1, Generic);
 binding_func_gen(softmax_fp32x4, 4, float);
 binding_func_gen(softmax_fp16x8_packed, 8, half);
 
-binding_single_launch_gen(softmax_medium, 32768, softmax_onepass_kernel<256, 8, 8, 2>);
+binding_single_launch_gen(softmax_medium, 32768, softmax_onepass_kernel<256, 8, 8, 3>);
 binding_single_launch_gen(softmax_extreme, 98304, softmax_onepass_kernel<256, 32, 24, 1>);
 binding_single_launch_gen(softmax_arbitrary, 0, softmax_arbitrary_kernel<256>);
 binding_splitk_gen(softmax_splitk, softmax_grid_pass1, softmax_grid_pass2);
