@@ -75,7 +75,47 @@ ptxas info    : Compile time = 13.406 ms
 
 ### 输出
 
-```bash
+#### large
+
+```yaml
+####################################################################################################
+bs: 4, hidden_size: 16384
+torch                          mean time: 0.013946 ms
+softmax_medium                 mean time: 0.008498 ms, speedup: 1.64
+softmax_extreme                mean time: 0.017065 ms, speedup: 0.82
+softmax_arbitrary              mean time: 0.011286 ms, speedup: 1.24
+softmax_splitk                 mean time: 0.018196 ms, speedup: 0.77
+####################################################################################################
+bs: 4, hidden_size: 65536
+torch                          mean time: 0.025016 ms
+softmax_extreme                mean time: 0.022173 ms, speedup: 1.13
+softmax_arbitrary              mean time: 0.024552 ms, speedup: 1.02
+softmax_splitk                 mean time: 0.027691 ms, speedup: 0.90
+####################################################################################################
+bs: 4, hidden_size: 262144
+torch                          mean time: 0.084100 ms
+softmax_arbitrary              mean time: 0.076698 ms, speedup: 1.10
+softmax_splitk                 mean time: 0.027065 ms, speedup: 3.11
+####################################################################################################
+bs: 4, hidden_size: 1048576
+torch                          mean time: 0.300902 ms
+softmax_arbitrary              mean time: 0.290353 ms, speedup: 1.04
+softmax_splitk                 mean time: 0.050350 ms, speedup: 5.98
+####################################################################################################
+bs: 4, hidden_size: 8388608
+torch                          mean time: 2.989200 ms
+softmax_arbitrary              mean time: 3.697278 ms, speedup: 0.81
+softmax_splitk                 mean time: 2.098274 ms, speedup: 1.42
+####################################################################################################
+bs: 4, hidden_size: 33554432
+torch                          mean time: 14.881300 ms
+softmax_arbitrary              mean time: 15.851758 ms, speedup: 0.94
+softmax_splitk                 mean time: 8.307900 ms, speedup: 1.79
+```
+
+#### smal
+
+```yaml
 ####################################################################################################
 n: 256, m: 2048
 torch                          mean time: 0.024114 ms
