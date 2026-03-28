@@ -10,28 +10,10 @@
 #include <torch/types.h>
 
 #define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
-#define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
 
 const int WARP_SIZE = 32;
-
-struct __align__(16) Pack128 {
-    union {
-        float4 f4;
-        half2 h2[4];
-    };
-    __device__ __host__ __forceinline__ Pack128() {}
-
-    __device__ __host__ __forceinline__ Pack128(const Pack128 &other) {
-        f4 = other.f4; // 走 float4 赋值，底层映射为 128-bit 向量拷贝
-    }
-
-    __device__ __host__ __forceinline__ Pack128 &operator=(const Pack128 &other) {
-        f4 = other.f4;
-        return *this;
-    }
-};
 
 struct __align__(8) MD {
     float m;
@@ -107,22 +89,32 @@ __global__ void softmax_kernel(T *a, T *b, int hidden_size) {
 
     float in[WARP_SIZE];
     MD val{-FLT_MAX, 0.f};
-    int i = 0;
-    for (; tid + i * BLOCK_SIZE < hidden_size; i++) {
-        in[i] = static_cast<float>(a[row_offset + tid + i * BLOCK_SIZE]);
-        val.m = fmaxf(val.m, in[i]);
-    }
-    int cnt = i;
+    constexpr int MAX_VECS = WARP_SIZE;
+
 #pragma unroll
-    for (int i = 0; i < cnt; i++) {
-        val.d += __expf(in[i] - val.m);
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = tid + i * BLOCK_SIZE;
+        if (offset < hidden_size) {
+            in[i] = static_cast<float>(a[row_offset + offset]);
+            val.m = fmaxf(val.m, in[i]);
+        }
+    }
+
+#pragma unroll
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = tid + i * BLOCK_SIZE;
+        if (offset < hidden_size) {
+            val.d += __expf(in[i] - val.m);
+        }
     }
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
 #pragma unroll
-    for (int i = 0; i < cnt; i++) {
+    for (int i = 0; i < MAX_VECS; i++) {
         int offset = tid + i * BLOCK_SIZE;
-        b[row_offset + offset] = static_cast<T>(__expf(in[i] - val.m) / val.d);
+        if (offset < hidden_size) {
+            b[row_offset + offset] = static_cast<T>(__expf(in[i] - val.m) / val.d);
+        }
     }
 }
 
@@ -133,28 +125,38 @@ __global__ void softmax_fp32x4_kernel(float *a, float *b, int hidden_size) {
 
     float4 in[8];
     MD val{-FLT_MAX, 0.f};
+    constexpr int MAX_VECS = 8;
 
-    int i = 0;
 #pragma unroll
-    for (; (tid + i * BLOCK_SIZE) * 4 < hidden_size; i++) {
-        in[i] = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 4]);
-        val.m = fmaxf(val.m, fmaxf(fmaxf(in[i].x, in[i].y), fmaxf(in[i].z, in[i].w)));
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = (tid + i * BLOCK_SIZE) * 4;
+        if (offset < hidden_size) {
+            in[i] = LDST128BITS(a[row_offset + offset]);
+            val.m = fmaxf(val.m, fmaxf(fmaxf(in[i].x, in[i].y), fmaxf(in[i].z, in[i].w)));
+        }
     }
-    int cnt = i;
+
 #pragma unroll
-    for (int i = 0; i < cnt; i++) {
-        val.d += __expf(in[i].x - val.m) + __expf(in[i].y - val.m) + __expf(in[i].z - val.m) + __expf(in[i].w - val.m);
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = (tid + i * BLOCK_SIZE) * 4;
+        if (offset < hidden_size) {
+            val.d +=
+                __expf(in[i].x - val.m) + __expf(in[i].y - val.m) + __expf(in[i].z - val.m) + __expf(in[i].w - val.m);
+        }
     }
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
 #pragma unroll
-    for (int i = 0; i < cnt; i++) {
-        float4 out;
-        out.x = __expf(in[i].x - val.m) / val.d;
-        out.y = __expf(in[i].y - val.m) / val.d;
-        out.z = __expf(in[i].z - val.m) / val.d;
-        out.w = __expf(in[i].w - val.m) / val.d;
-        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 4]) = out;
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = (tid + i * BLOCK_SIZE) * 4;
+        if (offset < hidden_size) {
+            float4 out;
+            out.x = __expf(in[i].x - val.m) / val.d;
+            out.y = __expf(in[i].y - val.m) / val.d;
+            out.z = __expf(in[i].z - val.m) / val.d;
+            out.w = __expf(in[i].w - val.m) / val.d;
+            LDST128BITS(b[row_offset + offset]) = out;
+        }
     }
 }
 
@@ -163,43 +165,54 @@ __global__ void softmax_fp16x8_packed_kernel(half *a, half *b, int hidden_size) 
     int row_offset = blockIdx.x * hidden_size;
     int tid = threadIdx.x;
 
-    Pack128 pack[16];
-
+    float4 pack[16];
     MD val{-FLT_MAX, 0.f};
+    constexpr int MAX_VECS = 16;
 
-    int i = 0;
-    for (; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        pack[i].f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
 #pragma unroll
-        for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(pack[i].h2[j]);
-            val.m = fmaxf(val.m, fmaxf(f2.x, f2.y));
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = (tid + i * BLOCK_SIZE) * 8;
+        if (offset < hidden_size) {
+            pack[i] = LDST128BITS(a[row_offset + offset]);
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                half2 h2 = reinterpret_cast<half2 *>(&pack[i])[j];
+                float2 f2 = __half22float2(h2);
+                val.m = fmaxf(val.m, fmaxf(f2.x, f2.y));
+            }
         }
     }
-    int cnt = i;
 
 #pragma unroll
-    for (int i = 0; i < cnt; i++) {
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = (tid + i * BLOCK_SIZE) * 8;
+        if (offset < hidden_size) {
 #pragma unroll
-        for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(pack[i].h2[j]);
-            val.d += __expf(f2.x - val.m) + __expf(f2.y - val.m);
+            for (int j = 0; j < 4; j++) {
+                half2 h2 = reinterpret_cast<half2 *>(&pack[i])[j];
+                float2 f2 = __half22float2(h2);
+                val.d += __expf(f2.x - val.m) + __expf(f2.y - val.m);
+            }
         }
     }
 
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
 #pragma unroll
-    for (int i = 0; i < cnt; i++) {
-        Pack128 out;
+    for (int i = 0; i < MAX_VECS; i++) {
+        int offset = (tid + i * BLOCK_SIZE) * 8;
+        if (offset < hidden_size) {
+            float4 out;
 #pragma unroll
-        for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(pack[i].h2[j]);
-            f2.x = __expf(f2.x - val.m) / val.d;
-            f2.y = __expf(f2.y - val.m) / val.d;
-            out.h2[j] = __float22half2_rn(f2);
+            for (int j = 0; j < 4; j++) {
+                half2 h2 = reinterpret_cast<half2 *>(&pack[i])[j];
+                float2 f2 = __half22float2(h2);
+                f2.x = __expf(f2.x - val.m) / val.d;
+                f2.y = __expf(f2.y - val.m) / val.d;
+                reinterpret_cast<half2 *>(&out)[j] = __float22half2_rn(f2);
+            }
+            LDST128BITS(b[row_offset + offset]) = out;
         }
-        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out.f4;
     }
 }
 
@@ -211,10 +224,9 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     int row_offset = blockIdx.x * hidden_size;
     int tid = threadIdx.x;
 
-    // 核心修复：使用 Pack128 数组
-    Pack128 reg_pack[REG_VECS];
-    extern __shared__ Pack128 smem_pack_flat[];
-    Pack128(*smem_pack)[BLOCK_SIZE] = reinterpret_cast<Pack128(*)[BLOCK_SIZE]>(smem_pack_flat);
+    float4 reg_pack[REG_VECS];
+    extern __shared__ float4 smem_pack_flat[];
+    float4(*smem_pack)[BLOCK_SIZE] = reinterpret_cast<float4(*)[BLOCK_SIZE]>(smem_pack_flat);
 
     float local_m = -FLT_MAX;
 
@@ -222,10 +234,11 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     for (int i = 0; i < REG_VECS; i++) {
         int col_idx = (tid + i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            reg_pack[i].f4 = LDST128BITS(a[row_offset + col_idx]);
+            reg_pack[i] = LDST128BITS(a[row_offset + col_idx]);
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(reg_pack[i].h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&reg_pack[i])[j];
+                float2 f2 = __half22float2(h2);
                 local_m = fmaxf(local_m, fmaxf(f2.x, f2.y));
             }
         }
@@ -236,12 +249,12 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         int global_i = i + REG_VECS;
         int col_idx = (tid + global_i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            Pack128 tmp;
-            tmp.f4 = LDST128BITS(a[row_offset + col_idx]);
+            float4 tmp = LDST128BITS(a[row_offset + col_idx]);
             smem_pack[i][tid] = tmp;
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(tmp.h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+                float2 f2 = __half22float2(h2);
                 local_m = fmaxf(local_m, fmaxf(f2.x, f2.y));
             }
         }
@@ -254,7 +267,8 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         if (col_idx < hidden_size) {
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(reg_pack[i].h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&reg_pack[i])[j];
+                float2 f2 = __half22float2(h2);
                 local_d += __expf(f2.x - local_m) + __expf(f2.y - local_m);
             }
         }
@@ -264,10 +278,11 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         int global_i = i + REG_VECS;
         int col_idx = (tid + global_i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            Pack128 tmp = smem_pack[i][tid];
+            float4 tmp = smem_pack[i][tid];
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(tmp.h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+                float2 f2 = __half22float2(h2);
                 local_d += __expf(f2.x - local_m) + __expf(f2.y - local_m);
             }
         }
@@ -280,15 +295,16 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     for (int i = 0; i < REG_VECS; i++) {
         int col_idx = (tid + i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            Pack128 out;
+            float4 out;
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(reg_pack[i].h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&reg_pack[i])[j];
+                float2 f2 = __half22float2(h2);
                 f2.x = __expf(f2.x - val.m) / val.d;
                 f2.y = __expf(f2.y - val.m) / val.d;
-                out.h2[j] = __float22half2_rn(f2);
+                reinterpret_cast<half2 *>(&out)[j] = __float22half2_rn(f2);
             }
-            LDST128BITS(b[row_offset + col_idx]) = out.f4;
+            LDST128BITS(b[row_offset + col_idx]) = out;
         }
     }
 #pragma unroll
@@ -296,16 +312,17 @@ __global__ __launch_bounds__(BLOCK_SIZE,
         int global_i = i + REG_VECS;
         int col_idx = (tid + global_i * BLOCK_SIZE) * 8;
         if (col_idx < hidden_size) {
-            Pack128 tmp = smem_pack[i][tid];
-            Pack128 out;
+            float4 tmp = smem_pack[i][tid];
+            float4 out;
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(tmp.h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+                float2 f2 = __half22float2(h2);
                 f2.x = __expf(f2.x - val.m) / val.d;
                 f2.y = __expf(f2.y - val.m) / val.d;
-                out.h2[j] = __float22half2_rn(f2);
+                reinterpret_cast<half2 *>(&out)[j] = __float22half2_rn(f2);
             }
-            LDST128BITS(b[row_offset + col_idx]) = out.f4;
+            LDST128BITS(b[row_offset + col_idx]) = out;
         }
     }
 }
@@ -319,13 +336,13 @@ __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
     MD val{-FLT_MAX, 0.f};
 
     for (int i = 0; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        Pack128 tmp;
-        tmp.f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+        float4 tmp = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
 
         float local_m = -FLT_MAX;
 #pragma unroll
         for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(tmp.h2[j]);
+            half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+            float2 f2 = __half22float2(h2);
             local_m = fmaxf(local_m, fmaxf(f2.x, f2.y));
         }
 
@@ -335,7 +352,8 @@ __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
 
 #pragma unroll
         for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(tmp.h2[j]);
+            half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+            float2 f2 = __half22float2(h2);
             val.d += __expf(f2.x - new_m) + __expf(f2.y - new_m);
         }
         val.m = new_m;
@@ -344,18 +362,18 @@ __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
     val = block_online_softmax_reduce<BLOCK_SIZE>(val);
 
     for (int i = 0; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        Pack128 tmp;
-        tmp.f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
-        Pack128 out;
+        float4 tmp = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+        float4 out;
 
 #pragma unroll
         for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(tmp.h2[j]);
+            half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+            float2 f2 = __half22float2(h2);
             f2.x = __expf(f2.x - val.m) / val.d;
             f2.y = __expf(f2.y - val.m) / val.d;
-            out.h2[j] = __float22half2_rn(f2);
+            reinterpret_cast<half2 *>(&out)[j] = __float22half2_rn(f2);
         }
-        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out.f4;
+        LDST128BITS(b[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out;
     }
 }
 
@@ -371,15 +389,16 @@ __global__ void softmax_grid_pass1(half *a, float *ws_m, float *ws_d, int hidden
 
     MD val{-FLT_MAX, 0.f};
 
-    Pack128 cache[VECS_PER_THREAD];
+    float4 cache[VECS_PER_THREAD];
 #pragma unroll
     for (int i = 0; i < VECS_PER_THREAD; i++) {
         int col_idx = col_offset + i * BLOCK_SIZE * 8;
         if (col_idx < hidden_size) {
-            cache[i].f4 = LDST128BITS(a[row * hidden_size + col_idx]);
+            cache[i] = LDST128BITS(a[row * hidden_size + col_idx]);
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(cache[i].h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&cache[i])[j];
+                float2 f2 = __half22float2(h2);
                 val.m = fmaxf(val.m, fmaxf(f2.x, f2.y));
             }
         }
@@ -391,7 +410,8 @@ __global__ void softmax_grid_pass1(half *a, float *ws_m, float *ws_d, int hidden
         if (col_idx < hidden_size) {
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(cache[i].h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&cache[i])[j];
+                float2 f2 = __half22float2(h2);
                 val.d += __expf(f2.x - val.m) + __expf(f2.y - val.m);
             }
         }
@@ -431,17 +451,17 @@ __global__ void softmax_grid_pass2(half *a, half *b, float *ws_m, float *ws_d, i
     for (int i = 0; i < VECS_PER_THREAD; i++) {
         int col_idx = col_offset + i * BLOCK_SIZE * 8;
         if (col_idx < hidden_size) {
-            Pack128 tmp;
-            tmp.f4 = LDST128BITS(a[row * hidden_size + col_idx]);
-            Pack128 out;
+            float4 tmp = LDST128BITS(a[row * hidden_size + col_idx]);
+            float4 out;
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(tmp.h2[j]);
+                half2 h2 = reinterpret_cast<half2 *>(&tmp)[j];
+                float2 f2 = __half22float2(h2);
                 f2.x = __expf(f2.x - global_val.m) / global_val.d;
                 f2.y = __expf(f2.y - global_val.m) / global_val.d;
-                out.h2[j] = __float22half2_rn(f2);
+                reinterpret_cast<half2 *>(&out)[j] = __float22half2_rn(f2);
             }
-            LDST128BITS(b[row * hidden_size + col_idx]) = out.f4;
+            LDST128BITS(b[row * hidden_size + col_idx]) = out;
         }
     }
 }
