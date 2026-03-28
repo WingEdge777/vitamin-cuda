@@ -30,7 +30,7 @@ lib = load(
 baseline = None
 
 
-def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
+def benchmark(op, a, b=None, warmup=10, rep=100, prefix="torch"):
     if b is not None:
         # warm up
         for i in range(warmup):
@@ -75,7 +75,7 @@ def test_small():
     for n in bs:
         for m in sz:
             print("#" * 100)
-            print(f"n: {n}, m: {m}")
+            print(f"bs: {n}, hidden_size: {m}")
             a = torch.randn(n, m).float().cuda()
             b = torch.empty(n, m).float().cuda()
 
@@ -101,32 +101,69 @@ def test_small():
             )
             diff_check(b, b_my, prefix="softmax_fp16x8_packed")
 
+            benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
+
+            diff_check(b, b_my, prefix="softmax_arbitrary")
+
 def test_large():
-    n, m = 4096, 8192 * 2
+    ns = [4]
+    ms = [8192*2, 8192*8, 8192*32, 8192*128, 8192*1024, 8192*4096]
+    for n in ns:
+        for m in ms:
+            print("#" * 100)
+            print(f"bs: {n}, hidden_size: {m}")
+            a = torch.randn(n, m).half().cuda()
+            b = torch.zeros(n, m).half().cuda()
 
-    print("#" * 100)
-    print(f"n: {n}, m: {m}")
-    a = torch.randn(n, m).half().cuda()
-    b = torch.empty(n, m).half().cuda()
+            benchmark(partial(torch.softmax, dim=1, out=b), a)
+            b_my = torch.zeros_like(a)
 
-    benchmark(partial(torch.softmax, dim=1, out=b), a)
-    b_my = torch.empty_like(a)
+            if m <= 32768:
+                benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
+                # print(b, b_my)
+                diff_check(b, b_my, prefix="softmax_medium")
+            if m <= 114688:
+                benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
+                diff_check(b, b_my, prefix="softmax_extreme")
 
-    benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
-    # print(b, b_my)
-    diff_check(b, b_my, prefix="softmax_medium")
+            benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
+            # print(b, b_my)
+            diff_check(b, b_my, prefix="softmax_arbitrary")
 
-    benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
-    diff_check(b, b_my, prefix="softmax_extreme")
+            benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
+            diff_check(b, b_my, prefix="softmax_splitk")
 
-    benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
-    # print(b, b_my)
-    diff_check(b, b_my, prefix="softmax_arbitrary")
+def test_run():
+    ns = [4]
+    ms = [8192*2]
+    for n in ns:
+        for m in ms:
+            print("#" * 100)
+            print(f"bs: {n}, hidden_size: {m}")
+            a = torch.randn(n, m).half().cuda()
+            b = torch.zeros(n, m).half().cuda()
 
-    benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
-    diff_check(b, b_my, prefix="softmax_splitk")
+            benchmark(partial(torch.softmax, dim=1, out=b), a)
+            b_my = torch.zeros_like(a)
+
+            if m <= 32768:
+                benchmark(lib.softmax_medium, a, b_my, prefix="softmax_medium")
+                # print(b, b_my)
+                diff_check(b, b_my, prefix="softmax_medium")
+            if m <= 114688:
+                benchmark(lib.softmax_extreme, a, b_my, prefix="softmax_extreme")
+                diff_check(b, b_my, prefix="softmax_extreme")
+
+            benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
+            # print(b, b_my)
+            diff_check(b, b_my, prefix="softmax_arbitrary")
+
+            benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
+            diff_check(b, b_my, prefix="softmax_splitk")
+
 
 if __name__ == "__main__":
     # test the kernel
     # test_small()
-    test_large()
+    # test_large()
+    test_run()
