@@ -167,6 +167,6 @@ def test_run():
 
 if __name__ == "__main__":
     # test the kernel
-    test_small()
+    # test_small()
     # test_large()
-    # test_run()
+    test_run()
