@@ -112,7 +112,7 @@ def test_small():
 
 def test_large():
     ns = [4]
-    ms = [8192*2, 8192*8, 8192*32, 8192*128, 8192*1024, 8192*4096]
+    ms = [8192*2, 32768, 114688, 8192*8, 8192*32, 8192*128, 8192*1024, 8192*4096]
     for n in ns:
         for m in ms:
             print("#" * 100)
@@ -165,6 +165,6 @@ def test_run():
 
 if __name__ == "__main__":
     # test the kernel
-    # test_small()
-    test_large()
+    test_small()
+    # test_large()
     # test_run()
