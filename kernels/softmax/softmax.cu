@@ -326,7 +326,7 @@ __global__ __launch_bounds__(BLOCK_SIZE,
     }
 }
 
-// two pass : valina
+// two pass : Vanilla
 template <const int BLOCK_SIZE = 256>
 __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
     int row_offset = blockIdx.x * hidden_size;
