@@ -110,9 +110,19 @@ def test_small():
             benchmark(lib.softmax_arbitrary, a, b_my, prefix="softmax_arbitrary")
             diff_check(b, b_my, prefix="softmax_arbitrary")
 
+
 def test_large():
     ns = [4]
-    ms = [8192*2, 32768, 114688, 8192*8, 8192*32, 8192*128, 8192*1024, 8192*4096]
+    ms = [
+        8192 * 2,
+        32768,
+        8192 * 8,
+        114688,
+        8192 * 32,
+        8192 * 128,
+        8192 * 1024,
+        8192 * 4096,
+    ]
     for n in ns:
         for m in ms:
             print("#" * 100)
@@ -136,9 +146,10 @@ def test_large():
             benchmark(lib.softmax_splitk, a, b_my, prefix="softmax_splitk")
             diff_check(b, b_my, prefix="softmax_splitk")
 
+
 def test_run():
     ns = [4]
-    ms = [8192*2]
+    ms = [8192 * 2]
     for n in ns:
         for m in ms:
             print("#" * 100)

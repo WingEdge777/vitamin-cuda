@@ -711,7 +711,6 @@ softmax_arbitrary              mean time: 0.009563 ms, speedup: 1.40
 ####################################################################################################
 bs: 2048, hidden_size: 1024
 torch                          mean time: 0.017927 ms
-softmax_fp16                   mean time: 0.073661 ms, speedup: 0.24
 softmax_fp16x8_packed          mean time: 0.070659 ms, speedup: 0.25
 softmax_medium                 mean time: 0.051850 ms, speedup: 0.35
 softmax_extreme                mean time: 0.430039 ms, speedup: 0.04
@@ -719,7 +718,6 @@ softmax_arbitrary              mean time: 0.019672 ms, speedup: 0.91
 ####################################################################################################
 bs: 2048, hidden_size: 2048
 torch                          mean time: 0.046208 ms
-softmax_fp16                   mean time: 0.076945 ms, speedup: 0.60
 softmax_fp16x8_packed          mean time: 0.075269 ms, speedup: 0.61
 softmax_medium                 mean time: 0.056936 ms, speedup: 0.81
 softmax_extreme                mean time: 0.440854 ms, speedup: 0.10
@@ -727,7 +725,6 @@ softmax_arbitrary              mean time: 0.021029 ms, speedup: 2.20
 ####################################################################################################
 bs: 2048, hidden_size: 4096
 torch                          mean time: 0.154837 ms
-softmax_fp16                   mean time: 0.087298 ms, speedup: 1.77
 softmax_fp16x8_packed          mean time: 0.086135 ms, speedup: 1.80
 softmax_medium                 mean time: 0.065064 ms, speedup: 2.38
 softmax_extreme                mean time: 0.457006 ms, speedup: 0.34
@@ -735,7 +732,6 @@ softmax_arbitrary              mean time: 0.036486 ms, speedup: 4.24
 ####################################################################################################
 bs: 2048, hidden_size: 8192
 torch                          mean time: 0.324745 ms
-softmax_fp16                   mean time: 0.245734 ms, speedup: 1.32
 softmax_fp16x8_packed          mean time: 0.212331 ms, speedup: 1.53
 softmax_medium                 mean time: 0.212712 ms, speedup: 1.53
 softmax_extreme                mean time: 0.488978 ms, speedup: 0.66
@@ -760,17 +756,17 @@ softmax_extreme                mean time: 0.014393 ms, speedup: 1.90
 softmax_arbitrary              mean time: 0.013321 ms, speedup: 2.06
 softmax_splitk                 mean time: 0.020143 ms, speedup: 1.36
 ####################################################################################################
-bs: 4, hidden_size: 114688
-torch                          mean time: 0.022233 ms
-softmax_extreme                mean time: 0.015460 ms, speedup: 1.44
-softmax_arbitrary              mean time: 0.021300 ms, speedup: 1.04
-softmax_splitk                 mean time: 0.021642 ms, speedup: 1.03
-####################################################################################################
 bs: 4, hidden_size: 65536
 torch                          mean time: 0.014817 ms
 softmax_extreme                mean time: 0.012640 ms, speedup: 1.17
 softmax_arbitrary              mean time: 0.015067 ms, speedup: 0.98
 softmax_splitk                 mean time: 0.018317 ms, speedup: 0.81
+####################################################################################################
+bs: 4, hidden_size: 114688
+torch                          mean time: 0.022233 ms
+softmax_extreme                mean time: 0.015460 ms, speedup: 1.44
+softmax_arbitrary              mean time: 0.021300 ms, speedup: 1.04
+softmax_splitk                 mean time: 0.021642 ms, speedup: 1.03
 ####################################################################################################
 bs: 4, hidden_size: 262144
 torch                          mean time: 0.044464 ms
