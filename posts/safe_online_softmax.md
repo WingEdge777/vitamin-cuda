@@ -743,50 +743,50 @@ softmax_arbitrary              mean time: 0.208171 ms, speedup: 1.56
 ```yaml
 ####################################################################################################
 bs: 4, hidden_size: 16384
-torch                          mean time: 0.010786 ms
-softmax_medium                 mean time: 0.009192 ms, speedup: 1.17
-softmax_extreme                mean time: 0.011900 ms, speedup: 0.91
-softmax_arbitrary              mean time: 0.009755 ms, speedup: 1.11
-softmax_splitk                 mean time: 0.016945 ms, speedup: 0.64
+torch                          mean time: 0.012369 ms
+softmax_medium                 mean time: 0.011401 ms, speedup: 1.08
+softmax_extreme                mean time: 0.013799 ms, speedup: 0.90
+softmax_arbitrary              mean time: 0.010522 ms, speedup: 1.18
+softmax_splitk                 mean time: 0.016911 ms, speedup: 0.73
 ####################################################################################################
 bs: 4, hidden_size: 32768
-torch                          mean time: 0.027404 ms
-softmax_medium                 mean time: 0.009107 ms, speedup: 3.01
-softmax_extreme                mean time: 0.014393 ms, speedup: 1.90
-softmax_arbitrary              mean time: 0.013321 ms, speedup: 2.06
-softmax_splitk                 mean time: 0.020143 ms, speedup: 1.36
+torch                          mean time: 0.033266 ms
+softmax_medium                 mean time: 0.015141 ms, speedup: 2.20
+softmax_extreme                mean time: 0.014320 ms, speedup: 2.32
+softmax_arbitrary              mean time: 0.011193 ms, speedup: 2.97
+softmax_splitk                 mean time: 0.020862 ms, speedup: 1.59
 ####################################################################################################
 bs: 4, hidden_size: 65536
-torch                          mean time: 0.014817 ms
-softmax_extreme                mean time: 0.012640 ms, speedup: 1.17
-softmax_arbitrary              mean time: 0.015067 ms, speedup: 0.98
-softmax_splitk                 mean time: 0.018317 ms, speedup: 0.81
+torch                          mean time: 0.016672 ms
+softmax_extreme                mean time: 0.014532 ms, speedup: 1.15
+softmax_arbitrary              mean time: 0.016860 ms, speedup: 0.99
+softmax_splitk                 mean time: 0.046560 ms, speedup: 0.36
 ####################################################################################################
 bs: 4, hidden_size: 114688
-torch                          mean time: 0.022233 ms
-softmax_extreme                mean time: 0.015460 ms, speedup: 1.44
-softmax_arbitrary              mean time: 0.021300 ms, speedup: 1.04
-softmax_splitk                 mean time: 0.021642 ms, speedup: 1.03
+torch                          mean time: 0.023799 ms
+softmax_extreme                mean time: 0.040429 ms, speedup: 0.59
+softmax_arbitrary              mean time: 0.023173 ms, speedup: 1.03
+softmax_splitk                 mean time: 0.020216 ms, speedup: 1.18
 ####################################################################################################
 bs: 4, hidden_size: 262144
-torch                          mean time: 0.044464 ms
-softmax_arbitrary              mean time: 0.041788 ms, speedup: 1.06
-softmax_splitk                 mean time: 0.024179 ms, speedup: 1.84
+torch                          mean time: 0.043840 ms
+softmax_arbitrary              mean time: 0.043765 ms, speedup: 1.00
+softmax_splitk                 mean time: 0.045702 ms, speedup: 0.96
 ####################################################################################################
 bs: 4, hidden_size: 1048576
-torch                          mean time: 0.160862 ms
-softmax_arbitrary              mean time: 0.157954 ms, speedup: 1.02
-softmax_splitk                 mean time: 0.026998 ms, speedup: 5.96
+torch                          mean time: 0.193523 ms
+softmax_arbitrary              mean time: 0.158823 ms, speedup: 1.22
+softmax_splitk                 mean time: 0.026112 ms, speedup: 7.41
 ####################################################################################################
 bs: 4, hidden_size: 8388608
-torch                          mean time: 1.740836 ms
-softmax_arbitrary              mean time: 2.546787 ms, speedup: 0.68
-softmax_splitk                 mean time: 0.605970 ms, speedup: 2.87
+torch                          mean time: 2.036284 ms
+softmax_arbitrary              mean time: 2.943902 ms, speedup: 0.69
+softmax_splitk                 mean time: 0.689904 ms, speedup: 2.95
 ####################################################################################################
 bs: 4, hidden_size: 33554432
-torch                          mean time: 6.858849 ms
-softmax_arbitrary              mean time: 10.122205 ms, speedup: 0.68
-softmax_splitk                 mean time: 2.395403 ms, speedup: 2.86
+torch                          mean time: 7.662010 ms
+softmax_arbitrary              mean time: 10.514376 ms, speedup: 0.73
+softmax_splitk                 mean time: 2.372789 ms, speedup: 3.23
 ```
 
 ## 4.3 总结

@@ -30,12 +30,3 @@ hgemm_bcf                                mean time: 4.336920 ms, speedup: 0.94, 
 hgemm_bcf_dbf                            mean time: 4.096174 ms, speedup: 1.00, tflops: 33.55
 hgemm_bcf_dbf_rw                         mean time: 4.075860 ms, speedup: 1.01, tflops: 33.72
 ```
-
-## TODO
-
-sm 120 kernels
-
-- [x]: baseline cp.async + ldmatrix + mma (+ double buffer + coalesced gmem)
-- [] tma read + ldmatrix + mma
-- [] tma read/write + ldmatrix + mma
-- [] tma read/write + ldmatrix + mma

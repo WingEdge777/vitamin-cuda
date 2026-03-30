@@ -377,7 +377,7 @@ __global__ void softmax_arbitrary_kernel(half *a, half *b, int hidden_size) {
 
 // split-k pass 1
 template <const int BLOCK_SIZE = 256, const int VECS_PER_THREAD = 16>
-__global__ void softmax_grid_pass1(half *a, float *ws_m, float *ws_d, int hidden_size) {
+__global__ __launch_bounds__(256, 3) void softmax_grid_pass1(half *a, float *ws_m, float *ws_d, int hidden_size) {
     int row = blockIdx.y;
     int chunk_id = blockIdx.x;
     int tid = threadIdx.x;
