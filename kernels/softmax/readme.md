@@ -30,47 +30,47 @@ ptxas info    : Compiling entry function '_Z18softmax_grid_pass2ILi256ELi16EEvP6
 ptxas info    : Function properties for _Z18softmax_grid_pass2ILi256ELi16EEvP6__halfS1_PfS2_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 40 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 46.738 ms
+ptxas info    : Compile time = 84.659 ms
 ptxas info    : Compiling entry function '_Z18softmax_grid_pass1ILi256ELi16EEvP6__halfPfS2_i' for 'sm_120'
 ptxas info    : Function properties for _Z18softmax_grid_pass1ILi256ELi16EEvP6__halfPfS2_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
-ptxas info    : Used 86 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 25.829 ms
+ptxas info    : Used 79 registers, used 1 barriers, 64 bytes smem
+ptxas info    : Compile time = 21.369 ms
 ptxas info    : Compiling entry function '_Z24softmax_arbitrary_kernelILi256EEvP6__halfS1_i' for 'sm_120'
 ptxas info    : Function properties for _Z24softmax_arbitrary_kernelILi256EEvP6__halfS1_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 36 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 17.098 ms
+ptxas info    : Compile time = 12.731 ms
 ptxas info    : Compiling entry function '_Z22softmax_onepass_kernelILi256ELi32ELi24ELi1EEvP6__halfS1_i' for 'sm_120'
 ptxas info    : Function properties for _Z22softmax_onepass_kernelILi256ELi32ELi24ELi1EEvP6__halfS1_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 250 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 229.864 ms
+ptxas info    : Compile time = 176.764 ms
 ptxas info    : Compiling entry function '_Z22softmax_onepass_kernelILi256ELi8ELi8ELi3EEvP6__halfS1_i' for 'sm_120'
 ptxas info    : Function properties for _Z22softmax_onepass_kernelILi256ELi8ELi8ELi3EEvP6__halfS1_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 80 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 30.446 ms
+ptxas info    : Compile time = 37.731 ms
 ptxas info    : Compiling entry function '_Z28softmax_fp16x8_packed_kernelILi256EEvP6__halfS1_i' for 'sm_120'
 ptxas info    : Function properties for _Z28softmax_fp16x8_packed_kernelILi256EEvP6__halfS1_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 95 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 35.515 ms
+ptxas info    : Compile time = 38.098 ms
 ptxas info    : Compiling entry function '_Z21softmax_fp32x4_kernelILi256EEvPfS0_i' for 'sm_120'
 ptxas info    : Function properties for _Z21softmax_fp32x4_kernelILi256EEvPfS0_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 55 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 9.114 ms
+ptxas info    : Compile time = 10.820 ms
 ptxas info    : Compiling entry function '_Z14softmax_kernelILi256E6__halfEvPT0_S2_i' for 'sm_120'
 ptxas info    : Function properties for _Z14softmax_kernelILi256E6__halfEvPT0_S2_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 90 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 14.633 ms
+ptxas info    : Compile time = 20.868 ms
 ptxas info    : Compiling entry function '_Z14softmax_kernelILi256EfEvPT0_S1_i' for 'sm_120'
 ptxas info    : Function properties for _Z14softmax_kernelILi256EfEvPT0_S1_i
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 86 registers, used 1 barriers, 64 bytes smem
-ptxas info    : Compile time = 13.406 ms
+ptxas info    : Compile time = 17.167 ms
 ```
 
 ### 输出
