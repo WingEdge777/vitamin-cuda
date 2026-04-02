@@ -7,7 +7,7 @@ hgemm kernel
 sm 120 kernels
 
 - [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma (+ double buffer + coalesced gmem)
-- [] cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
+- [x] cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
 - [] tma read + ldmatrix + mma
 - [] tma read/write + ldmatrix + mma
 - [x] pytorch op bindings && diff check

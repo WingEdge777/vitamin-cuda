@@ -24,6 +24,7 @@ lib = load(
         "-Xptxas -v",
     ],
     extra_cflags=common_flags,
+    extra_ldflags=["-L/usr/local/cuda-12.9/lib64/stubs", "-lcuda"],
     verbose=True,
 )
 
@@ -85,6 +86,7 @@ def run():
     c_my = torch.zeros_like(c)
     benchmark(lib.hgemm_bcf_dbf_rw, a, b, c_my, prefix="hgemm_bcf_dbf_rw")
     benchmark(lib.hgemm_k_stages, a, b, c_my, prefix="hgemm_3_stages")
+    benchmark(lib.hgemm_tma_r_k_stages, a, b, c_my, prefix="hgemm_tma_r_3_stages")
 
 
 if __name__ == "__main__":
