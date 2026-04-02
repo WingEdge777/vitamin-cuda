@@ -135,6 +135,32 @@ __device__ __forceinline__ void mma_compute(float sum[4][4][4], uint32_t reg_a[4
     }
 }
 
+template <const int BK, typename T>
+__device__ __forceinline__ void cp_async_load_A(T (*As)[BK], int load_a_row, int load_a_col, T *global_a_ptr, int k) {
+
+    // cp.async load A，每个线程加载 2 行，跨 64 行
+    uint32_t smem_a0 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
+    uint32_t smem_a1 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
+    // a 矩阵跨 64 行
+    CP_ASYNC_CG(smem_a0, global_a_ptr);
+    CP_ASYNC_CG(smem_a1, global_a_ptr + 64 * k);
+}
+
+template <const int BK, const int BN, typename T>
+__device__ __forceinline__ void cp_async_load_B(T (*Bs)[BN], int load_b_row, int load_b_col, T *global_b_ptr, int n) {
+
+    // cp.async load B，每个线程加载 2 行，跨 16 行
+    uint32_t smem_b0 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
+    uint32_t smem_b1 =
+        static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
+    // b 矩阵跨 16 行
+    CP_ASYNC_CG(smem_b0, global_b_ptr);
+    CP_ASYNC_CG(smem_b1, global_b_ptr + 16 * n);
+}
+
 template <const int BM, const int BN, typename T>
 __device__ __forceinline__ void write_c_via_smem(
     T *c, int by, int bx, int n, float sum[4][4][4], int warp_id_m, int warp_id_n, int lane_id, int tid, T (*Cs)[BN]) {
@@ -229,30 +255,12 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
     float sum[4][4][4] = {0.f};
 
+    T *global_a_ptr = &a[(by * BM + load_a_row) * k + load_a_col];
+    T *global_b_ptr = &b[load_b_row * n + bx * BN + load_b_col];
+
     // ----------------------------- Prologue 先加载一次As/Bs
-    // cp.async load A
-    uint32_t smem_a0 =
-        static_cast<uint32_t>(__cvta_generic_to_shared(&smem.As[0][load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
-    uint32_t smem_a1 = static_cast<uint32_t>(
-        __cvta_generic_to_shared(&smem.As[0][load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
-
-    T *global_a0 = &a[(by * BM + load_a_row) * k + load_a_col];
-    T *global_a1 = &a[(by * BM + load_a_row + 64) * k + load_a_col];
-
-    CP_ASYNC_CG(smem_a0, global_a0);
-    CP_ASYNC_CG(smem_a1, global_a1);
-
-    // cp.async load B
-    uint32_t smem_b0 =
-        static_cast<uint32_t>(__cvta_generic_to_shared(&smem.Bs[0][load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
-    uint32_t smem_b1 = static_cast<uint32_t>(
-        __cvta_generic_to_shared(&smem.Bs[0][load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
-
-    T *global_b0 = &b[(load_b_row)*n + bx * BN + load_b_col];
-    T *global_b1 = &b[(load_b_row + 16) * n + bx * BN + load_b_col];
-
-    CP_ASYNC_CG(smem_b0, global_b0);
-    CP_ASYNC_CG(smem_b1, global_b1);
+    cp_async_load_A<BK>(smem.As[0], load_a_row, load_a_col, global_a_ptr, k);
+    cp_async_load_B<BK, BN>(smem.Bs[0], load_b_row, load_b_col, global_b_ptr, n);
 
     CP_ASYNC_COMMIT_GROUP();
     cp_async_wait_group<0>();
@@ -264,34 +272,17 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     // 主循环
     for (int bk = 32; bk < k; bk += BK) {
 
-        // 1. cp.async load A
-        smem_a0 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.As[write_idx][load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
-        smem_a1 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.As[write_idx][load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
+        // 推进指针
+        global_a_ptr += BK;
+        global_b_ptr += BK * n;
 
-        // 全局地址改为跨步，降低寄存器压力
-        global_a0 += BK;
-        global_a1 += BK;
-
-        CP_ASYNC_CG(smem_a0, global_a0);
-        CP_ASYNC_CG(smem_a1, global_a1);
-
-        // 2. cp.async load B
-        smem_b0 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.Bs[write_idx][load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
-        smem_b1 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.Bs[write_idx][load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
-
-        global_b0 += BK * n;
-        global_b1 += BK * n;
-
-        CP_ASYNC_CG(smem_b0, global_b0);
-        CP_ASYNC_CG(smem_b1, global_b1);
+        // 1. cp.async load A/B
+        cp_async_load_A<BK>(smem.As[write_idx], load_a_row, load_a_col, global_a_ptr, k);
+        cp_async_load_B<BK, BN>(smem.Bs[write_idx], load_b_row, load_b_col, global_b_ptr, n);
 
         CP_ASYNC_COMMIT_GROUP();
 
-        // 3. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
+        // 2. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
 #pragma unroll
         for (int k_step = 0; k_step < 2; ++k_step) {
             int k_offset = k_step * 16;
@@ -308,10 +299,12 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
             // MMA 核心运算：4x4 次 m16n8k16
             mma_compute<T>(sum, reg_a, reg_b);
         }
-        cp_async_wait_group<0>();
-        __syncthreads();
+
         read_idx ^= 1;
         write_idx ^= 1;
+
+        cp_async_wait_group<0>();
+        __syncthreads();
     }
     // ------------------- Epilogue 最后计算一次再写回
 #pragma unroll
@@ -378,21 +371,8 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
     // 1. prologue: 加载stages-1 个As/Bs块
 #pragma unroll
     for (int i = 0; i < STAGES - 1; ++i) {
-        uint32_t smem_a0 =
-            static_cast<uint32_t>(__cvta_generic_to_shared(&smem.As[i][load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
-        uint32_t smem_a1 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.As[i][load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
-        // a 矩阵跨 64 行
-        CP_ASYNC_CG(smem_a0, global_a_ptr);
-        CP_ASYNC_CG(smem_a1, global_a_ptr + 64 * k);
-
-        uint32_t smem_b0 =
-            static_cast<uint32_t>(__cvta_generic_to_shared(&smem.Bs[i][load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
-        uint32_t smem_b1 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.Bs[i][load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
-        // b 矩阵跨 16 行
-        CP_ASYNC_CG(smem_b0, global_b_ptr);
-        CP_ASYNC_CG(smem_b1, global_b_ptr + 16 * n);
+        cp_async_load_A<BK>(smem.As[i], load_a_row, load_a_col, global_a_ptr, k);
+        cp_async_load_B<BK, BN>(smem.Bs[i], load_b_row, load_b_col, global_b_ptr, n);
 
         CP_ASYNC_COMMIT_GROUP();
 
@@ -410,25 +390,13 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
     // 2. main loop
     for (int bk = (STAGES - 1) * BK; bk < k; bk += BK) {
 
-        // 1. 先发起cp.async load As 到 load_stage
-        uint32_t smem_a0 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.As[load_stage][load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
-        uint32_t smem_a1 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.As[load_stage][load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
-        CP_ASYNC_CG(smem_a0, global_a_ptr);
-        CP_ASYNC_CG(smem_a1, global_a_ptr + 64 * k);
-
-        // 2. 先发起cp.async load As 到 load_stage
-        uint32_t smem_b0 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.Bs[load_stage][load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
-        uint32_t smem_b1 = static_cast<uint32_t>(
-            __cvta_generic_to_shared(&smem.Bs[load_stage][load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
-        CP_ASYNC_CG(smem_b0, global_b_ptr);
-        CP_ASYNC_CG(smem_b1, global_b_ptr + 16 * n);
+        // 1. 先发起cp.async load As/Bs 到 load_stage
+        cp_async_load_A<BK>(smem.As[load_stage], load_a_row, load_a_col, global_a_ptr, k);
+        cp_async_load_B<BK, BN>(smem.Bs[load_stage], load_b_row, load_b_col, global_b_ptr, n);
 
         CP_ASYNC_COMMIT_GROUP();
 
-        // 3. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
+        // 2. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
 #pragma unroll
         for (int k_step = 0; k_step < 2; ++k_step) {
             int k_offset = k_step * 16;
