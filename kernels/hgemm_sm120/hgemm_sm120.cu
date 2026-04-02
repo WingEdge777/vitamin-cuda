@@ -29,7 +29,17 @@
 
 #define CP_ASYNC_COMMIT_GROUP() asm volatile("cp.async.commit_group;\n" ::)
 
-#define CP_ASYNC_WAIT_GROUP(k) asm volatile("cp.async.wait_group %0;\n" ::"r"(k))
+template <int N>
+__device__ __forceinline__ void cp_async_wait_group() {
+    if constexpr (N == 0)
+        asm volatile("cp.async.wait_group 0;\n" ::);
+    else if constexpr (N == 1)
+        asm volatile("cp.async.wait_group 1;\n" ::);
+    else if constexpr (N == 2)
+        asm volatile("cp.async.wait_group 2;\n" ::);
+    else if constexpr (N == 3)
+        asm volatile("cp.async.wait_group 3;\n" ::);
+}
 
 // ldmatrix
 #define LDMATRIX_X4(R0, R1, R2, R3, PTR)                                                                               \
@@ -126,7 +136,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     CP_ASYNC_CG(smem_b1, global_b1);
 
     CP_ASYNC_COMMIT_GROUP();
-    CP_ASYNC_WAIT_GROUP_0();
+    cp_async_wait_group<0>();
     __syncthreads();
 
     int read_idx = 0;
@@ -224,7 +234,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
                 }
             }
         }
-        CP_ASYNC_WAIT_GROUP_0();
+        cp_async_wait_group<0>();
         __syncthreads();
         read_idx ^= 1;
         write_idx ^= 1;
