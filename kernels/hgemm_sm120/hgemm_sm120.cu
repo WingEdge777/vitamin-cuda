@@ -69,6 +69,125 @@ __device__ __forceinline__ void cp_async_wait_group() {
 
 const int WARP_SIZE = 32;
 
+template <const int BK, typename T>
+__device__ __forceinline__ void
+ldmatrix_A(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, int k_offset) {
+
+    // 4 次 ldmatrix A (4 * 16 = 64 行)
+#pragma unroll
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+        // ldmatrix x4 读 16x16
+        int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
+        int a_col = k_offset + (lane_id / 16) * 8;
+        uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_A(a_row, a_col)]));
+        LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+    }
+}
+
+template <const int BN, const int BK, typename T>
+__device__ __forceinline__ void
+ldmatrix_B(uint32_t reg_b[4][2], T (*Bs)[BN], int warp_id_n, int lane_id, int k_offset) {
+
+    // 4 次 ldmatrix B (4 * 8 = 32 列)
+#pragma unroll
+    for (int n_idx = 0; n_idx < 4; ++n_idx) {
+        // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
+        int b_row = k_offset + (lane_id % 16);
+        int b_col = warp_id_n * 32 + n_idx * 8;
+
+        uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[b_row][SWIZZLE_B(b_row, b_col)]));
+        LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
+    }
+}
+
+template <typename T>
+__device__ __forceinline__ void mma_compute(float sum[4][4][4], uint32_t reg_a[4][4], uint32_t reg_b[4][2]) {
+
+    // MMA 核心运算：4x4 次 m16n8k16
+#pragma unroll
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            if constexpr (std::is_same_v<T, __half>) {
+                M16N8K16_F16(sum[m_idx][n_idx][0],
+                             sum[m_idx][n_idx][1],
+                             sum[m_idx][n_idx][2],
+                             sum[m_idx][n_idx][3],
+                             reg_a[m_idx][0],
+                             reg_a[m_idx][1],
+                             reg_a[m_idx][2],
+                             reg_a[m_idx][3],
+                             reg_b[n_idx][0],
+                             reg_b[n_idx][1]);
+            } else {
+                M16N8K16_BF16(sum[m_idx][n_idx][0],
+                              sum[m_idx][n_idx][1],
+                              sum[m_idx][n_idx][2],
+                              sum[m_idx][n_idx][3],
+                              reg_a[m_idx][0],
+                              reg_a[m_idx][1],
+                              reg_a[m_idx][2],
+                              reg_a[m_idx][3],
+                              reg_b[n_idx][0],
+                              reg_b[n_idx][1]);
+            }
+        }
+    }
+}
+
+template <const int BM, const int BN, typename T>
+__device__ __forceinline__ void write_c_via_smem(
+    T *c, int by, int bx, int n, float sum[4][4][4], int warp_id_m, int warp_id_n, int lane_id, int tid, T (*Cs)[BN]) {
+
+    // ---------------- 写回 C 矩阵 ----------------
+    // 复用 As/Bs 中转
+    __syncthreads();
+
+    int t_row = lane_id / 4;       // 0~7
+    int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
+
+    // register to Cs smem
+#pragma unroll
+    for (int m_idx = 0; m_idx < 4; ++m_idx) {
+#pragma unroll
+        for (int n_idx = 0; n_idx < 4; ++n_idx) {
+            int c_base_row = warp_id_m * 64 + m_idx * 16; // m 跨16行
+            int c_base_col = warp_id_n * 32 + n_idx * 8;  // n 跨8列
+
+            // 16行我们分成两次8行写入
+            int c_row_0 = c_base_row + t_row;
+            int c_row_2 = c_base_row + t_row + 8;
+            int c_col = c_base_col + t_col;
+
+            if constexpr (std::is_same_v<T, __half>) {
+                HALF2(Cs[c_row_0][SWIZZLE_C(c_row_0, c_col)]) = __float22half2_rn(FLOAT2(sum[m_idx][n_idx][0]));
+                HALF2(Cs[c_row_2][SWIZZLE_C(c_row_2, c_col)]) = __float22half2_rn(FLOAT2(sum[m_idx][n_idx][2]));
+            } else {
+                BFLOAT2(Cs[c_row_0][SWIZZLE_C(c_row_0, c_col)]) = __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][0]));
+                BFLOAT2(Cs[c_row_2][SWIZZLE_C(c_row_2, c_col)]) = __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][2]));
+            }
+        }
+    }
+
+    __syncthreads();
+
+    // smem to gmem
+    // 每个线程负责搬运 64 个元素 (fp16/bf16)，即 8 个 float4，每次 一个 warp 读写 32*4*4=512B， 256个线程一次写 4096B
+    T *c_block = &c[by * BM * n + bx * BN];
+
+#pragma unroll
+    for (int step = 0; step < 8; ++step) {
+        // 保证同一个 warp 的 32 个线程，此时读取的 elem_idx 是绝对连续的
+        int elem_idx = (step * 256 + tid) * 8;
+        int row = elem_idx / 128;
+        int col = elem_idx % 128;
+
+        int s_col = SWIZZLE_C(row, col);
+
+        FLOAT4(c_block[row * n + col]) = FLOAT4(Cs[row][s_col]);
+    }
+}
+
 // ------------------------------------------ cp.async + mma  ----------------------------------------------------
 
 // a block calculate c[128][128]
@@ -181,58 +300,13 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
             uint32_t reg_b[4][2];
 
             // 4 次 ldmatrix A (4 * 16 = 64 行)
-#pragma unroll
-            for (int m_idx = 0; m_idx < 4; ++m_idx) {
-                // ldmatrix x4 读 16x16
-                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
-                int a_col = k_offset + (lane_id / 16) * 8;
-                uint32_t smem_addr =
-                    static_cast<uint32_t>(__cvta_generic_to_shared(&smem.As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
-                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
-            }
+            ldmatrix_A<BK>(reg_a, smem.As[read_idx], warp_id_m, lane_id, k_offset);
 
             // 4 次 ldmatrix B (4 * 8 = 32 列)
-#pragma unroll
-            for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
-                int b_row = k_offset + (lane_id % 16);
-                int b_col = warp_id_n * 32 + n_idx * 8;
-
-                uint32_t smem_addr =
-                    static_cast<uint32_t>(__cvta_generic_to_shared(&smem.Bs[read_idx][b_row][SWIZZLE_B(b_row, b_col)]));
-                LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
-            }
+            ldmatrix_B<BN, BK>(reg_b, smem.Bs[read_idx], warp_id_n, lane_id, k_offset);
 
             // MMA 核心运算：4x4 次 m16n8k16
-#pragma unroll
-            for (int m_idx = 0; m_idx < 4; ++m_idx) {
-#pragma unroll
-                for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                    if constexpr (std::is_same_v<T, __half>) {
-                        M16N8K16_F16(sum[m_idx][n_idx][0],
-                                     sum[m_idx][n_idx][1],
-                                     sum[m_idx][n_idx][2],
-                                     sum[m_idx][n_idx][3],
-                                     reg_a[m_idx][0],
-                                     reg_a[m_idx][1],
-                                     reg_a[m_idx][2],
-                                     reg_a[m_idx][3],
-                                     reg_b[n_idx][0],
-                                     reg_b[n_idx][1]);
-                    } else {
-                        M16N8K16_BF16(sum[m_idx][n_idx][0],
-                                      sum[m_idx][n_idx][1],
-                                      sum[m_idx][n_idx][2],
-                                      sum[m_idx][n_idx][3],
-                                      reg_a[m_idx][0],
-                                      reg_a[m_idx][1],
-                                      reg_a[m_idx][2],
-                                      reg_a[m_idx][3],
-                                      reg_b[n_idx][0],
-                                      reg_b[n_idx][1]);
-                    }
-                }
-            }
+            mma_compute<T>(sum, reg_a, reg_b);
         }
         cp_async_wait_group<0>();
         __syncthreads();
@@ -248,109 +322,16 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
         uint32_t reg_b[4][2];
 
         // 4 次 ldmatrix A (4 * 16 = 64 行)
-#pragma unroll
-        for (int m_idx = 0; m_idx < 4; ++m_idx) {
-            // ldmatrix x4 读 16x16
-            int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
-            int a_col = k_offset + (lane_id / 16) * 8;
-            uint32_t smem_addr =
-                static_cast<uint32_t>(__cvta_generic_to_shared(&smem.As[read_idx][a_row][SWIZZLE_A(a_row, a_col)]));
-            LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
-        }
+        ldmatrix_A<BK>(reg_a, smem.As[read_idx], warp_id_m, lane_id, k_offset);
 
         // 4 次 ldmatrix B (4 * 8 = 32 列)
-#pragma unroll
-        for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
-            int b_row = k_offset + (lane_id % 16);
-            int b_col = warp_id_n * 32 + n_idx * 8;
-
-            uint32_t smem_addr =
-                static_cast<uint32_t>(__cvta_generic_to_shared(&smem.Bs[read_idx][b_row][SWIZZLE_B(b_row, b_col)]));
-            LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
-        }
+        ldmatrix_B<BN, BK>(reg_b, smem.Bs[read_idx], warp_id_n, lane_id, k_offset);
 
         // MMA 核心运算：4x4 次 m16n8k16
-#pragma unroll
-        for (int m_idx = 0; m_idx < 4; ++m_idx) {
-#pragma unroll
-            for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                if constexpr (std::is_same_v<T, __half>) {
-                    M16N8K16_F16(sum[m_idx][n_idx][0],
-                                 sum[m_idx][n_idx][1],
-                                 sum[m_idx][n_idx][2],
-                                 sum[m_idx][n_idx][3],
-                                 reg_a[m_idx][0],
-                                 reg_a[m_idx][1],
-                                 reg_a[m_idx][2],
-                                 reg_a[m_idx][3],
-                                 reg_b[n_idx][0],
-                                 reg_b[n_idx][1]);
-                } else {
-                    M16N8K16_BF16(sum[m_idx][n_idx][0],
-                                  sum[m_idx][n_idx][1],
-                                  sum[m_idx][n_idx][2],
-                                  sum[m_idx][n_idx][3],
-                                  reg_a[m_idx][0],
-                                  reg_a[m_idx][1],
-                                  reg_a[m_idx][2],
-                                  reg_a[m_idx][3],
-                                  reg_b[n_idx][0],
-                                  reg_b[n_idx][1]);
-                }
-            }
-        }
+        mma_compute<T>(sum, reg_a, reg_b);
     }
 
-    // ---------------- 写回 C 矩阵 ----------------
-    // 复用 As/Bs 中转
-    __syncthreads();
-
-    int t_row = lane_id / 4;       // 0~7
-    int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
-
-    // register to Cs smem
-#pragma unroll
-    for (int m_idx = 0; m_idx < 4; ++m_idx) {
-#pragma unroll
-        for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int c_base_row = warp_id_m * 64 + m_idx * 16; // m 跨16行
-            int c_base_col = warp_id_n * 32 + n_idx * 8;  // n 跨8列
-
-            // 16行我们分成两次8行写入
-            int c_row_0 = c_base_row + t_row;
-            int c_row_2 = c_base_row + t_row + 8;
-            int c_col = c_base_col + t_col;
-
-            if constexpr (std::is_same_v<T, __half>) {
-                HALF2(smem.Cs[c_row_0][SWIZZLE_C(c_row_0, c_col)]) = __float22half2_rn(FLOAT2(sum[m_idx][n_idx][0]));
-                HALF2(smem.Cs[c_row_2][SWIZZLE_C(c_row_2, c_col)]) = __float22half2_rn(FLOAT2(sum[m_idx][n_idx][2]));
-            } else {
-                BFLOAT2(smem.Cs[c_row_0][SWIZZLE_C(c_row_0, c_col)]) =
-                    __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][0]));
-                BFLOAT2(smem.Cs[c_row_2][SWIZZLE_C(c_row_2, c_col)]) =
-                    __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][2]));
-            }
-        }
-    }
-
-    __syncthreads();
-
-    // smem to gmem
-    // 每个线程负责搬运 64 个元素 (fp16/bf16)，即 8 个 float4，每次 一个 warp 读写 32*4*4=512B， 256个线程一次写 4096B
-    T *c_block = &c[by * BM * n + bx * BN];
-
-#pragma unroll
-    for (int step = 0; step < 8; ++step) {
-        // 保证同一个 warp 的 32 个线程，此时读取的 elem_idx 是绝对连续的
-        int elem_idx = (step * 256 + tid) * 8;
-        int row = elem_idx / 128;
-        int col = elem_idx % 128;
-
-        int s_col = SWIZZLE_C(row, col);
-
-        FLOAT4(c_block[row * n + col]) = FLOAT4(smem.Cs[row][s_col]);
-    }
+    write_c_via_smem<BM, BN>(c, by, bx, n, sum, warp_id_m, warp_id_n, lane_id, tid, smem.Cs);
 }
 
 template <const int BM = 128, const int BN = 128, const int BK = 32, const int STAGES = 3, typename T>
@@ -455,58 +436,13 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
             uint32_t reg_b[4][2];
 
             // 4 次 ldmatrix A (4 * 16 = 64 行)
-#pragma unroll
-            for (int m_idx = 0; m_idx < 4; ++m_idx) {
-                // ldmatrix x4 读 16x16
-                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
-                int a_col = k_offset + (lane_id / 16) * 8;
-                uint32_t smem_addr = static_cast<uint32_t>(
-                    __cvta_generic_to_shared(&smem.As[compute_stage][a_row][SWIZZLE_A(a_row, a_col)]));
-                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
-            }
+            ldmatrix_A<BK>(reg_a, smem.As[compute_stage], warp_id_m, lane_id, k_offset);
 
             // 4 次 ldmatrix B (4 * 8 = 32 列)
-#pragma unroll
-            for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
-                int b_row = k_offset + (lane_id % 16);
-                int b_col = warp_id_n * 32 + n_idx * 8;
-
-                uint32_t smem_addr = static_cast<uint32_t>(
-                    __cvta_generic_to_shared(&smem.Bs[compute_stage][b_row][SWIZZLE_B(b_row, b_col)]));
-                LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
-            }
+            ldmatrix_B<BN, BK>(reg_b, smem.Bs[compute_stage], warp_id_n, lane_id, k_offset);
 
             // MMA 核心运算：4x4 次 m16n8k16
-#pragma unroll
-            for (int m_idx = 0; m_idx < 4; ++m_idx) {
-#pragma unroll
-                for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                    if constexpr (std::is_same_v<T, __half>) {
-                        M16N8K16_F16(sum[m_idx][n_idx][0],
-                                     sum[m_idx][n_idx][1],
-                                     sum[m_idx][n_idx][2],
-                                     sum[m_idx][n_idx][3],
-                                     reg_a[m_idx][0],
-                                     reg_a[m_idx][1],
-                                     reg_a[m_idx][2],
-                                     reg_a[m_idx][3],
-                                     reg_b[n_idx][0],
-                                     reg_b[n_idx][1]);
-                    } else {
-                        M16N8K16_BF16(sum[m_idx][n_idx][0],
-                                      sum[m_idx][n_idx][1],
-                                      sum[m_idx][n_idx][2],
-                                      sum[m_idx][n_idx][3],
-                                      reg_a[m_idx][0],
-                                      reg_a[m_idx][1],
-                                      reg_a[m_idx][2],
-                                      reg_a[m_idx][3],
-                                      reg_b[n_idx][0],
-                                      reg_b[n_idx][1]);
-                    }
-                }
-            }
+            mma_compute<T>(sum, reg_a, reg_b);
         }
 
         // 保障最早的 group load 好
@@ -534,112 +470,19 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
             uint32_t reg_b[4][2];
 
             // 4 次 ldmatrix A (4 * 16 = 64 行)
-#pragma unroll
-            for (int m_idx = 0; m_idx < 4; ++m_idx) {
-                // ldmatrix x4 读 16x16
-                int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
-                int a_col = k_offset + (lane_id / 16) * 8;
-                uint32_t smem_addr = static_cast<uint32_t>(
-                    __cvta_generic_to_shared(&smem.As[compute_stage][a_row][SWIZZLE_A(a_row, a_col)]));
-                LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
-            }
+            ldmatrix_A<BK>(reg_a, smem.As[compute_stage], warp_id_m, lane_id, k_offset);
 
             // 4 次 ldmatrix B (4 * 8 = 32 列)
-#pragma unroll
-            for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
-                int b_row = k_offset + (lane_id % 16);
-                int b_col = warp_id_n * 32 + n_idx * 8;
-
-                uint32_t smem_addr = static_cast<uint32_t>(
-                    __cvta_generic_to_shared(&smem.Bs[compute_stage][b_row][SWIZZLE_B(b_row, b_col)]));
-                LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
-            }
+            ldmatrix_B<BN, BK>(reg_b, smem.Bs[compute_stage], warp_id_n, lane_id, k_offset);
 
             // MMA 核心运算：4x4 次 m16n8k16
-#pragma unroll
-            for (int m_idx = 0; m_idx < 4; ++m_idx) {
-#pragma unroll
-                for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                    if constexpr (std::is_same_v<T, __half>) {
-                        M16N8K16_F16(sum[m_idx][n_idx][0],
-                                     sum[m_idx][n_idx][1],
-                                     sum[m_idx][n_idx][2],
-                                     sum[m_idx][n_idx][3],
-                                     reg_a[m_idx][0],
-                                     reg_a[m_idx][1],
-                                     reg_a[m_idx][2],
-                                     reg_a[m_idx][3],
-                                     reg_b[n_idx][0],
-                                     reg_b[n_idx][1]);
-                    } else {
-                        M16N8K16_BF16(sum[m_idx][n_idx][0],
-                                      sum[m_idx][n_idx][1],
-                                      sum[m_idx][n_idx][2],
-                                      sum[m_idx][n_idx][3],
-                                      reg_a[m_idx][0],
-                                      reg_a[m_idx][1],
-                                      reg_a[m_idx][2],
-                                      reg_a[m_idx][3],
-                                      reg_b[n_idx][0],
-                                      reg_b[n_idx][1]);
-                    }
-                }
-            }
+            mma_compute<T>(sum, reg_a, reg_b);
         }
 
         compute_stage = (compute_stage + 1 == STAGES) ? 0 : compute_stage + 1;
     }
 
-    // ---------------- 写回 C 矩阵 ----------------
-    // 复用 As/Bs 中转
-    __syncthreads();
-
-    int t_row = lane_id / 4;       // 0~7
-    int t_col = (lane_id % 4) * 2; // 0, 2, 4, 6
-
-    // register to Cs smem
-#pragma unroll
-    for (int m_idx = 0; m_idx < 4; ++m_idx) {
-#pragma unroll
-        for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int c_base_row = warp_id_m * 64 + m_idx * 16; // m 跨16行
-            int c_base_col = warp_id_n * 32 + n_idx * 8;  // n 跨8列
-
-            // 16行我们分成两次8行写入
-            int c_row_0 = c_base_row + t_row;
-            int c_row_2 = c_base_row + t_row + 8;
-            int c_col = c_base_col + t_col;
-
-            if constexpr (std::is_same_v<T, __half>) {
-                HALF2(smem.Cs[c_row_0][SWIZZLE_C(c_row_0, c_col)]) = __float22half2_rn(FLOAT2(sum[m_idx][n_idx][0]));
-                HALF2(smem.Cs[c_row_2][SWIZZLE_C(c_row_2, c_col)]) = __float22half2_rn(FLOAT2(sum[m_idx][n_idx][2]));
-            } else {
-                BFLOAT2(smem.Cs[c_row_0][SWIZZLE_C(c_row_0, c_col)]) =
-                    __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][0]));
-                BFLOAT2(smem.Cs[c_row_2][SWIZZLE_C(c_row_2, c_col)]) =
-                    __float22bfloat162_rn(FLOAT2(sum[m_idx][n_idx][2]));
-            }
-        }
-    }
-
-    __syncthreads();
-
-    // smem to gmem
-    // 每个线程负责搬运 64 个元素 (fp16/bf16)，即 8 个 float4，每次 一个 warp 读写 32*4*4=512B， 256个线程一次写 4096B
-    T *c_block = &c[by * BM * n + bx * BN];
-
-#pragma unroll
-    for (int step = 0; step < 8; ++step) {
-        // 保证同一个 warp 的 32 个线程，此时读取的 elem_idx 是绝对连续的
-        int elem_idx = (step * 256 + tid) * 8;
-        int row = elem_idx / 128;
-        int col = elem_idx % 128;
-
-        int s_col = SWIZZLE_C(row, col);
-
-        FLOAT4(c_block[row * n + col]) = FLOAT4(smem.Cs[row][s_col]);
-    }
+    write_c_via_smem<BM, BN>(c, by, bx, n, sum, warp_id_m, warp_id_n, lane_id, tid, smem.Cs);
 }
 // -------------------   tma r + mma -------------------
 // a block calculate c[128][128]
