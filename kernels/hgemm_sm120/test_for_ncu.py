@@ -10,8 +10,8 @@ torch.set_grad_enabled(False)
 common_flags = ["-O3", "-std=c++17"]
 # Load the CUDA kernel as a python module
 lib = load(
-    name="hgemm_lib",
-    sources=["hgemm.cu", "cublas.cu"],
+    name="hgemm_sm120_lib",
+    sources=["hgemm_sm120.cu", "cublas.cu"],
     extra_cuda_cflags=common_flags
     + [
         "-U__CUDA_NO_HALF_OPERATORS__",

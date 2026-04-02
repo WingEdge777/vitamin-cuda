@@ -10,8 +10,8 @@ torch.set_grad_enabled(False)
 common_flags = ["-O3", "-std=c++17"]
 # Load the CUDA kernel as a python module
 lib = load(
-    name="hgemm_lib",
-    sources=["hgemm.cu", "cublas.cu"],
+    name="hgemm_sm120_lib",
+    sources=["hgemm_sm120.cu", "cublas.cu"],
     extra_cuda_cflags=common_flags
     + [
         "-U__CUDA_NO_HALF_OPERATORS__",
@@ -100,9 +100,6 @@ def test_all():
                 prefix="hgemm_cublas",
             )
             diff_check(c, c_cublas, prefix="hgemm_cublas")
-            # c_my = torch.zeros_like(c)
-            # benchmark(lib.hgemm_naive, a, b, c_my, prefix="hgemm_naive")
-            # diff_check(c, c_my, prefix="hgemm_naive")
 
 
 def test_4096():
@@ -131,13 +128,6 @@ def test_4096():
 
         c_my = torch.zeros_like(c)
 
-        benchmark(lib.hgemm_naive, a, b, c_my, prefix="hgemm_naive")
-        diff_check(c, c_my, prefix="hgemm_naive")
-
-        benchmark(lib.hgemm_bcf, a, b, c_my, prefix="hgemm_bcf")
-        diff_check(c, c_my, prefix="hgemm_bcf")
-        benchmark(lib.hgemm_bcf_dbf, a, b, c_my, prefix="hgemm_bcf_dbf")
-        diff_check(c, c_my, prefix="hgemm_bcf_dbf")
         benchmark(lib.hgemm_bcf_dbf_rw, a, b, c_my, prefix="hgemm_bcf_dbf_rw")
         diff_check(c, c_my, prefix="hgemm_bcf_dbf_rw")
 
