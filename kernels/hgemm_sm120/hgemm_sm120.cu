@@ -413,10 +413,6 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
             mma_compute<T>(sum, reg_a, reg_b);
         }
 
-        // 保障最早的 group load 好
-        cp_async_wait_group<STAGES - 2>();
-        __syncthreads();
-
         // 推进指针
         global_a_ptr += BK;
         global_b_ptr += BK * n;
@@ -424,6 +420,10 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
         // 流水线往下推一级
         load_stage = (load_stage + 1 == STAGES) ? 0 : load_stage + 1;
         compute_stage = (compute_stage + 1 == STAGES) ? 0 : compute_stage + 1;
+
+        // 保障最早的 group load 好
+        cp_async_wait_group<STAGES - 2>();
+        __syncthreads();
     }
 
     // 3. epilogue 最后计算 stages-1 次 再写回
