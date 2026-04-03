@@ -135,8 +135,11 @@ def test_4096():
         benchmark(lib.hgemm_k_stages, a, b, c_my, prefix="hgemm_k_stages")
         diff_check(c, c_my, prefix="hgemm_k_stages")
 
-        benchmark(lib.hgemm_tma_r_k_stages, a, b, c_my, prefix="hgemm_tma_r_k_stages")
-        diff_check(c, c_my, prefix="hgemm_tma_r_k_stages")
+        benchmark(lib.hgemm_tma_r_k_stages_64, a, b, c_my, prefix="hgemm_tma_r_k_stages_64")
+        diff_check(c, c_my, prefix="hgemm_tma_r_k_stages_64")
+
+        benchmark(lib.hgemm_tma_r_k_stages_32, a, b, c_my, prefix="hgemm_tma_r_k_stages_32")
+        diff_check(c, c_my, prefix="hgemm_tma_r_k_stages_32")
 
 
 if __name__ == "__main__":

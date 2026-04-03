@@ -759,8 +759,8 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
 }
 
 // ---------------- tma func binding
-#define binding_tiled_tma_func_gen(name)                                                                               \
-    void name(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                                     \
+#define binding_tiled_tma_func_gen(name, BK)                                                                           \
+    void name##_##BK(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                              \
         CHECK_T(a);                                                                                                    \
         CHECK_T(b);                                                                                                    \
         CHECK_T(c);                                                                                                    \
@@ -769,54 +769,18 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
         const int N = b.size(1);                                                                                       \
         const int BM = 128;                                                                                            \
         const int BN = 128;                                                                                            \
-        const int BK = 64;                                                                                             \
         const int threads_per_block = 256;                                                                             \
         const dim3 blocks_per_grid((N + BN - 1) / BN, (M + BM - 1) / BM);                                              \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-                                                                                                                       \
-        if (a.dtype() == torch::kHalf) {                                                                               \
-            CUtensorMap tma_a = create_tensor_map<__half>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM);     \
-            CUtensorMap tma_b = create_tensor_map<__half>(reinterpret_cast<__half *>(b.data_ptr()), N, K, BN / 2, BK); \
-                                                                                                                       \
-            cudaFuncSetAttribute(                                                                                      \
-                name##_kernel<128, 128, 64, 3, __half>, cudaFuncAttributeMaxDynamicSharedMemorySize, 98500);           \
-            name##_kernel<128, 128, 64, 3><<<blocks_per_grid, threads_per_block, 98500, stream>>>(                     \
-                tma_a, tma_b, reinterpret_cast<__half *>(c.data_ptr()), M, N, K);                                      \
-        } else {                                                                                                       \
-            CUtensorMap tma_a =                                                                                        \
-                create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(a.data_ptr()), K, M, BK, BM);       \
-            CUtensorMap tma_b =                                                                                        \
-                create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(b.data_ptr()), N, K, BN / 2, BK);   \
-            cudaFuncSetAttribute(                                                                                      \
-                name##_kernel<128, 128, 64, 3, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, 98500);    \
-            name##_kernel<128, 128, 64, 3><<<blocks_per_grid, threads_per_block, 98500, stream>>>(                     \
-                tma_a, tma_b, reinterpret_cast<__nv_bfloat16 *>(c.data_ptr()), M, N, K);                               \
-        }                                                                                                              \
-    }
-
-#define binding_tiled_tma_test_func_gen(name)                                                                          \
-    void name(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                                     \
-        CHECK_T(a);                                                                                                    \
-        CHECK_T(b);                                                                                                    \
-        CHECK_T(c);                                                                                                    \
-        const int M = a.size(0);                                                                                       \
-        const int K = a.size(1);                                                                                       \
-        const int N = b.size(1);                                                                                       \
-        const int BM = 128;                                                                                            \
-        const int BN = 128;                                                                                            \
-        const int BK = 32;                                                                                             \
-        const int threads_per_block = 256;                                                                             \
-        const dim3 blocks_per_grid((N + BN - 1) / BN, (M + BM - 1) / BM);                                              \
-        cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-                                                                                                                       \
+        const int smem_size = BM * BK * 2 * 3 * 2 + 24;                                                                \
         if (a.dtype() == torch::kHalf) {                                                                               \
             CUtensorMap tma_a =                                                                                        \
                 create_tensor_map<__half, BK * 2>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM);             \
             CUtensorMap tma_b = create_tensor_map<__half>(reinterpret_cast<__half *>(b.data_ptr()), N, K, BN / 2, BK); \
                                                                                                                        \
             cudaFuncSetAttribute(                                                                                      \
-                name##_kernel<BM, BN, BK, 3, __half>, cudaFuncAttributeMaxDynamicSharedMemorySize, 49176);             \
-            name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                       \
+                name##_kernel<BM, BN, BK, 3, __half>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);         \
+            name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, smem_size, stream>>>(                   \
                 tma_a, tma_b, reinterpret_cast<__half *>(c.data_ptr()), M, N, K);                                      \
         } else {                                                                                                       \
             CUtensorMap tma_a = create_tensor_map<__nv_bfloat16, BK * 2>(                                              \
@@ -824,8 +788,8 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
             CUtensorMap tma_b =                                                                                        \
                 create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(b.data_ptr()), N, K, BN / 2, BK);   \
             cudaFuncSetAttribute(                                                                                      \
-                name##_kernel<BM, BN, BK, 3, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, 49176);      \
-            name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                       \
+                name##_kernel<BM, BN, BK, 3, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);  \
+            name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, smem_size, stream>>>(                   \
                 tma_a, tma_b, reinterpret_cast<__nv_bfloat16 *>(c.data_ptr()), M, N, K);                               \
         }                                                                                                              \
     }
@@ -833,8 +797,8 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
 binding_tiled_func_gen(hgemm_bcf_dbf_rw);
 binding_tiled_func_gen(hgemm_k_stages);
 
-// binding_tiled_tma_func_gen(hgemm_tma_r_k_stages);
-binding_tiled_tma_test_func_gen(hgemm_tma_r_k_stages);
+binding_tiled_tma_func_gen(hgemm_tma_r_k_stages, 64);
+binding_tiled_tma_func_gen(hgemm_tma_r_k_stages, 32);
 
 extern void hgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 
@@ -845,5 +809,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(hgemm_cublas);
     torch_pybinding_func(hgemm_bcf_dbf_rw);
     torch_pybinding_func(hgemm_k_stages);
-    torch_pybinding_func(hgemm_tma_r_k_stages);
+    torch_pybinding_func(hgemm_tma_r_k_stages_64);
+    torch_pybinding_func(hgemm_tma_r_k_stages_32);
 }
