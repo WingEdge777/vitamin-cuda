@@ -22,6 +22,8 @@
 
 #define SWIZZLE_C(row, col) ((col) ^ (((row) & 0x7) << 3))
 
+#define SWIZZLE_64B_TMA(row, col) ((col) ^ (((row >> 2) & 0x3) << 3))
+
 #define SWIZZLE_128B_TMA(row, col) ((col) ^ (((row) & 0x7) << 3))
 
 // ---------------- 内联 PTX 汇编宏定义 ----------------
@@ -149,9 +151,15 @@ ldmatrix_A_tma(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, in
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
         int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
         int a_col = k_offset + (lane_id / 16) * 8;
-        uint32_t smem_addr =
-            static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_128B_TMA(a_row, a_col)]));
-        LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+        if constexpr (BK == 32) {
+            uint32_t smem_addr =
+                static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_64B_TMA(a_row, a_col)]));
+            LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+        } else {
+            uint32_t smem_addr =
+                static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_128B_TMA(a_row, a_col)]));
+            LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
+        }
     }
 }
 
@@ -619,15 +627,21 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         // 所有线程：轮询等待当前 compute_stage 的数据被 TMA 搬运完毕
         mbarrier_wait(&mbar[compute_stage], wait_phase);
 
-        // ldmatrix + mma
+        // 寄存器双buffer: ldmatrix + mma
+        uint32_t reg_a[2][4][4], reg_b[2][4][2];
+        ldmatrix_A_tma<BK>(reg_a[0], As[compute_stage], warp_id_m, lane_id, 0);
+        ldmatrix_B_tma<BN, BK>(reg_b[0], Bs[compute_stage], warp_id_n, lane_id, 0);
+        int read_idx = 0, write_idx = 1;
 #pragma unroll
         for (int k_step = 0; k_step < 4; ++k_step) {
-            int k_offset = k_step * 16;
-            uint32_t reg_a[4][4], reg_b[4][2];
-
-            ldmatrix_A_tma<BK>(reg_a, As[compute_stage], warp_id_m, lane_id, k_offset);
-            ldmatrix_B_tma<BN, BK>(reg_b, Bs[compute_stage], warp_id_n, lane_id, k_offset);
-            mma_compute<T>(sum, reg_a, reg_b);
+            if (k_step < 3) {
+                int next_k_offset = (k_step + 1) * 16;
+                ldmatrix_A_tma<BK>(reg_a[write_idx], As[compute_stage], warp_id_m, lane_id, next_k_offset);
+                ldmatrix_B_tma<BN, BK>(reg_b[write_idx], Bs[compute_stage], warp_id_n, lane_id, next_k_offset);
+            }
+            mma_compute<T>(sum, reg_a[read_idx], reg_b[read_idx]);
+            read_idx ^= 1;
+            write_idx ^= 1;
         }
 
         // 直接同步，没有warp 特化，不需要 arrive
@@ -647,14 +661,21 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         // 继续等 TMA
         mbarrier_wait(&mbar[compute_stage], wait_phase);
 
+        // 寄存器双buffer
+        uint32_t reg_a[2][4][4], reg_b[2][4][2];
+        ldmatrix_A_tma<BK>(reg_a[0], As[compute_stage], warp_id_m, lane_id, 0);
+        ldmatrix_B_tma<BN, BK>(reg_b[0], Bs[compute_stage], warp_id_n, lane_id, 0);
+        int read_idx = 0, write_idx = 1;
 #pragma unroll
         for (int k_step = 0; k_step < 4; ++k_step) {
-            int k_offset = k_step * 16;
-            uint32_t reg_a[4][4], reg_b[4][2];
-
-            ldmatrix_A_tma<BK>(reg_a, As[compute_stage], warp_id_m, lane_id, k_offset);
-            ldmatrix_B_tma<BN, BK>(reg_b, Bs[compute_stage], warp_id_n, lane_id, k_offset);
-            mma_compute<T>(sum, reg_a, reg_b);
+            if (k_step < 3) {
+                int next_k_offset = (k_step + 1) * 16;
+                ldmatrix_A_tma<BK>(reg_a[write_idx], As[compute_stage], warp_id_m, lane_id, next_k_offset);
+                ldmatrix_B_tma<BN, BK>(reg_b[write_idx], Bs[compute_stage], warp_id_n, lane_id, next_k_offset);
+            }
+            mma_compute<T>(sum, reg_a[read_idx], reg_b[read_idx]);
+            read_idx ^= 1;
+            write_idx ^= 1;
         }
 
         compute_stage = (compute_stage + 1 == STAGES) ? 0 : compute_stage + 1;
@@ -706,12 +727,13 @@ __global__ void hgemm_tma_rw_k_stages_kernel(T *a, T *b, T *c, int m, int n, int
         }                                                                                                              \
     }
 
-template <typename T>
+template <typename T, const int rowBytes = 128>
 inline CUtensorMap
 create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint32_t fast_box, uint32_t slow_box) {
     CUtensorMap tmap;
     CUtensorMapDataType type =
         std::is_same_v<T, __half> ? CU_TENSOR_MAP_DATA_TYPE_FLOAT16 : CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
+    CUtensorMapSwizzle swizzle = rowBytes == 128 ? CU_TENSOR_MAP_SWIZZLE_128B : CU_TENSOR_MAP_SWIZZLE_64B;
 
     // TMA 的核心逻辑：第 0 维永远是内存里最连续的维度 (Fastest Changing Dimension)
     uint64_t globalDim[2] = {fast_dim, slow_dim};
@@ -728,7 +750,7 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
                                           boxDim,
                                           elementStrides,
                                           CU_TENSOR_MAP_INTERLEAVE_NONE,
-                                          CU_TENSOR_MAP_SWIZZLE_128B, // 对应swizzle
+                                          swizzle, // 对应swizzle
                                           CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
                                           CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
 
@@ -772,10 +794,46 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
         }                                                                                                              \
     }
 
+#define binding_tiled_tma_test_func_gen(name)                                                                          \
+    void name(torch::Tensor a, torch::Tensor b, torch::Tensor c) {                                                     \
+        CHECK_T(a);                                                                                                    \
+        CHECK_T(b);                                                                                                    \
+        CHECK_T(c);                                                                                                    \
+        const int M = a.size(0);                                                                                       \
+        const int K = a.size(1);                                                                                       \
+        const int N = b.size(1);                                                                                       \
+        const int BM = 128;                                                                                            \
+        const int BN = 128;                                                                                            \
+        const int BK = 32;                                                                                             \
+        const int threads_per_block = 256;                                                                             \
+        const dim3 blocks_per_grid((N + BN - 1) / BN, (M + BM - 1) / BM);                                              \
+        cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
+                                                                                                                       \
+        if (a.dtype() == torch::kHalf) {                                                                               \
+            CUtensorMap tma_a = create_tensor_map<__half, 64>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM); \
+            CUtensorMap tma_b = create_tensor_map<__half>(reinterpret_cast<__half *>(b.data_ptr()), N, K, BN / 2, BK); \
+                                                                                                                       \
+            cudaFuncSetAttribute(                                                                                      \
+                name##_kernel<BM, BN, BK, 3, __half>, cudaFuncAttributeMaxDynamicSharedMemorySize, 49176);             \
+            name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                       \
+                tma_a, tma_b, reinterpret_cast<__half *>(c.data_ptr()), M, N, K);                                      \
+        } else {                                                                                                       \
+            CUtensorMap tma_a =                                                                                        \
+                create_tensor_map<__nv_bfloat16, 64>(reinterpret_cast<__nv_bfloat16 *>(a.data_ptr()), K, M, BK, BM);   \
+            CUtensorMap tma_b =                                                                                        \
+                create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(b.data_ptr()), N, K, BN / 2, BK);   \
+            cudaFuncSetAttribute(                                                                                      \
+                name##_kernel<BM, BN, BK, 3, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, 49176);      \
+            name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                       \
+                tma_a, tma_b, reinterpret_cast<__nv_bfloat16 *>(c.data_ptr()), M, N, K);                               \
+        }                                                                                                              \
+    }
+
 binding_tiled_func_gen(hgemm_bcf_dbf_rw);
 binding_tiled_func_gen(hgemm_k_stages);
 
 binding_tiled_tma_func_gen(hgemm_tma_r_k_stages);
+binding_tiled_tma_test_func_gen(hgemm_tma_r_k_stages);
 
 extern void hgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
 
