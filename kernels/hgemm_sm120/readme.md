@@ -18,9 +18,11 @@ sm 120 kernels
 ```bash
 nvidia-smi -q -d SUPPORTED_CLOCKS
 nvidia-smi -lgc 3050  # 锁定核心频率范围 (Lock Graphics Clocks)
+nvidia-smi -lmc 12001  # 锁定显存频率 (Lock Memory Clocks)
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 nvidia-smi -rgc  # 重置核心频率
+nvidia-smi -rmc  # 重置显存频率
 ```
 
 经过调整，tma + ldmatrix + mma 的kernel跑通了，但是实测性能也就一般。
