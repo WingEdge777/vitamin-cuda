@@ -22,12 +22,7 @@
 
 #define SWIZZLE_C(row, col) ((col) ^ (((row) & 0x7) << 3))
 
-#define SWIZZLE_128B_TMA(row, col) ((col) ^ (((row >> 1) & 0x7) << 3))
-
-__device__ __forceinline__ uint32_t get_swizzled_addr_128b(const void *ptr) {
-    uint32_t addr = static_cast<uint32_t>(__cvta_generic_to_shared(ptr));
-    return addr ^ ((addr >> 3) & 0x70);
-}
+#define SWIZZLE_128B_TMA(row, col) ((col) ^ (((row) & 0x7) << 3))
 
 // ---------------- 内联 PTX 汇编宏定义 ----------------
 // cp.async: 从 gmem (src) 异步拷贝 16 bytes 到 smem (dst_smem_32b)
@@ -154,7 +149,8 @@ ldmatrix_A_tma(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, in
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
         int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
         int a_col = k_offset + (lane_id / 16) * 8;
-        uint32_t smem_addr = get_swizzled_addr_128b(&As[a_row][a_col]);
+        uint32_t smem_addr =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_128B_TMA(a_row, a_col)]));
         LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
     }
 }
@@ -187,7 +183,8 @@ ldmatrix_B_tma(uint32_t reg_b[4][2], T (*Bs)[BK][BN / 2], int warp_id_n, int lan
         int chunk_idx = b_col / (BN / 2);
         int local_col = b_col % (BN / 2);
 
-        uint32_t smem_addr = get_swizzled_addr_128b(&Bs[chunk_idx][b_row][local_col]);
+        uint32_t smem_addr =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[chunk_idx][b_row][SWIZZLE_128B_TMA(b_row, local_col)]));
         LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
     }
 }
