@@ -8,7 +8,7 @@ sm 120 kernels
 
 - [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma (+ double buffer + coalesced gmem)
 - [x] cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
-- [x] tma read + ldmatrix + mma
+- [x] tma read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register
 - [] tma read/write + ldmatrix + mma
 - [x] pytorch op bindings && diff check
 
@@ -19,7 +19,7 @@ export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,no
 python test.py
 ```
 
-经过调整，tma + ldmatrix + mma 的kernel跑通了，但是性能实在不行
+经过调整，tma + ldmatrix + mma 的kernel跑通了，但是实测性能也就一般。
 
 ## 输出
 
