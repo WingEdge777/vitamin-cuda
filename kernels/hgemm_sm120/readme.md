@@ -27,9 +27,10 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 4.340397 ms, 31.67 tflops
-hgemm_cublas                             mean time: 4.422849 ms, speedup: 0.98, tflops: 31.07
-hgemm_bcf_dbf_rw                         mean time: 4.312505 ms, speedup: 1.01, tflops: 31.87
-hgemm_k_stages                           mean time: 4.210268 ms, speedup: 1.03, tflops: 32.64
-hgemm_tma_r_k_stages                     mean time: 4.404516 ms, speedup: 0.99, tflops: 31.20
+torch                                    mean time: 4.182673 ms, 32.86 tflops
+hgemm_cublas                             mean time: 4.252483 ms, speedup: 0.98, tflops: 32.32
+hgemm_bcf_dbf_rw                         mean time: 4.203456 ms, speedup: 1.00, tflops: 32.70
+hgemm_k_stages                           mean time: 4.203158 ms, speedup: 1.00, tflops: 32.70
+hgemm_tma_r_k_stages_64                  mean time: 4.331222 ms, speedup: 0.97, tflops: 31.73
+hgemm_tma_r_k_stages_32                  mean time: 4.129223 ms, speedup: 1.01, tflops: 33.28
 ```
