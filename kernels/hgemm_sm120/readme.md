@@ -16,8 +16,11 @@ sm 120 kernels
 ## 测试
 
 ```bash
+nvidia-smi -q -d SUPPORTED_CLOCKS
+nvidia-smi -lgc 3050  # 锁定核心频率范围 (Lock Graphics Clocks)
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
+nvidia-smi -rgc  # 重置核心频率
 ```
 
 经过调整，tma + ldmatrix + mma 的kernel跑通了，但是实测性能也就一般。
@@ -27,10 +30,10 @@ python test.py
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 4.182673 ms, 32.86 tflops
-hgemm_cublas                             mean time: 4.252483 ms, speedup: 0.98, tflops: 32.32
-hgemm_bcf_dbf_rw                         mean time: 4.203456 ms, speedup: 1.00, tflops: 32.70
-hgemm_k_stages                           mean time: 4.203158 ms, speedup: 1.00, tflops: 32.70
-hgemm_tma_r_k_stages_64                  mean time: 4.331222 ms, speedup: 0.97, tflops: 31.73
-hgemm_tma_r_k_stages_32                  mean time: 4.129223 ms, speedup: 1.01, tflops: 33.28
+torch                                    mean time: 3.996972 ms, 34.39 tflops
+hgemm_cublas                             mean time: 4.189541 ms, speedup: 0.95, tflops: 32.81
+hgemm_bcf_dbf_rw                         mean time: 4.098958 ms, speedup: 0.98, tflops: 33.53
+hgemm_k_stages                           mean time: 4.171379 ms, speedup: 0.96, tflops: 32.95
+hgemm_tma_r_k_stages_64                  mean time: 4.273732 ms, speedup: 0.94, tflops: 32.16
+hgemm_tma_r_k_stages_32                  mean time: 4.069529 ms, speedup: 0.98, tflops: 33.77
 ```
