@@ -22,7 +22,7 @@
 
 #define SWIZZLE_C(row, col) ((col) ^ (((row) & 0x7) << 3))
 
-#define SWIZZLE_64B_TMA(row, col) ((col) ^ (((row >> 2) & 0x3) << 3))
+#define SWIZZLE_64B_TMA(row, col) ((col) ^ (((row >> 1) & 0x3) << 3))
 
 #define SWIZZLE_128B_TMA(row, col) ((col) ^ (((row) & 0x7) << 3))
 
@@ -810,7 +810,8 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         if (a.dtype() == torch::kHalf) {                                                                               \
-            CUtensorMap tma_a = create_tensor_map<__half, 64>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM); \
+            CUtensorMap tma_a =                                                                                        \
+                create_tensor_map<__half, BK * 2>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM);             \
             CUtensorMap tma_b = create_tensor_map<__half>(reinterpret_cast<__half *>(b.data_ptr()), N, K, BN / 2, BK); \
                                                                                                                        \
             cudaFuncSetAttribute(                                                                                      \
@@ -818,8 +819,8 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
             name##_kernel<BM, BN, BK, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                       \
                 tma_a, tma_b, reinterpret_cast<__half *>(c.data_ptr()), M, N, K);                                      \
         } else {                                                                                                       \
-            CUtensorMap tma_a =                                                                                        \
-                create_tensor_map<__nv_bfloat16, 64>(reinterpret_cast<__nv_bfloat16 *>(a.data_ptr()), K, M, BK, BM);   \
+            CUtensorMap tma_a = create_tensor_map<__nv_bfloat16, BK * 2>(                                              \
+                reinterpret_cast<__nv_bfloat16 *>(a.data_ptr()), K, M, BK, BM);                                        \
             CUtensorMap tma_b =                                                                                        \
                 create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(b.data_ptr()), N, K, BN / 2, BK);   \
             cudaFuncSetAttribute(                                                                                      \
