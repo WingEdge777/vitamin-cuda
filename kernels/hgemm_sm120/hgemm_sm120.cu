@@ -572,7 +572,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
     T(*Bs)[2][BK][BN / 2] = reinterpret_cast<T(*)[2][BK][BN / 2]>(smem_buf + STAGES * BM * BK * sizeof(T));
     T(*Cs)[BN] = reinterpret_cast<T(*)[BN]>(smem_buf);
     // 把 mbar 放在末尾( 8 字节对齐，3个stages)
-    mbarrier_t *mbar = reinterpret_cast<mbarrier_t *>(smem_buf + 98304);
+    mbarrier_t *mbar = reinterpret_cast<mbarrier_t *>(smem_buf + BM * BK * sizeof(T) * STAGES * 2);
 
     // 初始化 MBarrier (仅需 tid 0 执行，期待到达次数为 1，因为只有 TMA 会给它发信号)
     if (tid == 0) {
@@ -611,7 +611,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
     int load_stage = STAGES - 1;
     int compute_stage = 0;
     int wait_phase = 0; // MBarrier 天然的 0/1 交替相位开关
-
+    int total_k_step = BK / 16;
     // 2. main loop
     for (int bk = (STAGES - 1) * BK; bk < k; bk += BK) {
 
@@ -633,8 +633,8 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         ldmatrix_B_tma<BN, BK>(reg_b[0], Bs[compute_stage], warp_id_n, lane_id, 0);
         int read_idx = 0, write_idx = 1;
 #pragma unroll
-        for (int k_step = 0; k_step < 4; ++k_step) {
-            if (k_step < 3) {
+        for (int k_step = 0; k_step < total_k_step; ++k_step) {
+            if (k_step < total_k_step - 1) {
                 int next_k_offset = (k_step + 1) * 16;
                 ldmatrix_A_tma<BK>(reg_a[write_idx], As[compute_stage], warp_id_m, lane_id, next_k_offset);
                 ldmatrix_B_tma<BN, BK>(reg_b[write_idx], Bs[compute_stage], warp_id_n, lane_id, next_k_offset);
@@ -667,8 +667,8 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         ldmatrix_B_tma<BN, BK>(reg_b[0], Bs[compute_stage], warp_id_n, lane_id, 0);
         int read_idx = 0, write_idx = 1;
 #pragma unroll
-        for (int k_step = 0; k_step < 4; ++k_step) {
-            if (k_step < 3) {
+        for (int k_step = 0; k_step < total_k_step; ++k_step) {
+            if (k_step < total_k_step - 1) {
                 int next_k_offset = (k_step + 1) * 16;
                 ldmatrix_A_tma<BK>(reg_a[write_idx], As[compute_stage], warp_id_m, lane_id, next_k_offset);
                 ldmatrix_B_tma<BN, BK>(reg_b[write_idx], Bs[compute_stage], warp_id_n, lane_id, next_k_offset);
@@ -832,7 +832,7 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
 binding_tiled_func_gen(hgemm_bcf_dbf_rw);
 binding_tiled_func_gen(hgemm_k_stages);
 
-binding_tiled_tma_func_gen(hgemm_tma_r_k_stages);
+// binding_tiled_tma_func_gen(hgemm_tma_r_k_stages);
 binding_tiled_tma_test_func_gen(hgemm_tma_r_k_stages);
 
 extern void hgemm_cublas(torch::Tensor a, torch::Tensor b, torch::Tensor c);
