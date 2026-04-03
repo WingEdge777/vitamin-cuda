@@ -22,7 +22,7 @@
 
 #define SWIZZLE_C(row, col) ((col) ^ (((row) & 0x7) << 3))
 
-#define SWIZZLE_64B_TMA(row, col) ((col) ^ (((row >> 2) & 0x3) << 3))
+#define SWIZZLE_128B_TMA(row, col) ((col) ^ (((row >> 1) & 0x7) << 3))
 
 // ---------------- 内联 PTX 汇编宏定义 ----------------
 // cp.async: 从 gmem (src) 异步拷贝 16 bytes 到 smem (dst_smem_32b)
@@ -147,10 +147,10 @@ ldmatrix_A_tma(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, in
     // 4 次 ldmatrix A (4 * 16 = 64 行)
 #pragma unroll
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
-        // ldmatrix x4 读 16x16
         int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
         int a_col = k_offset + (lane_id / 16) * 8;
-        uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_64B_TMA(a_row, a_col)]));
+        uint32_t smem_addr =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_128B_TMA(a_row, a_col)]));
         LDMATRIX_X4(reg_a[m_idx][0], reg_a[m_idx][1], reg_a[m_idx][2], reg_a[m_idx][3], smem_addr);
     }
 }
@@ -173,15 +173,18 @@ ldmatrix_B(uint32_t reg_b[4][2], T (*Bs)[BN], int warp_id_n, int lane_id, int k_
 
 template <const int BN, const int BK, typename T>
 __device__ __forceinline__ void
-ldmatrix_B_tma(uint32_t reg_b[4][2], T (*Bs)[BN], int warp_id_n, int lane_id, int k_offset) {
-
-    // 4 次 ldmatrix B (4 * 8 = 32 列)
+ldmatrix_B_tma(uint32_t reg_b[4][2], T (*Bs)[BK][BN / 2], int warp_id_n, int lane_id, int k_offset) {
 #pragma unroll
     for (int n_idx = 0; n_idx < 4; ++n_idx) {
         int b_row = k_offset + (lane_id % 16);
         int b_col = warp_id_n * 32 + n_idx * 8;
 
-        uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[b_row][SWIZZLE_64B_TMA(b_row, b_col)]));
+        // 依靠 chunk_idx 路由，坚决不越界！
+        int chunk_idx = b_col / (BN / 2);
+        int local_col = b_col % (BN / 2);
+
+        uint32_t smem_addr =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[chunk_idx][b_row][SWIZZLE_128B_TMA(b_row, local_col)]));
         LDMATRIX_X2_TRANS(reg_b[n_idx][0], reg_b[n_idx][1], smem_addr);
     }
 }
@@ -541,7 +544,7 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
 
 // -------------------   tma r + mma -------------------
 // a block calculate c[128][128]
-template <const int BM = 128, const int BN = 128, const int BK = 32, const int STAGES = 3, typename T>
+template <const int BM = 128, const int BN = 128, const int BK = 64, const int STAGES = 3, typename T>
 __global__ void hgemm_tma_r_k_stages_kernel(
     __grid_constant__ const CUtensorMap tma_a, __grid_constant__ const CUtensorMap tma_b, T *c, int m, int n, int k) {
     // grid swizzling
@@ -558,16 +561,15 @@ __global__ void hgemm_tma_r_k_stages_kernel(
     // 使用动态共享数组
     extern __shared__ __align__(128) uint8_t smem_buf[];
     T(*As)[BM][BK] = reinterpret_cast<T(*)[BM][BK]>(smem_buf);
-    T(*Bs)[BK][BN] = reinterpret_cast<T(*)[BK][BN]>(smem_buf + STAGES * BM * BK * sizeof(T));
+    T(*Bs)[2][BK][BN / 2] = reinterpret_cast<T(*)[2][BK][BN / 2]>(smem_buf + STAGES * BM * BK * sizeof(T));
     T(*Cs)[BN] = reinterpret_cast<T(*)[BN]>(smem_buf);
     // 把 mbar 放在末尾( 8 字节对齐，3个stages)
-    mbarrier_t *mbar = reinterpret_cast<mbarrier_t *>(smem_buf + 49152);
+    mbarrier_t *mbar = reinterpret_cast<mbarrier_t *>(smem_buf + 98304);
 
     // 初始化 MBarrier (仅需 tid 0 执行，期待到达次数为 1，因为只有 TMA 会给它发信号)
     if (tid == 0) {
-        for (int i = 0; i < STAGES; ++i) {
+        for (int i = 0; i < STAGES; ++i)
             mbarrier_init(&mbar[i], 1);
-        }
     }
     __syncthreads(); // 保证 MBarrier 初始化完毕
 
@@ -591,11 +593,9 @@ __global__ void hgemm_tma_r_k_stages_kernel(
             // 设定这个 mbarrier 需要等多少字节的数据落盘
             mbarrier_expect_tx(&mbar[i], tx_bytes);
 
-            // 发射 TMA 盲狙指令！
-            // 注意坐标顺序：A 是 M*K (K最快)，所以坐标是 (k_coord, m_coord)
             cp_async_bulk_tensor_2d(&mbar[i], &tma_a, As[i], load_k_coord, by * BM);
-            // B 是 K*N (N最快)，所以坐标是 (n_coord, k_coord)
-            cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i], bx * BN, load_k_coord);
+            cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i][0], bx * BN, load_k_coord);
+            cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i][1], bx * BN + BN / 2, load_k_coord);
         }
         load_k_coord += BK;
     }
@@ -611,7 +611,8 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         if (tid == 0) {
             mbarrier_expect_tx(&mbar[load_stage], tx_bytes);
             cp_async_bulk_tensor_2d(&mbar[load_stage], &tma_a, As[load_stage], load_k_coord, by * BM);
-            cp_async_bulk_tensor_2d(&mbar[load_stage], &tma_b, Bs[load_stage], bx * BN, load_k_coord);
+            cp_async_bulk_tensor_2d(&mbar[load_stage], &tma_b, Bs[load_stage][0], bx * BN, load_k_coord);
+            cp_async_bulk_tensor_2d(&mbar[load_stage], &tma_b, Bs[load_stage][1], bx * BN + BN / 2, load_k_coord);
         }
         load_k_coord += BK;
 
@@ -620,7 +621,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
 
         // ldmatrix + mma
 #pragma unroll
-        for (int k_step = 0; k_step < 2; ++k_step) {
+        for (int k_step = 0; k_step < 4; ++k_step) {
             int k_offset = k_step * 16;
             uint32_t reg_a[4][4], reg_b[4][2];
 
@@ -647,7 +648,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         mbarrier_wait(&mbar[compute_stage], wait_phase);
 
 #pragma unroll
-        for (int k_step = 0; k_step < 2; ++k_step) {
+        for (int k_step = 0; k_step < 4; ++k_step) {
             int k_offset = k_step * 16;
             uint32_t reg_a[4][4], reg_b[4][2];
 
@@ -705,13 +706,12 @@ __global__ void hgemm_tma_rw_k_stages_kernel(T *a, T *b, T *c, int m, int n, int
         }                                                                                                              \
     }
 
-template <typename T, const int rowBytes = 128>
+template <typename T>
 inline CUtensorMap
 create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint32_t fast_box, uint32_t slow_box) {
     CUtensorMap tmap;
     CUtensorMapDataType type =
         std::is_same_v<T, __half> ? CU_TENSOR_MAP_DATA_TYPE_FLOAT16 : CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
-    CUtensorMapSwizzle swizzle = rowBytes == 128 ? CU_TENSOR_MAP_SWIZZLE_128B : CU_TENSOR_MAP_SWIZZLE_64B;
 
     // TMA 的核心逻辑：第 0 维永远是内存里最连续的维度 (Fastest Changing Dimension)
     uint64_t globalDim[2] = {fast_dim, slow_dim};
@@ -728,7 +728,7 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
                                           boxDim,
                                           elementStrides,
                                           CU_TENSOR_MAP_INTERLEAVE_NONE,
-                                          swizzle, // 对应swizzle
+                                          CU_TENSOR_MAP_SWIZZLE_128B, // 对应swizzle
                                           CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
                                           CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
 
@@ -747,29 +747,27 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
         const int N = b.size(1);                                                                                       \
         const int BM = 128;                                                                                            \
         const int BN = 128;                                                                                            \
-        const int BK = 32;                                                                                             \
+        const int BK = 64;                                                                                             \
         const int threads_per_block = 256;                                                                             \
         const dim3 blocks_per_grid((N + BN - 1) / BN, (M + BM - 1) / BM);                                              \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
                                                                                                                        \
         if (a.dtype() == torch::kHalf) {                                                                               \
-            /* A 是行优先 M x K，最内层连续维度是 K。所以 fast=K, slow=M */                                            \
-            CUtensorMap tma_a = create_tensor_map<__half, 64>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM); \
-            /* B 是行优先 K x N，最内层连续维度是 N。所以 fast=N, slow=K */                                            \
-            CUtensorMap tma_b = create_tensor_map<__half, 64>(reinterpret_cast<__half *>(b.data_ptr()), N, K, BN, BK); \
+            CUtensorMap tma_a = create_tensor_map<__half>(reinterpret_cast<__half *>(a.data_ptr()), K, M, BK, BM);     \
+            CUtensorMap tma_b = create_tensor_map<__half>(reinterpret_cast<__half *>(b.data_ptr()), N, K, BN / 2, BK); \
                                                                                                                        \
             cudaFuncSetAttribute(                                                                                      \
-                name##_kernel<128, 128, 32, 3, __half>, cudaFuncAttributeMaxDynamicSharedMemorySize, 49176);           \
-            name##_kernel<128, 128, 32, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                     \
+                name##_kernel<128, 128, 64, 3, __half>, cudaFuncAttributeMaxDynamicSharedMemorySize, 98500);           \
+            name##_kernel<128, 128, 64, 3><<<blocks_per_grid, threads_per_block, 98500, stream>>>(                     \
                 tma_a, tma_b, reinterpret_cast<__half *>(c.data_ptr()), M, N, K);                                      \
         } else {                                                                                                       \
             CUtensorMap tma_a =                                                                                        \
-                create_tensor_map<__nv_bfloat16, 64>(reinterpret_cast<__nv_bfloat16 *>(a.data_ptr()), K, M, BK, BM);   \
+                create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(a.data_ptr()), K, M, BK, BM);       \
             CUtensorMap tma_b =                                                                                        \
-                create_tensor_map<__nv_bfloat16, 64>(reinterpret_cast<__nv_bfloat16 *>(b.data_ptr()), N, K, BN, BK);   \
+                create_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(b.data_ptr()), N, K, BN / 2, BK);   \
             cudaFuncSetAttribute(                                                                                      \
-                name##_kernel<128, 128, 32, 3, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, 49176);    \
-            name##_kernel<128, 128, 32, 3><<<blocks_per_grid, threads_per_block, 49176, stream>>>(                     \
+                name##_kernel<128, 128, 64, 3, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, 98500);    \
+            name##_kernel<128, 128, 64, 3><<<blocks_per_grid, threads_per_block, 98500, stream>>>(                     \
                 tma_a, tma_b, reinterpret_cast<__nv_bfloat16 *>(c.data_ptr()), M, N, K);                               \
         }                                                                                                              \
     }

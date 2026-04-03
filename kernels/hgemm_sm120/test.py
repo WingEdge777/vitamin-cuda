@@ -132,11 +132,11 @@ def test_4096():
         benchmark(lib.hgemm_bcf_dbf_rw, a, b, c_my, prefix="hgemm_bcf_dbf_rw")
         diff_check(c, c_my, prefix="hgemm_bcf_dbf_rw")
 
-        benchmark(lib.hgemm_k_stages, a, b, c_my, prefix="hgemm_3_stages")
-        diff_check(c, c_my, prefix="hgemm_3_stages")
+        benchmark(lib.hgemm_k_stages, a, b, c_my, prefix="hgemm_k_stages")
+        diff_check(c, c_my, prefix="hgemm_k_stages")
 
-        benchmark(lib.hgemm_tma_r_k_stages, a, b, c_my, prefix="hgemm_tma_r_3_stages")
-        diff_check(c, c_my, prefix="hgemm_tma_r_3_stages")
+        benchmark(lib.hgemm_tma_r_k_stages, a, b, c_my, prefix="hgemm_tma_r_k_stages")
+        diff_check(c, c_my, prefix="hgemm_tma_r_k_stages")
 
 
 if __name__ == "__main__":
