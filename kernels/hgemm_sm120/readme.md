@@ -8,7 +8,8 @@ sm 120 kernels
 
 - [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma (+ double buffer + coalesced gmem)
 - [x] cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
-- [x] tma read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register
+- [x] tma read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register, one block
+- [x] tma read + ldmatrix + mma: one block, 3 stages, 128x128x32, double buffer register, two block
 - [] tma read/write + ldmatrix + mma
 - [x] pytorch op bindings && diff check
 

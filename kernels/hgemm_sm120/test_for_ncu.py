@@ -86,7 +86,8 @@ def run():
     c_my = torch.zeros_like(c)
     benchmark(lib.hgemm_bcf_dbf_rw, a, b, c_my, prefix="hgemm_bcf_dbf_rw")
     benchmark(lib.hgemm_k_stages, a, b, c_my, prefix="hgemm_3_stages")
-    benchmark(lib.hgemm_tma_r_k_stages, a, b, c_my, prefix="hgemm_tma_r_3_stages")
+    benchmark(lib.hgemm_tma_r_k_stages_64, a, b, c_my, prefix="hgemm_tma_r_k_stages_64")
+    benchmark(lib.hgemm_tma_r_k_stages_32, a, b, c_my, prefix="hgemm_tma_r_k_stages_32")
 
 
 if __name__ == "__main__":
