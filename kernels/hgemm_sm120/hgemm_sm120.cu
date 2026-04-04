@@ -360,6 +360,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     T *global_b_ptr = &b[load_b_row * n + bx * BN + load_b_col];
 
     // ----------------------------- Prologue 先加载一次As/Bs
+    // 内部已包含跨行加载逻辑，确保覆盖全部 128x32/32x128 元素
     cp_async_load_A<BK>(smem.As[0], load_a_row, load_a_col, global_a_ptr, k);
     cp_async_load_B<BK, BN>(smem.Bs[0], load_b_row, load_b_col, global_b_ptr, n);
 
