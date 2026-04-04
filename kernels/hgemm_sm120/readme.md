@@ -32,10 +32,10 @@ nvidia-smi -rmc  # 重置显存频率
 ```yaml
 ####################################################################################################
 n: 4096, m: 4096, k: 4096
-torch                                    mean time: 3.941146 ms, 34.87 tflops
-hgemm_cublas                             mean time: 4.079132 ms, speedup: 0.97, tflops: 33.69
-hgemm_bcf_dbf_rw                         mean time: 4.002140 ms, speedup: 0.98, tflops: 34.34
-hgemm_k_stages                           mean time: 4.128076 ms, speedup: 0.95, tflops: 33.29
-hgemm_tma_r_k_stages_64                  mean time: 4.201892 ms, speedup: 0.94, tflops: 32.71
-hgemm_tma_r_k_stages_32                  mean time: 4.036934 ms, speedup: 0.98, tflops: 34.05
+torch                                    mean time: 4.011336 ms, 34.26 tflops
+hgemm_cublas                             mean time: 4.258727 ms, speedup: 0.94, tflops: 32.27
+hgemm_bcf_dbf_rw                         mean time: 4.042202 ms, speedup: 0.99, tflops: 34.00
+hgemm_k_stages                           mean time: 4.131343 ms, speedup: 0.97, tflops: 33.27
+hgemm_tma_r_k_stages_64                  mean time: 4.287896 ms, speedup: 0.94, tflops: 32.05
+hgemm_tma_r_k_stages_32                  mean time: 4.005909 ms, speedup: 1.00, tflops: 34.31
 ```
