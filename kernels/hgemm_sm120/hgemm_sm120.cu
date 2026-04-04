@@ -95,19 +95,23 @@ __device__ __forceinline__ void mbarrier_arrive(mbarrier_t *mbar) {
     asm volatile("mbarrier.arrive.shared.b64 _, [%0];\n" ::"r"(static_cast<uint32_t>(__cvta_generic_to_shared(mbar))));
 }
 
-// 异步等待数据就绪 (自带休眠，不占 ALU 算力)
-__device__ __forceinline__ void mbarrier_wait(mbarrier_t *mbar, uint32_t phase) {
-    uint32_t is_ready;
-    do {
-        asm volatile("{\n"
-                     ".reg .pred p;\n"
-                     "mbarrier.try_wait.parity.shared.b64 p, [%1], %2;\n"
-                     "selp.b32 %0, 1, 0, p;\n"
-                     "}\n"
-                     : "=r"(is_ready)
-                     : "r"(static_cast<uint32_t>(__cvta_generic_to_shared(mbar))), "r"(phase)
-                     : "memory");
-    } while (!is_ready);
+// 等待tma搬运数据结束
+__device__ __forceinline__ void mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
+    uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
+    // 设定一个极大的挂起超时周期（0x989680 = 10,000,000 个时钟周期）
+    uint32_t ticks = 0x989680;
+
+    asm volatile("{\n\t"
+                 ".reg .pred p; \n\t"
+                 "LAB_WAIT: \n\t"
+                 "mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1, %2; \n\t"
+                 "@p bra DONE; \n\t"
+                 "bra LAB_WAIT; \n\t"
+                 "DONE: \n\t"
+                 "}\n"
+                 :
+                 : "r"(smem_addr), "r"(phase), "r"(ticks)
+                 : "memory");
 }
 
 // global to shared::cta 2d TMA 搬运
@@ -187,7 +191,7 @@ ldmatrix_B_tma(uint32_t reg_b[4][2], T (*Bs)[BK][BN / 2], int warp_id_n, int lan
         int b_row = k_offset + (lane_id % 16);
         int b_col = warp_id_n * 32 + n_idx * 8;
 
-        // 依靠 chunk_idx 路由，坚决不越界！
+        // 这里要区分chunk
         int chunk_idx = b_col / (BN / 2);
         int local_col = b_col % (BN / 2);
 
@@ -602,6 +606,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
             mbarrier_expect_tx(&mbar[i], tx_bytes);
 
             cp_async_bulk_tensor_2d(&mbar[i], &tma_a, As[i], load_k_coord, by * BM);
+            // Bs要copy两次，分成两个tile
             cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i][0], bx * BN, load_k_coord);
             cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i][1], bx * BN + BN / 2, load_k_coord);
         }
@@ -651,7 +656,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         load_stage = (load_stage + 1 == STAGES) ? 0 : load_stage + 1;
         compute_stage = (compute_stage + 1 == STAGES) ? 0 : compute_stage + 1;
 
-        // 完成一次三级流水线，反转 wait_phase
+        // 完成一次三级流水线，三个 mbarrier 的 phase 都反转了，我们也要反转给定的 wait_phase
         if (compute_stage == 0)
             wait_phase ^= 1;
     }
