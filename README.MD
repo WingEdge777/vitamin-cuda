@@ -23,6 +23,7 @@ Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated co
 
 ## News
 
+- [2026.04.03] [hgemm_120](./kernels/hgemm_sm120/) fp16/bf16 `Tensor-Core` kernel outperforming cuBLAS `TMA copy + 3 stages' pipeline + double register buffer + swizzle + ldmatrix + mma`🚀
 - [2026.03.18] [hgemm](./kernels/hgemm/) fp16/bf16 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
 - [2026.03.10] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
 - [2026.02.27] [sgemm](./kernels/sgemm/) SIMT kernel outperforming cuBLAS with `smem + swizzle + double buffer + coalesced r/w`🚀
