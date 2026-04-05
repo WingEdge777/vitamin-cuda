@@ -36,24 +36,24 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
 __global__ void sgemm_tiling_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
-    int tid = threadIdx.x; // 0~255; 8 个 warp, 2x4 tiling; 每个warp 8x4 tiling
+    int tid = threadIdx.x; // 0~255; 8 warps, 2x4 warp tiling; each warp 8x4 thread tiling
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 一个block一次搬运 64x16个a， 8x128个b， 分两次搬运恰好共 128x16, 16x128
-    // 每4个线程负责一行a(16个元素)，每32个线程负责一行b(128个元素)
+    // Each block loads 64x16 of A and 8x128 of B per pass, two passes → 128x16 and 16x128
+    // Every 4 threads load one row of A (16 elems); every 32 threads load one row of B (128 elems)
     int load_a_row = tid / 4;               // 0~63
     int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
     int load_b_row = tid / WARP_SIZE;       // 0~8
     int load_b_col = (tid % WARP_SIZE) * 4; // 0,4,8,12,16,20,24,28...
 
-    // warp tiling, 每4个warp负责c的上下两部分 64x128，
+    // Warp tiling: every 4 warps cover the upper/lower 64x128 halves of C
     int warp_row = warp_id / 4;      // 0, 1
     int warp_col = warp_id % 4;      // 0, 1, 2, 3
     int t_row_in_warp = lane_id / 4; // 0~7
     int t_col_in_warp = lane_id % 4; // 0~3
 
-    // c out 初始坐标， 每个线程负责 8行8列 tile, 共256线程，256*64 = 128*128
+    // C output origin: each thread computes an 8x8 tile, 256 threads × 64 = 128×128
     int c_row = warp_row * 64 + t_row_in_warp * 8;
     int c_col = warp_col * 32 + t_col_in_warp * 8;
 
@@ -71,7 +71,7 @@ __global__ void sgemm_tiling_kernel(float *a, float *b, float *c, int m, int n, 
 
         __syncthreads();
 
-        // 8x8循环计算累加乘积和
+        // 8×8 outer-product accumulation
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             float reg_a[TM], reg_b[TN];
@@ -94,7 +94,7 @@ __global__ void sgemm_tiling_kernel(float *a, float *b, float *c, int m, int n, 
         __syncthreads();
     }
 
-    // 写回 C 矩阵
+    // Write back C
 #pragma unroll
     for (int i = 0; i < TM; ++i) {
         FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col]) = FLOAT4(sum[i][0]);
@@ -106,12 +106,12 @@ __global__ void sgemm_tiling_kernel(float *a, float *b, float *c, int m, int n, 
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
 __global__ void sgemm_at_tiling_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
-    int tid = threadIdx.x; // 0~255; 8 个 warp, 2x4 tiling; 每个warp 8x4 tiling
+    int tid = threadIdx.x; // 0~255; 8 warps, 2x4 warp tiling; each warp 8x4 thread tiling
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 一个block一次搬运 64x16个a， 8x128个b， 分两次搬运
-    // 每4个线程负责一行a(16个元素)，每32个线程负责一行b(128个元素)
+    // Each block loads 64x16 of A and 8x128 of B per pass, two passes total
+    // Every 4 threads load one row of A (16 elems); every 32 threads load one row of B (128 elems)
     int load_a_row = tid / 4;               // 0~63
     int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
     int load_b_row = tid / WARP_SIZE;       // 0~8
@@ -123,7 +123,7 @@ __global__ void sgemm_at_tiling_kernel(float *a, float *b, float *c, int m, int 
     int t_row_in_warp = lane_id / 4; // 0~7
     int t_col_in_warp = lane_id % 4; // 0~3
 
-    // c out 初始坐标， 每个线程负责 8行8列 tile, 共256线程，256*64 = 128*128
+    // C output origin: each thread computes an 8x8 tile, 256 threads × 64 = 128×128
     int c_row = warp_row * 64 + t_row_in_warp * 8;
     int c_col = warp_col * 32 + t_col_in_warp * 8;
 
@@ -133,7 +133,7 @@ __global__ void sgemm_at_tiling_kernel(float *a, float *b, float *c, int m, int 
     float sum[TM][TN] = {0.f};
 
     for (int bk = 0; bk < k; bk += BK) {
-        // A 矩阵转置写入共享内存
+        // Transpose A into shared memory
         float4 tmp_a0 = FLOAT4(a[(by * BM + load_a_row) * k + bk + load_a_col]);
         As_T[load_a_col + 0][load_a_row] = tmp_a0.x;
         As_T[load_a_col + 1][load_a_row] = tmp_a0.y;
@@ -151,7 +151,7 @@ __global__ void sgemm_at_tiling_kernel(float *a, float *b, float *c, int m, int 
 
         __syncthreads();
 
-        // 8x8循环计算累加乘积和
+        // 8×8 outer-product accumulation
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             float reg_a[TM], reg_b[TN];
@@ -173,7 +173,7 @@ __global__ void sgemm_at_tiling_kernel(float *a, float *b, float *c, int m, int 
         __syncthreads();
     }
 
-    // 写回 C 矩阵
+    // Write back C
 #pragma unroll
     for (int i = 0; i < TM; ++i) {
         FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col]) = FLOAT4(sum[i][0]);
@@ -185,12 +185,12 @@ __global__ void sgemm_at_tiling_kernel(float *a, float *b, float *c, int m, int 
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
 __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
-    int tid = threadIdx.x; // 0~255; 8 个 warp, 2x4 tiling; 每个warp 8x4 tiling
+    int tid = threadIdx.x; // 0~255; 8 warps, 2x4 warp tiling; each warp 8x4 thread tiling
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 一个block一次搬运 64x16个a， 8x128个b， 分两次搬运
-    // 每4个线程负责一行a(16个元素)，每32个线程负责一行b(128个元素)
+    // Each block loads 64x16 of A and 8x128 of B per pass, two passes total
+    // Every 4 threads load one row of A (16 elems); every 32 threads load one row of B (128 elems)
     int load_a_row = tid / 4;               // 0~63
     int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
     int load_b_row = tid / WARP_SIZE;       // 0~8
@@ -202,7 +202,7 @@ __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int 
     int t_row_in_warp = lane_id / 4; // 0~7
     int t_col_in_warp = lane_id % 4; // 0~3
 
-    // c out 初始坐标， 每个线程负责 8行8列 tile, 共256线程，256*64 = 128*128
+    // C output origin: each thread computes an 8x8 tile, 256 threads × 64 = 128×128
     int c_row = warp_row * 64 + t_row_in_warp * 8;
     int c_col = warp_col * 32 + t_col_in_warp * 8;
 
@@ -212,7 +212,7 @@ __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int 
     float sum[TM][TN] = {0.f};
 
     for (int bk = 0; bk < k; bk += BK) {
-        // A 矩阵转置写入共享内存
+        // Transpose A with swizzle into shared memory
         float4 tmp_a0 = FLOAT4(a[(by * BM + load_a_row) * k + bk + load_a_col]);
         As_T[load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row)] = tmp_a0.x;
         As_T[load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row)] = tmp_a0.y;
@@ -230,7 +230,7 @@ __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int 
 
         __syncthreads();
 
-        // 8x8循环计算累加乘积和
+        // 8×8 outer-product accumulation
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             float reg_a[TM], reg_b[TN];
@@ -252,7 +252,7 @@ __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int 
         __syncthreads();
     }
 
-    // 写回 C 矩阵
+    // Write back C
 #pragma unroll
     for (int i = 0; i < TM; ++i) {
         FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col]) = FLOAT4(sum[i][0]);
@@ -264,24 +264,23 @@ __global__ void sgemm_at_bcf_swizzling_kernel(float *a, float *b, float *c, int 
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
 __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
-    int tid = threadIdx.x; // 0~255; 8 个 warp
+    int tid = threadIdx.x; // 0~255; 8 warps
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 一个block一次搬运 64x16个a， 8x128个b， 分两次搬运
-    // 每4个线程负责一行a(16个元素)，每32个线程负责一行b(128个元素)
+    // Each block loads 64x16 of A and 8x128 of B per pass, two passes total
+    // Every 4 threads load one row of A (16 elems); every 32 threads load one row of B (128 elems)
     int load_a_row = tid / 4;               // 0~63
     int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
     int load_b_row = tid / WARP_SIZE;       // 0~8
     int load_b_col = (tid % WARP_SIZE) * 4; // 0,4,8,12,16,20,24,28...
 
-    // warp tiling
-    // 线程在 Warp 内的行偏移依然是 0 或 8
+    // Thread row offset within warp is still 0 or 8
     int t_row_in_warp = (lane_id / 16) * 8;
 
-    // 每个 Warp 只负责 16 行，每16线程负责8行128列，每行128个元素，列维度分两次load + 计算
-    // 每个线程 一次load 8行8列, 但是8列拆开为跨越64列的两次float4, 比如T0 负责读写0~3,64~67 8列,
-    // 这样每8个线程在写回c的时候是连续的32个float,128bytes,完美事务合并
+    // Each warp covers 16 rows; every 16 threads handle 8 rows × 128 cols, split into two float4 passes.
+    // E.g., T0 reads/writes cols 0~3 and 64~67 — every 8 consecutive threads produce 32 contiguous
+    // floats (128 bytes) on write-back, achieving perfect transaction coalescing.
     int c_row = warp_id * 16 + t_row_in_warp;
     int c_col_base = (lane_id % 16) * 4;
     int c_col_0 = c_col_base;      // 0~3
@@ -293,7 +292,7 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
     float sum[TM][TN] = {0.f};
 
     for (int bk = 0; bk < k; bk += BK) {
-        // A 矩阵转置写入共享内存
+        // Transpose A with swizzle into shared memory
         float4 tmp_a0 = FLOAT4(a[(by * BM + load_a_row) * k + bk + load_a_col]);
         As_T[load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row)] = tmp_a0.x;
         As_T[load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row)] = tmp_a0.y;
@@ -311,7 +310,7 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
 
         __syncthreads();
 
-        // 8x8循环计算累加乘积和
+        // 8×8 outer-product accumulation
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             float reg_a[TM], reg_b[TN];
@@ -319,8 +318,8 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
             FLOAT4(reg_a[0]) = FLOAT4(As_T[i][SWIZZLE_A(i, c_row)]);
             FLOAT4(reg_a[4]) = FLOAT4(As_T[i][SWIZZLE_A(i, c_row + 4)]);
 
-            FLOAT4(reg_b[0]) = FLOAT4(Bs[i][c_col_0]); // 读 0~3
-            FLOAT4(reg_b[4]) = FLOAT4(Bs[i][c_col_1]); // 读 64~67
+            FLOAT4(reg_b[0]) = FLOAT4(Bs[i][c_col_0]); // read 0~3
+            FLOAT4(reg_b[4]) = FLOAT4(Bs[i][c_col_1]); // read 64~67
 
 #pragma unroll
             for (int m_idx = 0; m_idx < TM; ++m_idx) {
@@ -343,17 +342,17 @@ __global__ void sgemm_at_bcf_swizzling_rw_kernel(float *a, float *b, float *c, i
 template <const int BM = 128, const int BN = 128, const int BK = 16, const int TM = 8, const int TN = 8>
 __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *c, int m, int n, int k) {
     int bx = blockIdx.x, by = blockIdx.y;
-    int tid = threadIdx.x; // 0~255; 8 个 warp
+    int tid = threadIdx.x; // 0~255; 8 warps
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 搬运映射
+    // Load mapping
     int load_a_row = tid / 4;               // 0~63
     int load_a_col = (tid % 4) * 4;         // 0,4,8,12...
     int load_b_row = tid / WARP_SIZE;       // 0~8
     int load_b_col = (tid % WARP_SIZE) * 4; // 0,4,8,12,16,20,24,28...
 
-    // c 计算读写数据映射，和之前相同
+    // C compute/read/write mapping (same as above)
     int t_row_in_warp = (lane_id / 16) * 8;
     int c_row = warp_id * 16 + t_row_in_warp;
     int c_col_base = (lane_id % 16) * 4;
@@ -366,13 +365,13 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
 
     float sum[TM][TN] = {0.f};
 
-    // 维护显存读取的一维扁平指针，方便在流水线中步进
+    // Flat pointers into global memory for easy pipeline advancement
     float *a_ptr = a + (by * BM + load_a_row) * k + load_a_col;
     // float *a_ptr_64 = a + (by * BM + load_a_row + 64) * k + load_a_col;
     float *b_ptr = b + load_b_row * n + bx * BN + load_b_col;
     // float *b_ptr_8 = b + (load_b_row + 8) * n + bx * BN + load_b_col;
 
-    // 先加载第一块, 多消耗16个寄存器, 上面几个注释掉将寄存器数量压低于128个，保障Occupancy不变
+    // Prefetch first tile (costs 16 extra regs; commented-out ptrs above keep total under 128 to preserve occupancy)
     float4 tmp_a0 = FLOAT4(a_ptr[0]);
     float4 tmp_a1 = FLOAT4(a_ptr[64 * k]);
     float4 tmp_b0 = FLOAT4(b_ptr[0]);
@@ -393,22 +392,22 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
 
     __syncthreads();
 
-    // double buffer 下标
+    // Double buffer indices
     int write_idx = 1;
     int read_idx = 0;
-    // 主循环
+    // Main loop
     for (int bk = BK; bk < k; bk += BK) {
-        // 沿k纬度偏移指针
+        // Advance pointers along K dimension
         a_ptr += BK;
         b_ptr += BK * n;
 
-        // 加载下一批数据，这个是异步的，发射完ldg指令后，可以立刻开始计算之前读取的数据
+        // Prefetch next tile — after issuing LDG, we immediately compute on the current tile
         tmp_a0 = FLOAT4(a_ptr[0]);
         tmp_a1 = FLOAT4(a_ptr[64 * k]);
         tmp_b0 = FLOAT4(b_ptr[0]);
         tmp_b1 = FLOAT4(b_ptr[8 * n]);
 
-        // 计算逻辑和之前完全相同
+        // Compute logic identical to non-pipelined version
 #pragma unroll
         for (int i = 0; i < BK; i++) {
             float reg_a[TM], reg_b[TN];
@@ -428,7 +427,7 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
             }
         }
 
-        // 计算完，把上面异步加载的寄存器数据写入共享内存
+        // Computation done — store prefetched registers into SMEM write buffer
         As_T[write_idx][load_a_col + 0][SWIZZLE_A(load_a_col + 0, load_a_row)] = tmp_a0.x;
         As_T[write_idx][load_a_col + 1][SWIZZLE_A(load_a_col + 1, load_a_row)] = tmp_a0.y;
         As_T[write_idx][load_a_col + 2][SWIZZLE_A(load_a_col + 2, load_a_row)] = tmp_a0.z;
@@ -442,11 +441,11 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
         FLOAT4(Bs[write_idx][load_b_row][load_b_col]) = tmp_b0;
         FLOAT4(Bs[write_idx][load_b_row + 8][load_b_col]) = tmp_b1;
 
-        __syncthreads(); // 同步，然后开始下一次循环
+        __syncthreads();
         write_idx ^= 1;
         read_idx ^= 1;
     }
-    // 最后还有一批数据要计算
+    // Process the last prefetched tile
 #pragma unroll
     for (int i = 0; i < BK; i++) {
         float reg_a[TM], reg_b[TN];
@@ -465,7 +464,7 @@ __global__ void sgemm_at_bcf_swizzling_dbf_rw_kernel(float *a, float *b, float *
             }
         }
     }
-    // pipeline 完成，写回c
+    // Pipeline done — write back C
 #pragma unroll
     for (int i = 0; i < TM; ++i) {
         FLOAT4(c[(by * BM + c_row + i) * n + bx * BN + c_col_0]) = FLOAT4(sum[i][0]);

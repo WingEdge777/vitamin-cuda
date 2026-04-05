@@ -1,25 +1,25 @@
-# transpose
+# Transpose
 
-## 说明
+## Overview
 
-transpose kernel
+Matrix transpose kernels
 
-- [x] transpose_coalesced_read (input视角，合并读)
-- [x] transpose_coalesced_write (output视角，合并写)
-- [x] transpose_smem (共享内存缓存，块状读写)
-- [x] transpose_smem_bcf (共享内存无冲突版)
-- [x] transpose_smem_packed_bcf (共享内存无冲突版，float4向量化读写)
-- [x] transpose_smem_swizzled_packed (共享内存无冲突版，float4向量化读写)
-- [x] pytorch op bindings && diff check
+- [x] `transpose_coalesced_read` — coalesced global loads (input-centric)
+- [x] `transpose_coalesced_write` — coalesced global stores (output-centric)
+- [x] `transpose_smem` — shared-memory tiled transpose
+- [x] `transpose_smem_bcf` — SMEM bank-conflict-free (padding)
+- [x] `transpose_smem_packed_bcf` — SMEM bank-conflict-free, `float4` vectorized r/w
+- [x] `transpose_smem_swizzled_packed` — SMEM swizzled, `float4` vectorized r/w
+- [x] PyTorch op binding & correctness check
 
-## 测试
+## Build & Test
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Benchmark Results
 
 ```bash
 ####################################################################################################
