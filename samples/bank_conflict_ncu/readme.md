@@ -1,30 +1,28 @@
-# bank conflict between warps test
+# Inter-Warp Bank Conflict Test
 
-## 说明
+## Overview
 
-load kernel test
+A micro-benchmark to verify a subtle case of shared memory bank conflicts: **inter-warp conflicts**.
 
-- [x] load_fp32x4 kernel
-- [x] pytorch op bindings && diff check
+- [x] `load_fp32x4` kernel
+- [x] PyTorch op binding & correctness check
 
-本代码用来做一个特殊情况的 bank conflict 验证的，搬运数据随便加个计算然后过一下 smem 立马写回。
+This code demonstrates a rarely discussed scenario. The kernel simply moves data through SMEM with a trivial compute in between. Most articles on bank conflicts only cover intra-warp conflicts and solutions, but rarely mention that **multiple warps issuing requests simultaneously can also produce bank conflicts**.
 
-网上大量的解释 bank conflict 概念和解决办法的文章，但是少有提到这种特殊情况的。那就是多个 warp 间同时访问 L1/smem 也会产生 bank conflict。
+Modern GPUs have multiple sub-core schedulers per SM (typically 4). Multiple warps can issue L1/TEX/SMEM requests concurrently. When these warps simultaneously access different addresses in the same SMEM bank, bank conflicts occur. There's no known way to eliminate this — it's an unavoidable physical scheduling artifact. The best we can do is reduce conflict probability (e.g., vectorized access or `ldmatrix` to reduce request scatter) and mask the conflict overhead with pipeline latency hiding (async copy + compute overlap is now essential for kernel optimization).
 
-现代 gpu，一个 SM 都有多个 sub-core 调度器(大多4个)，多个 warp 是会同时向 L1/TEX/Smem 发起请求。当这些 warp 同时访问 smem 的相同 bank 的不同地址时，就会产生 bank conflict。。目前没有看到有解决这种冲突的办法，底层物理调度无可避免，只能降低冲突概率（比如向量化访问或者使用ldmatrix等降低请求分散度），再就是通过流水线计算时延隐藏来掩盖这种冲突开销。（现在异步拷贝+计算重叠已经是 kernel 优化必备了）
+The kernel is straightforward: vectorized `float4` writes/reads to/from SMEM. Each warp generates 4 memory transactions (wavefronts), so there should be **zero intra-warp bank conflicts**. However, running three experiments at different scales reveals that the two small-scale tests show 0 conflicts, while the large-scale test shows conflicts.
 
-kernel 代码很简单，向量化写入/读取 smem，每个 warp 有 4 个内存事务（wavefronts），理论上没有 bank conflict。但是通过跑三个不同规模的数据实验就能看到，前两个小规模的是 0 冲突，最后一个大规模的就有了冲突。
+Specifically, in the third test below: 266,148 wavefronts with 4,004 conflicts (~1.5%).
 
-具体看下面的第三个测试结果，266148 wavefronts 有 4004 次冲突（1.5%），嘿嘿~
-
-## 测试
+## Build & Test
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 bash run_ncu.sh
 ```
 
-### 输出
+### NCU Output
 
 ```
    load_fp32x4_kernel(float *, float *, int) (1, 1, 1)x(128, 1, 1), Context 1, Stream 7, Device 0, CC 12.0
@@ -67,4 +65,4 @@ bash run_ncu.sh
     -------------------------------------------------------- ----------- ------------
 ```
 
-更多详细有关 bank conflict 理解和分析，不要看乱七八糟的博客了，可以直接参考 NV 技术报告：<https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41723/>
+For a thorough understanding of bank conflicts, refer to this NVIDIA GTC talk: <https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41723/>

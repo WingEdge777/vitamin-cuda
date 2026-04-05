@@ -1,35 +1,35 @@
-# sgemm
+# SGEMM
 
-## 说明
+## Overview
 
-sgemm kernel
+### SGEMM SIMT Kernels
 
-- [x] sgemm_cublas fp32 版
-- [x] sgemm_tiling (向量化读写 + block tiling共享内存版)
-- [x] sgemm_at_tiling (向量化读写 + a矩阵转置写入smem, 4-way 写入冲突, 内层循环float4读取)
-- [x] sgemm_at_bcf_swizzling (向量化读写 + at + swizzle， 无冲突版)
-- [x] sgemm_at_bcf_swizzling_rw (向量化读写 + at + swizzle + c写回事务合并)
-- [x] sgemm_at_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + double buffer流水线, 超越cuBLAS)
-- [x] pytorch op bindings && diff check
+- [x] `sgemm_cublas` — cuBLAS FP32 baseline
+- [x] `sgemm_tiling` — vectorized r/w + block tiling with SMEM
+- [x] `sgemm_at_tiling` — vectorized r/w + A-transpose into SMEM (4-way write conflict, inner-loop `float4` reads)
+- [x] `sgemm_at_bcf_swizzling` — vectorized r/w + A-transpose + swizzle, bank-conflict-free
+- [x] `sgemm_at_bcf_swizzling_rw` — + coalesced C write-back
+- [x] `sgemm_at_bcf_swizzling_dbf_rw` — + double buffer pipeline, **outperforms cuBLAS**
+- [x] PyTorch op binding & correctness check
 
-sgemm tf32 kernel
+### SGEMM TF32 Tensor-Core Kernels
 
-- [x] sgemm_cublas tf32 版
-- [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
-- [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
-- [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, grid swizzling, 97~102% cuBLAS 性能)
-- [x] sgemm_tf32_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling)
-- [x] sgemm_tf32_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling，双buffer，超越cuBLAS)
-- [x] pytorch op bindings && diff check
+- [x] `sgemm_cublas_tf32` — cuBLAS TF32 baseline
+- [x] `sgemm_tf32_bt` — vectorized A/B loads, B-transpose into SMEM, `ldmatrix` + `mma`
+- [x] `sgemm_tf32_bt_swizzle` — + A-SMEM zero bank conflicts
+- [x] `sgemm_tf32_bt_swizzle_dbf` — + grid swizzling, 97–102% of cuBLAS
+- [x] `sgemm_tf32_swizzle_bcf` — `cp.async` for A/B, warp-shuffle B-register transpose, A/B SMEM conflict-free, grid swizzling
+- [x] `sgemm_tf32_swizzle_bcf_dbf` — + double buffer, **outperforms cuBLAS**
+- [x] PyTorch op binding & correctness check
 
-## 测试
+## Build & Test
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-## sgemm tf32 输出
+## SGEMM TF32 Benchmark
 
 ```yaml
 ####################################################################################################
@@ -43,9 +43,9 @@ sgemm_tf32_swizzle_bcf                   mean time: 8.650843 ms, speedup: 1.83, 
 sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, tflops: 16.61
 ```
 
-## sgemm 输出
+## SGEMM SIMT Benchmark
 
-### 4096x4096x4096
+### 4096×4096×4096
 
 ```bash
 ####################################################################################################
@@ -60,7 +60,7 @@ sgemm_at_bcf_swizzling_dbf_rw  mean time: 14.193397 ms, speedup: 1.06
 sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 ```
 
-### all
+### All Sizes
 
 ```bash
 ####################################################################################################
