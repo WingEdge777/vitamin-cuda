@@ -90,15 +90,13 @@ __global__ void silu_fp16x8_kernel(half *a, half *b, int N) {
 __global__ void silu_fp16x8_packed_kernel(half *a, half *b, int N) {
     int idx = 8 * (blockIdx.x * blockDim.x + threadIdx.x);
     if (idx + 7 < N) {
-        alignas(16) half pack_a[8];
-        alignas(16) half pack_b[8];
-        LDST128BITS(pack_a[0]) = LDST128BITS(a[idx]);
+        pack128 pack_a, pack_b;
+        pack_a.f4 = LDST128BITS(a[idx]);
 #pragma unroll
-        for (int i = 0; i < 8; i += 2) {
-            HALF2(pack_b[i]) = _silu(HALF2(pack_a[i]));
+        for (int i = 0; i < 4; i++) {
+            pack_b.h2[i] = _silu(pack_a.h2[i]);
         }
-
-        LDST128BITS(b[idx]) = LDST128BITS(pack_b[0]);
+        LDST128BITS(b[idx]) = pack_b.f4;
     } else {
 #pragma unroll
         for (int i = 0; i < 8; i++) {

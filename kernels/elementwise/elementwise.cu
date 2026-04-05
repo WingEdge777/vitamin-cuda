@@ -83,22 +83,20 @@ __global__ void elementwise_add_fp16x8_kernel(half *a, half *b, half *c, int N) 
 // fp16x8 packed r/w
 __global__ void elementwise_add_fp16x8_packed_kernel(half *a, half *b, half *c, int N) {
     int idx = 8 * (blockIdx.x * blockDim.x + threadIdx.x);
-    alignas(16) half pack_a[8];
-    alignas(16) half pack_b[8];
-    alignas(16) half pack_c[8];
-    LDST128BITS(pack_a[0]) = LDST128BITS(a[idx]);
-    LDST128BITS(pack_b[0]) = LDST128BITS(b[idx]);
+    pack128 pack_a, pack_b, pack_c;
+    pack_a.f4 = LDST128BITS(a[idx]);
+    pack_b.f4 = LDST128BITS(b[idx]);
 #pragma unroll
-    for (int i = 0; i < 8; i += 2) {
-        HALF2(pack_c[i]) = __hadd2(HALF2(pack_a[i]), HALF2(pack_b[i]));
+    for (int i = 0; i < 4; i++) {
+        pack_c.h2[i] = __hadd2(pack_a.h2[i], pack_b.h2[i]);
     }
     if (idx + 7 < N) {
-        LDST128BITS(c[idx]) = LDST128BITS(pack_c[0]);
+        LDST128BITS(c[idx]) = pack_c.f4;
     } else {
 #pragma unroll
         for (int i = 0; i < 8; i++) {
             if (idx + i < N)
-                c[idx + i] = pack_c[i];
+                c[idx + i] = pack_c.h[i];
         }
     }
 }

@@ -126,13 +126,13 @@ __global__ void dot_product_fp16x8_packed_kernel(half *a, half *b, float *c, int
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + tid;
     float sum = 0.0f;
-    alignas(16) half2 p[4], v[4];
+    pack128 pack_p, pack_v;
     for (int i = idx * 8; i < N; i += gridDim.x * blockDim.x * 8) {
-        LDST128BITS(p[0]) = LDST128BITS(a[i]);
-        LDST128BITS(v[0]) = LDST128BITS(b[i]);
+        pack_p.f4 = LDST128BITS(a[i]);
+        pack_v.f4 = LDST128BITS(b[i]);
 #pragma unroll
         for (int j = 0; j < 4; j++) {
-            float2 t = __half22float2(__hmul2(p[j], v[j]));
+            float2 t = __half22float2(__hmul2(pack_p.h2[j], pack_v.h2[j]));
             sum += t.x + t.y;
         }
     }
