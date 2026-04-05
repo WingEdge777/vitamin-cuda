@@ -1,8 +1,8 @@
-# sgemm
+# hgemm
 
 ## 说明
 
-sgemm kernel
+hgemm kernel
 
 - [x] hgemm_cublas bf16/fp16 版
 - [x] hgemm_naive bf16/fp16 版 (ldmatrix + mma)

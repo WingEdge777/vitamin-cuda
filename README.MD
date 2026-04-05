@@ -47,7 +47,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 ### Easy
 
-- [elementwise](./kernels/elementwise): Element-wise addition
+- [elementwise](./kernels/elementwise): element-wise add
   - [x] `elementwise_add` — FP32 / FP16
   - [x] `elementwise_add_fp16x2` — FP16 vectorized (×2)
   - [x] `elementwise_add_fp16x8` — FP16 vectorized (×8)
@@ -161,11 +161,11 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 ### Hard
 
-- [sgemv](./kernels/sgemv/) — Single-precision GeMV
+- [sgemv](./kernels/sgemv/) — Single-precision GEMV
   - [x] `gemv_fp32` — baseline
   - [x] `gemv_fp32x4` — vectorized loads (×4)
   - [x] PyTorch op binding & correctness check
-- [sgemm](./kernels/sgemm/) — Single-precision GeMM (SIMT)
+- [sgemm](./kernels/sgemm/) — Single-precision GEMM (SIMT)
   - [x] `sgemm_cublas` — cuBLAS FP32 baseline
   - [x] `sgemm_tiling` — vectorized r/w + block tiling with SMEM
   - [x] `sgemm_at_tiling` — A-transpose into SMEM (4-way bank conflict, inner-loop `float4` loads)
@@ -173,7 +173,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] `sgemm_at_bcf_swizzling_rw` — + coalesced C write-back
   - [x] `sgemm_at_bcf_swizzling_dbf_rw` — + double buffer pipeline, **outperforms cuBLAS**
   - [x] PyTorch op binding & correctness check
-- [sgemm_tf32](./kernels/sgemm/) — TF32 Tensor-Core GeMM
+- [sgemm_tf32](./kernels/sgemm/) — TF32 Tensor-Core GEMM
   - [x] `sgemm_cublas_tf32` — cuBLAS TF32 baseline
   - [x] `sgemm_tf32_bt` — vectorized loads for A/B, B-transpose into SMEM, `ldmatrix` + `mma`
   - [x] `sgemm_tf32_bt_swizzle` — + A-SMEM zero bank conflicts
@@ -181,13 +181,20 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] `sgemm_tf32_swizzle_bcf` — `cp.async`, warp-shuffle B-register transpose, A/B SMEM conflict-free, grid swizzling
   - [x] `sgemm_tf32_swizzle_bcf_dbf` — + double buffer, **outperforms cuBLAS**
   - [x] PyTorch op binding & correctness check
-- [hgemm](./kernels/hgemm/) — Half-precision Tensor-Core GeMM
+- [hgemm](./kernels/hgemm/)
   - [x] `hgemm_cublas` — cuBLAS BF16/FP16 baseline
   - [x] `hgemm_naive` — BF16/FP16, `ldmatrix` + `mma`
   - [x] `hgemm_bcf` — BF16/FP16, `ldmatrix` + `mma`, A/B SMEM swizzle conflict-free, 95–99% of cuBLAS
   - [x] `hgemm_bcf_dbf` — + double buffer, **outperforms cuBLAS**
   - [x] `hgemm_bcf_dbf_rw` — + coalesced GMEM read/write, **outperforms cuBLAS**
   - [x] PyTorch op binding & correctness check
+- [hgemm_sm120](./kernels/hgemm_sm120/)
+  - [x] hgemm_cublas baseline
+  - [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma + double buffer + coalesced gmem r/w
+  - [x] hgemm_k_stages: cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
+  - [x] hgemm_tma_r_k_stages_64: TMA read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register
+  - [x] hgemm_tma_r_k_stages_32: TMA read + ldmatrix + mma: two blocks, 3 stages, 128x128x32, double buffer register
+  - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
 
