@@ -1,4 +1,4 @@
-# sgemm
+# hgemm_sm120
 
 ## 说明
 
@@ -6,10 +6,11 @@ hgemm kernel
 
 sm 120 kernels
 
-- [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma (+ double buffer + coalesced gmem)
-- [x] cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
-- [x] tma read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register
-- [x] tma read + ldmatrix + mma: two blocks, 3 stages, 128x128x32, double buffer register
+- [x] hgemm_cublas baseline
+- [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma + double buffer + coalesced gmem r/w
+- [x] hgemm_k_stages: cp.async + ldmatrix + mma + 2/3 stages buffer + coalesced gmem
+- [x] hgemm_tma_r_k_stages_64: tma read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register
+- [x] hgemm_tma_r_k_stages_32: tma read + ldmatrix + mma: two blocks, 3 stages, 128x128x32, double buffer register
 - [] tma read/write + ldmatrix + mma
 - [x] pytorch op bindings && diff check
 
