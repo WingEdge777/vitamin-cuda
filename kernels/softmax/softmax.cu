@@ -9,20 +9,13 @@
 #include <torch/extension.h>
 #include <torch/types.h>
 
-#define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
-#define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
-#define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
+#include "../common/pack.cuh"
 
 const int WARP_SIZE = 32;
 
 struct __align__(8) MD {
     float m;
     float d;
-};
-
-union pack128 {
-    float4 f4;
-    half2 h2[4];
 };
 
 template <const int warp_size = WARP_SIZE>

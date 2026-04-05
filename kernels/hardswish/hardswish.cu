@@ -10,10 +10,7 @@
 #include <torch/extension.h>
 #include <torch/types.h>
 
-#define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
-#define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
-#define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
-#define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
+#include "../common/pack.cuh"
 
 __device__ __forceinline__ float _hardswish(float x) {
     float relu6 = fminf(fmaxf(x + 3.0f, 0.0f), 6.0f);
