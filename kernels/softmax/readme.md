@@ -1,30 +1,30 @@
-# softmax
+# Softmax
 
-## 说明
+## Overview
 
-softmax kernel
+High-performance safe online softmax kernels with multiple strategies for different row sizes.
 
-- [x] one pass
-  - [x] safe online softmax fp32/fp16 版
-  - [x] safe online softmax fp32x4 版 (fp32向量化)
-  - [x] safe online softmax fp16x8 版 (fp16向量化, pure register，packed r/w)
-  - [x] safe online softmax medium fp16 版 (fp16向量化, medium register+smem, packed r/w)
-  - [x] safe online softmax extreme fp16 版 (fp16向量化, max register+smem, packed r/w)
-- [x] two pass
-  - [x] safe online softmax arbitrary fp16 版 (fp16向量化, max register+smem, packed r/w)
-  - [x] safe online softmax split-k fp16 版 (fp16向量化, max register+smem, packed r/w)
-- [x] pytorch op bindings && diff check
+- [x] One-pass (single-row-per-block, register-resident)
+  - [x] Safe online softmax — FP32 / FP16
+  - [x] Safe online softmax — FP32 vectorized (×4)
+  - [x] Safe online softmax — FP16 vectorized (×8, pure register, packed r/w)
+  - [x] Safe online softmax **medium** — FP16 vectorized (moderate register + SMEM, packed r/w)
+  - [x] Safe online softmax **extreme** — FP16 vectorized (max register + SMEM, packed r/w)
+- [x] Two-pass (for large row sizes beyond single-block capacity)
+  - [x] Safe online softmax **arbitrary** — FP16 vectorized (max register + SMEM, packed r/w)
+  - [x] Safe online softmax **split-k** — FP16 vectorized (max register + SMEM, packed r/w)
+- [x] PyTorch op binding & correctness check
 
-## 测试
+## Build & Test
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### ptx output
+### PTX Output
 
-```bash
+```yaml
 ptxas info    : 28 bytes gmem
 ptxas info    : Compiling entry function '_Z18softmax_grid_pass2ILi256ELi16EEvP6__halfS1_PfS2_i' for 'sm_120'
 ptxas info    : Function properties for _Z18softmax_grid_pass2ILi256ELi16EEvP6__halfS1_PfS2_i
@@ -73,9 +73,9 @@ ptxas info    : Used 86 registers, used 1 barriers, 64 bytes smem
 ptxas info    : Compile time = 17.167 ms
 ```
 
-### 输出
+### Benchmark Results
 
-#### large
+#### Large Row Sizes
 
 ```yaml
 ####################################################################################################
@@ -126,7 +126,7 @@ softmax_arbitrary              mean time: 10.514376 ms, speedup: 0.73
 softmax_splitk                 mean time: 2.372789 ms, speedup: 3.23
 ```
 
-#### small
+#### Small Row Sizes
 
 ```yaml
 ####################################################################################################

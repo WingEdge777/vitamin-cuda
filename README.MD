@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <b>A hands-on CUDA dev learning path from novice to expert.</b>
+  <b>A hands-on CUDA learning path from novice to expert.</b>
 </p>
 <p align="center">
-  <em>One Kernel a Day, Keeps High Latency Away. 🚀</em>
+  <em>One Kernel a Day, Keeps High Latency Away.</em>
 </p>
 
 <!-- <p align="center">
@@ -15,178 +15,186 @@
   </a>
 </p> -->
 
-<!-- <br> -->
-
-Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated collection of hands-on CUDA practices, designed to take you from **Hello World** to **High Performance**. Whether you are a beginner looking to understand the grid-stride loop or an enthusiast diving into warp-level primitives, there's a kernel here for you.
-
-💻 Let's get started and happy coding! ⌨️
+Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated collection of 100+ hand-tuned CUDA kernels, designed to take you from **Hello World** to **High Performance**. Whether you are a beginner learning the grid-stride loop or a performance enthusiast diving into warp-level primitives and Tensor Cores, there's a kernel here for you.
 
 ## News
 
-- [2026.04.03] [hgemm_120](./kernels/hgemm_sm120/) fp16/bf16 `Tensor-Core` kernel squeezing out the ultimate compute limit of the GPU, outperforming cuBLAS `TMA copy + 3 stages' pipeline + double register buffer + swizzle + ldmatrix + mma`🚀
-- [2026.03.18] [hgemm](./kernels/hgemm/) fp16/bf16 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
-- [2026.03.10] [sgemm_tf32](./kernels/sgemm/) tf32 `Tensor-Core` kernel outperforming cuBLAS `cp.async + double smem + swizzle + ldmatrix + mma`🚀
-- [2026.02.27] [sgemm](./kernels/sgemm/) SIMT kernel outperforming cuBLAS with `smem + swizzle + double buffer + coalesced r/w`🚀
+- **[2026.04.04]** [hgemm_120](./kernels/hgemm_sm120/) — FP16/BF16 Tensor-Core kernel pushing the absolute compute limit of the GPU. Outperforms cuBLAS via `TMA copy + 3-stage pipeline + double register buffer + swizzle + ldmatrix + mma`.
+- **[2026.03.18]** [hgemm](./kernels/hgemm/) — FP16/BF16 Tensor-Core kernel outperforming cuBLAS via `cp.async + double SMEM buffer + swizzle + ldmatrix + mma`.
+- **[2026.03.10]** [sgemm_tf32](./kernels/sgemm/) — TF32 Tensor-Core kernel outperforming cuBLAS via `cp.async + double SMEM buffer + swizzle + ldmatrix + mma`.
+- **[2026.02.27]** [sgemm](./kernels/sgemm/) — SIMT kernel outperforming cuBLAS via `SMEM + swizzle + double buffer + coalesced read/write`.
 
-## Contents 📖
+## Contents
 
-- [Easy 🌟~🌟🌟](#easy)
-- [Medium 🌟🌟~🌟🌟🌟](#medium)
-- [Hard 🌟🌟🌟~🌟🌟🌟🌟](#hard)
+- [News](#news)
+- [Contents](#contents)
+- [Prerequisites](#prerequisites)
+- [Kernels (120+)](#kernels-120)
+  - [Easy](#easy)
+  - [Medium](#medium)
+  - [Hard](#hard)
+- [Samples](#samples)
+- [References](#references)
 
-## Prerequisites 🛠️
+## Prerequisites
 
 - NVIDIA GPU (Compute Capability 6.0+)
 - CUDA Toolkit 11.0+
-- C++ Compiler (GCC/Clang/MSVC)
-- CMake 3.18+ (Optional, but recommended)
-- PyTorch (For extension examples/python binding and performence comparation)
+- C++ Compiler (GCC / Clang / MSVC)
+- CMake 3.18+ (optional but recommended)
+- PyTorch (for Python bindings and performance comparison)
 
-I recommend using nvidia pytorch ngc docker images for a quick start! Refer to <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch>
+> **Quick Start** — We recommend using the [NVIDIA PyTorch NGC Docker image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) for a ready-to-go environment.
 
-## Kernels (100+ kernels)
+## Kernels (120+)
 
-All kernels were tested on an RTX 5060 laptop (unless otherwise specified) and benchmarked against PyTorch 2.9
+All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and benchmarked against PyTorch 2.9.
 
 <div id="easy"></div>
 
-### Easy (🌟~🌟🌟)
+### Easy
 
-- [elementwise](./kernels/elementwise): elementwise add
-  - [x] elementwise_add fp32/fp16 版
-  - [x] elementwise_add_fp16x2(fp16向量化)
-  - [x] elementwise_add_fp16x8(fp16向量化)
-  - [x] elementwise_add_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+- [elementwise](./kernels/elementwise): Element-wise addition
+  - [x] `elementwise_add` — FP32 / FP16
+  - [x] `elementwise_add_fp16x2` — FP16 vectorized (×2)
+  - [x] `elementwise_add_fp16x8` — FP16 vectorized (×8)
+  - [x] `elementwise_add_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [sigmoid](./kernels/sigmoid)
-  - [x] sigmoid fp32/fp16 版
-  - [x] sigmoid_fp16x2(fp16向量化)
-  - [x] sigmoid_fp16x8(fp16向量化)
-  - [x] sigmoid_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `sigmoid` — FP32 / FP16
+  - [x] `sigmoid_fp16x2` — FP16 vectorized (×2)
+  - [x] `sigmoid_fp16x8` — FP16 vectorized (×8)
+  - [x] `sigmoid_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [swish](./kernels/swish)
-  - [x] swish fp32/fp16 版
-  - [x] swish_fp16x2(fp16向量化)
-  - [x] swish_fp16x8(fp16向量化)
-  - [x] swish_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `swish` — FP32 / FP16
+  - [x] `swish_fp16x2` — FP16 vectorized (×2)
+  - [x] `swish_fp16x8` — FP16 vectorized (×8)
+  - [x] `swish_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [relu](./kernels/relu)
-  - [x] relu fp32/fp16 版
-  - [x] relu_fp16x2(fp16向量化)
-  - [x] relu_fp16x8(fp16向量化)
-  - [x] relu_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `relu` — FP32 / FP16
+  - [x] `relu_fp16x2` — FP16 vectorized (×2)
+  - [x] `relu_fp16x8` — FP16 vectorized (×8)
+  - [x] `relu_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [relu6](./kernels/relu6)
-  - [x] relu6 fp32/fp16 版
-  - [x] relu6_fp16x2(fp16向量化)
-  - [x] relu6_fp16x8(fp16向量化)
-  - [x] relu6_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `relu6` — FP32 / FP16
+  - [x] `relu6_fp16x2` — FP16 vectorized (×2)
+  - [x] `relu6_fp16x8` — FP16 vectorized (×8)
+  - [x] `relu6_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [elu](./kernels/elu)
-  - [x] elu fp32/fp16 版
-  - [x] elu_fp16x2(fp16向量化)
-  - [x] elu_fp16x8(fp16向量化)
-  - [x] elu_fp16x8(fp16向量化, packed r/w, half2 近两倍提升)
-  - [x] pytorch op bindings && diff check
+  - [x] `elu` — FP32 / FP16
+  - [x] `elu_fp16x2` — FP16 vectorized (×2)
+  - [x] `elu_fp16x8` — FP16 vectorized (×8)
+  - [x] `elu_fp16x8` — FP16 vectorized (×8, packed r/w; ~2× speedup via `half2` intrinsics)
+  - [x] PyTorch op binding & correctness check
 - [gelu](./kernels/gelu)
-  - [x] gelu fp32/fp16 版
-  - [x] gelu_fp16x2(fp16向量化)
-  - [x] gelu_fp16x8(fp16向量化)
-  - [x] gelu_fp16x8(fp16向量化，packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `gelu` — FP32 / FP16
+  - [x] `gelu_fp16x2` — FP16 vectorized (×2)
+  - [x] `gelu_fp16x8` — FP16 vectorized (×8)
+  - [x] `gelu_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [hardswish](./kernels/hardswish)
-  - [x] hardswish fp32/fp16 版
-  - [x] hardswish_fp16x2(fp16向量化)
-  - [x] hardswish_fp16x8(fp16向量化)
-  - [x] hardswish_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `hardswish` — FP32 / FP16
+  - [x] `hardswish_fp16x2` — FP16 vectorized (×2)
+  - [x] `hardswish_fp16x8` — FP16 vectorized (×8)
+  - [x] `hardswish_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [embedding](./kernels/embedding/)
-  - [x] embedding fp32/fp16 版
-  - [x] embedding_fp32x4(fp32向量化)
-  - [x] embedding_fp32x4(fp32向量化, packed r/w)
-  - [x] embedding_fp16x2(fp16向量化)
-  - [x] embedding_fp16x8(fp16向量化)
-  - [x] embedding_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
-- [rope](./kernels/rope)
-  - [x] pytorch naive rope
-  - [x] pytorch rope with cos/sin table
-  - [x] rope fp32 版 (比pytorch naive 实现快一个数量级)
-  - [x] rope fp32x4 版 (fp32向量化，稍大规模后快几十倍)
-  - [x] pytorch op bindings && diff check
+  - [x] `embedding` — FP32 / FP16
+  - [x] `embedding_fp32x4` — FP32 vectorized (×4)
+  - [x] `embedding_fp32x4` — FP32 vectorized (×4, packed r/w)
+  - [x] `embedding_fp16x2` — FP16 vectorized (×2)
+  - [x] `embedding_fp16x8` — FP16 vectorized (×8)
+  - [x] `embedding_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
+- [rope](./kernels/rope) — Rotary Position Embedding
+  - [x] PyTorch naive RoPE
+  - [x] PyTorch RoPE with cos/sin look-up table
+  - [x] `rope_fp32` — ~10× faster than the PyTorch naive implementation
+  - [x] `rope_fp32x4` — FP32 vectorized; tens of times faster at larger sizes
+  - [x] PyTorch op binding & correctness check
 
 <div id="medium"></div>
 
-### Medium (🌟🌟~🌟🌟🌟)
+### Medium
 
-- [reduce](./kernels/reduce/) : 基于 warp shuffle add
-  - [x] reduce_sum fp32/fp16 版
-  - [x] reduce_sum_fp16x2(fp16向量化)
-  - [x] reduce_sum_fp16x8_packed(fp16向量化, packed r/w)
-  - [x] reduce_sum int8 版
-  - [x] reduce_sum_i8x16_packed (int8向量化，packed r/w)
-  - [x] reduce_sum_i8x16_packed (int8向量化，packed r/w, dp4a, 相比torch朴素实现快几十倍)
-  - [x] reduce_sum_i8x64_packed (int8向量化，packed r/w, dp4a)
-  - [x] pytorch op bindings && diff check
+- [reduce](./kernels/reduce/) — Warp-shuffle-based reductions
+  - [x] `reduce_sum` — FP32 / FP16
+  - [x] `reduce_sum_fp16x2` — FP16 vectorized (×2)
+  - [x] `reduce_sum_fp16x8_packed` — FP16 vectorized (×8, packed r/w)
+  - [x] `reduce_sum` — INT8
+  - [x] `reduce_sum_i8x16_packed` — INT8 vectorized (×16, packed r/w)
+  - [x] `reduce_sum_i8x16_packed` — INT8 vectorized (×16, packed r/w, `dp4a`; tens of times faster than naive PyTorch)
+  - [x] `reduce_sum_i8x64_packed` — INT8 vectorized (×64, packed r/w, `dp4a`)
+  - [x] PyTorch op binding & correctness check
 - [dot_product](./kernels/dot_product)
-  - [x] dot_product fp32/fp16 版
-  - [x] dot_product_fp32x4(fp32向量化)
-  - [x] dot_product_fp16x2(fp16向量化)
-  - [x] dot_product_fp16x8(fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
-- [softmax](./kernels/softmax/)
-  - [x] safe online softmax fp32/fp16 版
-  - [x] safe online softmax fp32x4 版 (fp32向量化)
-  - [x] safe online softmax fp16x8 版 (fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
+  - [x] `dot_product` — FP32 / FP16
+  - [x] `dot_product_fp32x4` — FP32 vectorized (×4)
+  - [x] `dot_product_fp16x2` — FP16 vectorized (×2)
+  - [x] `dot_product_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] PyTorch op binding & correctness check
+- [softmax](./kernels/softmax/) — Safe online softmax
+  - [x] One-pass
+    - [x] Safe online softmax — FP32 / FP16
+    - [x] Safe online softmax — FP32 vectorized (×4)
+    - [x] Safe online softmax — FP16 vectorized (×8, pure register, packed r/w)
+    - [x] Safe online softmax **medium** — FP16 vectorized (moderate register + SMEM, packed r/w)
+    - [x] Safe online softmax **extreme** — FP16 vectorized (max register + SMEM, packed r/w)
+  - [x] Two-pass (large rows beyond single-block capacity)
+    - [x] Safe online softmax **arbitrary** — FP16 vectorized (max register + SMEM, packed r/w)
+    - [x] Safe online softmax **split-k** — FP16 vectorized (max register + SMEM, packed r/w)
+  - [x] PyTorch op binding & correctness check
 - [rmsnorm](./kernels/rmsnorm/)
-  - [x] naive torch rmsnorm
-  - [x] rmsnorm fp32/fp16 版
-  - [x] rmsnorm fp32x4 版 (fp32向量化)
-  - [x] rmsnorm_fp32x4_smem
-  - [x] rmsnorm fp16x8 版 (fp16向量化, packed r/w)
-  - [x] rmsnorm_fp16x8_smem 版 (fp16向量化, packed r/w)
-  - [x] pytorch op bindings && diff check
-- [transpose](./kernels/mat_transpose/)
-  - [x] transpose_coalesced_read (input视角，合并读)
-  - [x] transpose_coalesced_write (output视角，合并写)
-  - [x] transpose_smem (共享内存缓存，块状读写)
-  - [x] transpose_smem_bcf (共享内存无冲突版)
-  - [x] transpose_smem_packed_bcf (共享内存无冲突版，float4向量化读写)
-  - [x] transpose_smem_swizzled_packed (共享内存无冲突版，float4向量化读写)
-  - [x] pytorch op bindings && diff check
+  - [x] PyTorch naive RMSNorm (baseline)
+  - [x] `rmsnorm` — FP32 / FP16
+  - [x] `rmsnorm_fp32x4` — FP32 vectorized (×4)
+  - [x] `rmsnorm_fp32x4_smem` — with shared memory
+  - [x] `rmsnorm_fp16x8` — FP16 vectorized (×8, packed r/w)
+  - [x] `rmsnorm_fp16x8_smem` — FP16 vectorized (×8, packed r/w, shared memory)
+  - [x] PyTorch op binding & correctness check
+- [transpose](./kernels/mat_transpose/) — Matrix transpose
+  - [x] `transpose_coalesced_read` — coalesced global loads (input-centric)
+  - [x] `transpose_coalesced_write` — coalesced global stores (output-centric)
+  - [x] `transpose_smem` — shared-memory tiled transpose
+  - [x] `transpose_smem_bcf` — SMEM bank-conflict-free
+  - [x] `transpose_smem_packed_bcf` — SMEM bank-conflict-free, `float4` vectorized r/w
+  - [x] `transpose_smem_swizzled_packed` — SMEM swizzled, `float4` vectorized r/w
+  - [x] PyTorch op binding & correctness check
 
 <div id="hard"></div>
 
-### Hard (🌟🌟🌟~🌟🌟🌟🌟)
+### Hard
 
-- [sgemv](./kernels/sgemv/)
-  - [x] gemv fp32版
-  - [x] gemv fp32x4（向量化读取）
-  - [x] pytorch op bindings && diff check
-- [sgemm](./kernels/sgemm/)
-  - [x] sgemm_cublas fp32 版
-  - [x] sgemm_tiling (向量化读写 + block tiling共享内存版)
-  - [x] sgemm_at_tiling (向量化读写 + a矩阵转置写入smem, 4-way 写入冲突, 内层循环float4读取)
-  - [x] sgemm_at_bcf_swizzling (向量化读写 + at + swizzle， 无冲突版)
-  - [x] sgemm_at_bcf_swizzling_rw (向量化读写 + at + swizzle + c写回事务合并)
-  - [x] sgemm_at_bcf_swizzling_dbf_rw(向量化读写 + at + swizzle + c写回事务合并 + double buffer流水线, 超越cuBLAS ！)
-  - [x] pytorch op bindings && diff check
-- [sgemm_tf32](./kernels/sgemm/)
-  - [x] sgemm_cublas tf32 版
-  - [x] sgemm_tf32_bt (向量化读A/B，B转置写入smem, ldmatrix + mma)
-  - [x] sgemm_tf32_bt_swizzle (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突)
-  - [x] sgemm_tf32_bt_swizzle_dbf (向量化读A/B，B转置写入smem, ldmatrix + mma, As 0冲突, grid swizzling, 97~102% cuBLAS 性能)
-  - [x] sgemm_tf32_swizzle_bcf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling)
-  - [x] sgemm_tf32_swizzle_bcf_dbf (cp.async读写A/B，warp shuffle b寄存器转置， As/Bs无冲突, grid swizzling，双buffer，超越cuBLAS)
-  - [x] pytorch op bindings && diff check
-- [hgemm](./kernels/hgemm/)
-  - [x] hgemm_cublas bf16/fp16 版
-  - [x] hgemm_naive bf16/fp16 版 (ldmatrix + mma)
-  - [x] hgemm_bcf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, 95~99% cuBLAS' performance)
-  - [x] hgemm_bcf_dbf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, outperforming cuBLAS)
-  - [x] hgemm_bcf_dbf_rw bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, coalesced r/w gmem, outperforming cuBLAS)
-  - [x] pytorch op bindings && diff check
+- [sgemv](./kernels/sgemv/) — Single-precision GeMV
+  - [x] `gemv_fp32` — baseline
+  - [x] `gemv_fp32x4` — vectorized loads (×4)
+  - [x] PyTorch op binding & correctness check
+- [sgemm](./kernels/sgemm/) — Single-precision GeMM (SIMT)
+  - [x] `sgemm_cublas` — cuBLAS FP32 baseline
+  - [x] `sgemm_tiling` — vectorized r/w + block tiling with SMEM
+  - [x] `sgemm_at_tiling` — A-transpose into SMEM (4-way bank conflict, inner-loop `float4` loads)
+  - [x] `sgemm_at_bcf_swizzling` — A-transpose + swizzle, bank-conflict-free
+  - [x] `sgemm_at_bcf_swizzling_rw` — + coalesced C write-back
+  - [x] `sgemm_at_bcf_swizzling_dbf_rw` — + double buffer pipeline, **outperforms cuBLAS**
+  - [x] PyTorch op binding & correctness check
+- [sgemm_tf32](./kernels/sgemm/) — TF32 Tensor-Core GeMM
+  - [x] `sgemm_cublas_tf32` — cuBLAS TF32 baseline
+  - [x] `sgemm_tf32_bt` — vectorized loads for A/B, B-transpose into SMEM, `ldmatrix` + `mma`
+  - [x] `sgemm_tf32_bt_swizzle` — + A-SMEM zero bank conflicts
+  - [x] `sgemm_tf32_bt_swizzle_dbf` — + grid swizzling, 97–102% of cuBLAS
+  - [x] `sgemm_tf32_swizzle_bcf` — `cp.async`, warp-shuffle B-register transpose, A/B SMEM conflict-free, grid swizzling
+  - [x] `sgemm_tf32_swizzle_bcf_dbf` — + double buffer, **outperforms cuBLAS**
+  - [x] PyTorch op binding & correctness check
+- [hgemm](./kernels/hgemm/) — Half-precision Tensor-Core GeMM
+  - [x] `hgemm_cublas` — cuBLAS BF16/FP16 baseline
+  - [x] `hgemm_naive` — BF16/FP16, `ldmatrix` + `mma`
+  - [x] `hgemm_bcf` — BF16/FP16, `ldmatrix` + `mma`, A/B SMEM swizzle conflict-free, 95–99% of cuBLAS
+  - [x] `hgemm_bcf_dbf` — + double buffer, **outperforms cuBLAS**
+  - [x] `hgemm_bcf_dbf_rw` — + coalesced GMEM read/write, **outperforms cuBLAS**
+  - [x] PyTorch op binding & correctness check
 
 <div id="samples"></div>
 
@@ -195,7 +203,7 @@ All kernels were tested on an RTX 5060 laptop (unless otherwise specified) and b
 - [deviceQuery](./samples/deviceQuery)
 - [bankConflictNCU](./samples/bank_conflict_ncu/)
 
-## Reference
+## References
 
 - [LeetCUDA](https://github.com/xlite-dev/LeetCUDA)
 - [NVIDIA CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html)
