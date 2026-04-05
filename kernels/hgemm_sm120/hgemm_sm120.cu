@@ -10,11 +10,7 @@
 #include <torch/extension.h>
 #include <torch/types.h>
 
-#define UINT2(value) (reinterpret_cast<uint2 *>(&(value))[0])
-#define FLOAT2(value) (reinterpret_cast<float2 *>(&(value))[0])
-#define FLOAT4(value) (reinterpret_cast<float4 *>(&(value))[0])
-#define HALF2(value) (reinterpret_cast<half2 *>(&(value))[0])
-#define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
+#include "../common/pack.cuh"
 
 #define SWIZZLE_A(row, col) ((col) ^ (((row >> 1) & 0x3) << 3))
 
