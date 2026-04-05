@@ -1,3 +1,4 @@
+// adapted from https://github.com/nvidia/cuda-samples/blob/master/Samples/1_Utilities/deviceQuery/deviceQuery.cpp
 #include <cuda_runtime.h>
 #include <iostream>
 #include <memory>
