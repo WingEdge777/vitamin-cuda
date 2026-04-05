@@ -737,17 +737,11 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
 
 #pragma unroll
             for (int n_idx = 0; n_idx < 4; ++n_idx) {
-                // 当前处理的 N 维度的基础列号
                 int n_base = warp_id_n * 32 + n_idx * 8;
-
-                // 每四个线程一列
                 int b_col = n_base + (lane_id / 4);
-
-                // k维度的 0~3 行 和 4~7 行
                 int b_row_0 = k_offset + (lane_id % 4);
                 int b_row_1 = k_offset + (lane_id % 4) + 4;
 
-                // swizzling 读取
                 reg_b[n_idx][0] = __float_as_uint(Bs[read_idx][b_row_0][SWIZZLE_B_F2(b_row_0, b_col)]);
                 reg_b[n_idx][1] = __float_as_uint(Bs[read_idx][b_row_1][SWIZZLE_B_F2(b_row_1, b_col)]);
             }
@@ -770,15 +764,15 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
             }
         }
 
-        // 3. cp.async 同步
+        // 3. cp.async sync
         CP_ASYNC_WAIT_GROUP_0();
         __syncthreads();
 
-        // 切换缓冲
+        // Swap buffers
         read_idx ^= 1;
         write_idx ^= 1;
     }
-    // 最后load的数据还有一次计算
+    // Process last prefetched tile
 #pragma unroll
     for (int k_step = 0; k_step < 2; ++k_step) {
         int k_offset = k_step * 8;
@@ -796,17 +790,11 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
 
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            // 当前处理的 N 维度的基础列号
             int n_base = warp_id_n * 32 + n_idx * 8;
-
-            // 每四个线程一列
             int b_col = n_base + (lane_id / 4);
-
-            // k维度的 0~3 行 和 4~7 行
             int b_row_0 = k_offset + (lane_id % 4);
             int b_row_1 = k_offset + (lane_id % 4) + 4;
 
-            // swizzling 读取
             reg_b[n_idx][0] = __float_as_uint(Bs[read_idx][b_row_0][SWIZZLE_B_F2(b_row_0, b_col)]);
             reg_b[n_idx][1] = __float_as_uint(Bs[read_idx][b_row_1][SWIZZLE_B_F2(b_row_1, b_col)]);
         }
@@ -844,7 +832,7 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
             FLOAT2(c[(c_base_row + t_row + 8) * n + c_base_col + t_col]) = FLOAT2(sum[m_idx][n_idx][2]);
         }
     }
-    // 复用 As，Bs，合并写回c。有点trick
+    // Reuse As/Bs for coalesced C write-back (tricky)
     /**
     float (*Cs)[128] = (float (*)[128])(&As[0][0][0]);
 
@@ -877,7 +865,7 @@ __global__ void sgemm_tf32_swizzle_bcf_dbf_kernel(float *a, float *b, float *c, 
 
             float4 res = FLOAT4(Cs[smem_row][SWIZZLE_C(smem_row, smem_col)]);
 
-            // 还原物理坐标
+            // Recover physical coordinates
             int global_row = by * BM + m_idx * 16 + (smem_row < 16 ? smem_row : 64 + smem_row - 16);
             int global_col = bx * BN + smem_col;
 
