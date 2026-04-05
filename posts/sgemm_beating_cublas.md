@@ -68,7 +68,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
   - k 维度跨步 BK 为 16，一个 block 每次 load 128x16 个 a 和 16x128 个的 b
     - 16 是在 k 纬度上的切分，kernel 会有一个循环在 k 纬度上累加乘积和，最终得到 c[128][128] 的结果
 
-有朋友要问了，你这是怎么定出来的数据分块和线程 block 大小。这里其实有很多因素考量，我可以谈几点。首先你要先了解你的硬件(回头看我的第一篇文章，把 deviceQuery 结果记住)
+有朋友要问了，你这是怎么定出来的数据分块和线程 block 大小。这里其实有很多因素考量，我可以谈几点。首先你要先了解你的硬件（回头看我的第一篇文章，把 deviceQuery 结果记住）
 
 关于线程 block：
 
@@ -273,7 +273,7 @@ row : 0, 4, 8, 12, 0, 4, 8, 12...
 
 很自然的，既然冲突是相同的 col 导致的，而他们的 row 值都不同。那我们可以把 row 左移一位，变成 0, 8, 16, 24，这样它的变量位就推到了 bit3 和 bit4。此时再把它和 col 做 XOR，神奇的事情就发生了：row 负责填满高 2 位（bit 3, 4），col 负责填满低 3 位（bit 0~2），两者交错异或，相当于完美铺满并遍历了低 5 bits 的所有 32 种情况！
 
-其他 warp 情况是类似的，比如 warp 1 的 col 为 01xxx， 只要去异或 bit4~5 的四种排列，就能得到互不相同的 32 个值，这是 xor 的双射性质保证的；而单个 warp 内 的row，每次都是同步变动，比如在 row 变为 1，5，9，13 时， 二进制为 xx01，左移 1 位后变化位依然是 bit4~5，同理依然能得到互不相同的 32 个值
+其他 warp 情况是类似的，比如 warp 1 的 col 为 01xxx， 只要去异或 bit4~5 的四种排列，就能得到互不相同的 32 个值，这是 xor 的双射性质保证的；而单个 warp 内 的 row，每次都是同步变动，比如在 row 变为 1，5，9，13 时， 二进制为 xx01，左移 1 位后变化位依然是 bit4~5，同理依然能得到互不相同的 32 个值
 
 由此，我们得到一个写入 As_T 无冲突的 swizzle 映射：`new_col = col^(row << 1)`
 
@@ -542,7 +542,7 @@ sgemm_at_bcf_swizzling_dbf_rw  mean time: 14.193397 ms, speedup: 1.06
 sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 ```
 
-从 18.760985 到 14.193397，纯手搓的性能优化，正面硬刚并超越 cuBLAS ！这整个过程，我们通过精确地资源分配，设计复杂精巧且解耦(a,b,c各不相同)的搬运/计算坐标映射，加上双 buffer 流水线技术，实现了超越 cuBLAS 的性能。相信熟练并掌握这些技巧之后，面对绝大多数矩阵相关的算法 kernel 实现，都有信心轻松应对。
+从 18.760985 到 14.193397，纯手搓的性能优化，正面硬刚并超越 cuBLAS ！这整个过程，我们通过精确地资源分配，设计复杂精巧且解耦 (a,b,c 各不相同）的搬运/计算坐标映射，加上双 buffer 流水线技术，实现了超越 cuBLAS 的性能。相信熟练并掌握这些技巧之后，面对绝大多数矩阵相关的算法 kernel 实现，都有信心轻松应对。
 
 ### ncu 报告
 
@@ -554,8 +554,8 @@ sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 
 通过 ncu 的 report 我们还可以看到一些有意思的东西
 
-- 首先，前两个 swizzling kernel 依然提示了 `shared store bank conflict`，这其实让我一度很自我怀疑，但经过反复手算坐标进行验证，确定不应该出现冲突。然后通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。这其实也让我很费解，因为一个 warp 通过 float4 写入 512 bytes，由于物理限制必然展开为 4 次 内存事务 (wavefronts)。我猜大概率 NCU 不知为何在这里粗暴地用 Wavefronts / Requests 比例来触发黄框报警。为此我还专门写了个纯 float4 搬运的微测试（具体见 [test](/kernels/test/))，底层硬件计数器显示确为 0 冲突。如果有对 Profiler 判定规则有更深层见解的朋友，欢迎留言讨论。总之我个人结论就是：不要迷信 ncu 的 UI 警告，如果确信算法中的数学映射无误，那就相信代码。
-- 其次，这个 summary 冲突提示在 double buffer kernel中消失了（尽管我的 smem 写入逻辑是完全一样的）。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
+- 首先，我的前两个 swizzling kernel 依然会提示 `shared store bank conflict`，虽然我反复手算坐标进行验证，认为不应该出现冲突，但通过控制变量做了一些实验，最终发现注释掉 Bs 矩阵的写入后，bank conflict 警告就完全消失了。(updated: 这里还有不同 warp 间访问同 bank 不同地址导致冲突，这就好理解了，因为我的 256 个线程在同时写 8x128 的数据，一个 SM 有 4 个 sub-core 调度器，确实有一定概率冲突，参考[NV blog](https://link.zhihu.com/?target=https%3A//www.nvidia.com/en-us/on-demand/session/gtcspring22-s41723/))
+- 其次，这个 summary 冲突提示在 double buffer kernel 中消失了（尽管我的 smem 写入逻辑是完全一样的）。为什么呢？点开`memory workload analysis`，发现那个莫名其妙的 bank conflict 其实依然在，只是不再作为 key performance 提示了。这说明什么，既然物理限制无法打破，那我们就用架构设计来掩盖它！Double Buffering 流水线的作用，就在于它能把这种底层无法消灭的硬件冲突延迟（ncu 认为有冲突），完美隐藏在庞大的计算流之下，让 NCU 都认为它不再是瓶颈。
 - report 中还能看到 cuBLAS 其实是调用了 cutlass 的 kernel（void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)），cutlass SIMT 算子命名规则是`[M]x[N]_[K]x[Stages]`
   - 因此 cuBLAS 对 c 矩阵 tiling 的选择是 128x64（m=128，n=64），跨步 k=8，并且用了恐怖的 5 级流水线来隐藏时延。
   - block size 设置为 128（对应较小的数据搬运量），grid 用了奇怪的 512x4（大概率用了 grid swizzling，重新排布了 block 访问显存的顺序以吃到 L2cache 红利）
