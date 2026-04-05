@@ -1,21 +1,14 @@
 <p align="center">
-  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="800">
+  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="600" height="230">
 </p>
 
-<p align="center">
-  <b>A hands-on CUDA learning path from novice to expert.</b>
-</p>
-<p align="center">
-  <em>One Kernel a Day, Keeps High Latency Away.</em>
-</p>
+> 🍎 **One Kernel a Day, Keeps High Latency Away.**
+>
+> *A hands-on CUDA learning path from novice to expert.*
 
-<!-- <p align="center">
-  <a href="https://hellogithub.com/...">
-    <img src="https://img.shields.io/badge/HelloGitHub-Review-blue" alt="HelloGitHub">
-  </a>
-</p> -->
+Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 120+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts. Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
 
-Welcome to your daily dose of CUDA programming! **Vitamin-CUDA** is a curated collection of 100+ hand-tuned CUDA kernels, designed to take you from **Hello World** to **High Performance**. Whether you are a beginner learning the grid-stride loop or a performance enthusiast diving into warp-level primitives and Tensor Cores, there's a kernel here for you.
+**No over-engineered abstractions. No black boxes. Just pure hardware saturation.**
 
 ## News
 
