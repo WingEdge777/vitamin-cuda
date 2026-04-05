@@ -6,7 +6,7 @@
 
 ## 1. Device Query 输出
 
-以本人的 **RTX 5060** 显卡为例。
+以本人的 **RTX 5060** laptop 显卡为例。
 
 ```bash
 cd samples/deviceQuery && bash run.sh
