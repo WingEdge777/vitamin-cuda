@@ -765,14 +765,14 @@ hgemm_tma_r_k_stages_32                  mean time: 4.005909 ms, speedup: 1.00, 
 不过在我心里，`hgemm_tma_r_k_stages_32` 和 `hgemm_bcf_dbf_rw` 就是相同等级的水平，都已经把 tensor-core 压榨到极限了（虽然前者要复杂得多）
 
 ncu report
-![p](static/hgemm_sm120_0.png)
+![p](../static/hgemm_sm120_0.png)
 
 这是我最满意的一份 ncu report，虽然终版 kernel 性能不能稳压`hgemm_bcf_dbf_rw`一头，但是 ncu summary 很干净，没有讨厌的 `Uncoalesced Shared Accesses`，只有 tensor-core 算力不足，和 register/smem 限制导致的 Occupancy 提示。
 
 - `hgemm_tma_r_k_stages_64` 0 bank conflict
-![p](static/hgemm_sm120_1.png)
+![p](../static/hgemm_sm120_1.png)
 - `hgemm_tma_r_k_stages_32` 也是 0 bank conflict(ncu 还是报了一点点 bank conflict，毕竟双 block 活跃，有一些 warp 间的冲突，但 swizzle 不背锅）
-![p](static/hgemm_sm120_2.png)
+![p](../static/hgemm_sm120_2.png)
 
 ### 一些讨论
 
