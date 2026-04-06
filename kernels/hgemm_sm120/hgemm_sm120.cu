@@ -22,8 +22,8 @@
 
 #define SWIZZLE_128B_TMA(row, col) ((col) ^ (((row) & 0x7) << 3))
 
-// ---------------- 内联 PTX 汇编宏定义 ----------------
-// cp.async: 从 gmem (src) 异步拷贝 16 bytes 到 smem (dst_smem_32b)
+// ---------------- Inline PTX assembly macros ----------------
+// cp.async: async 16-byte copy from gmem (src) to smem (dst_smem_32b)
 #define CP_ASYNC_CG(dst_smem_32b, src_global_ptr)                                                                      \
     asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n" ::"r"(dst_smem_32b), "l"(src_global_ptr))
 
@@ -50,7 +50,7 @@ __device__ __forceinline__ void cp_async_wait_group() {
 #define LDMATRIX_X2(R0, R1, PTR)                                                                                       \
     asm volatile("ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2];" : "=r"(R0), "=r"(R1) : "r"(PTR))
 
-// 加载 2 个 8x8 并转置
+// Load two 8x8 tiles and transpose
 #define LDMATRIX_X2_TRANS(R0, R1, PTR)                                                                                 \
     asm volatile("ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16 {%0, %1}, [%2];" : "=r"(R0), "=r"(R1) : "r"(PTR))
 
@@ -67,34 +67,34 @@ __device__ __forceinline__ void cp_async_wait_group() {
                  : "=f"(C0), "=f"(C1), "=f"(C2), "=f"(C3)                                                              \
                  : "r"(A0), "r"(A1), "r"(A2), "r"(A3), "r"(B0), "r"(B1), "f"(C0), "f"(C1), "f"(C2), "f"(C3))
 
-// ---------------- MBarrier 与 TMA 纯 PTX 原语 ----------------
+// ---------------- MBarrier & TMA (pure PTX helpers) ----------------
 
-// MBarrier 类型定义 (硬件要求 8 字节对齐)
+// MBarrier object (8-byte aligned per hardware)
 typedef uint64_t mbarrier_t;
 
-// 初始化屏障 (只需在 prologue 中由单线程调用)
+// Init barrier (single thread in prologue)
 __device__ __forceinline__ void mbarrier_init(mbarrier_t *mbar, uint32_t expected_count) {
     asm volatile("mbarrier.init.shared.b64 [%0], %1;\n" ::"r"(static_cast<uint32_t>(__cvta_generic_to_shared(mbar))),
                  "r"(expected_count));
 }
 
-// 设定 TMA 传输的预期字节数
+// Expected byte count for the TMA transfer
 __device__ __forceinline__ void mbarrier_expect_tx(mbarrier_t *mbar, uint32_t tx_bytes) {
     asm volatile("mbarrier.arrive.expect_tx.shared.b64 _, [%0], %1;\n" ::"r"(
                      static_cast<uint32_t>(__cvta_generic_to_shared(mbar))),
                  "r"(tx_bytes));
 }
 
-// 计算线程消费完数据后，提交到达信号 (翻转 Phase)，我们用不到，因为没有 warp 特化，或者说
-// warp 0是生产者，所有 warp 都是消费者，直接使用 __syncthreads() 同步
+// Consumer-side arrive (flip phase) after draining smem — unused here: no producer/consumer warp specialied
+// warp 0 issues loads while all warps consume; __syncthreads() is enough for our pattern.
 __device__ __forceinline__ void mbarrier_arrive(mbarrier_t *mbar) {
     asm volatile("mbarrier.arrive.shared.b64 _, [%0];\n" ::"r"(static_cast<uint32_t>(__cvta_generic_to_shared(mbar))));
 }
 
-// 等待tma搬运数据结束
+// Wait until the TMA copy completes
 __device__ __forceinline__ void mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
-    // 设定一个极大的挂起超时周期（0x989680 = 10,000,000 个时钟周期）
+    // Large spin timeout (0x989680 == 10,000,000 cycles)
     uint32_t ticks = 0x989680;
 
     asm volatile("{\n\t"
@@ -110,7 +110,7 @@ __device__ __forceinline__ void mbarrier_wait(uint64_t *smem_ptr, uint32_t phase
                  : "memory");
 }
 
-// global to shared::cta 2d TMA 搬运
+// CTA 2D TMA: global -> shared
 __device__ __forceinline__ void cp_async_bulk_tensor_2d(
     mbarrier_t *mbar, const void *tmap, const void *smem_ptr, int32_t fast_coord, int32_t slow_coord) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
@@ -131,10 +131,10 @@ template <const int BK, typename T>
 __device__ __forceinline__ void
 ldmatrix_A(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, int k_offset) {
 
-    // 4 次 ldmatrix A (4 * 16 = 64 行)
+    // Four ldmatrix.issue for A (4 * 16 = 64 rows)
 #pragma unroll
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
-        // ldmatrix x4 读 16x16
+        // ldmatrix x4 loads a 16x16 tile
         int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
         int a_col = k_offset + (lane_id / 16) * 8;
         uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&As[a_row][SWIZZLE_A(a_row, a_col)]));
@@ -146,7 +146,7 @@ template <const int BK, typename T>
 __device__ __forceinline__ void
 ldmatrix_A_tma(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, int k_offset) {
 
-    // 4 次 ldmatrix A (4 * 16 = 64 行)
+    // Four ldmatrix.issue for A (4 * 16 = 64 rows)
 #pragma unroll
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
         int a_row = warp_id_m * 64 + m_idx * 16 + (lane_id % 16);
@@ -167,10 +167,10 @@ template <const int BN, const int BK, typename T>
 __device__ __forceinline__ void
 ldmatrix_B(uint32_t reg_b[4][2], T (*Bs)[BN], int warp_id_n, int lane_id, int k_offset) {
 
-    // 4 次 ldmatrix B (4 * 8 = 32 列)
+    // Four ldmatrix.issue for B (4 * 8 = 32 columns)
 #pragma unroll
     for (int n_idx = 0; n_idx < 4; ++n_idx) {
-        // Lane 0~15 的线程读 16 行 (两块 8x8 的首地址)
+        // Lanes 0-15 load 16 rows (bases of two 8x8 tiles)
         int b_row = k_offset + (lane_id % 16);
         int b_col = warp_id_n * 32 + n_idx * 8;
 
@@ -187,7 +187,7 @@ ldmatrix_B_tma(uint32_t reg_b[4][2], T (*Bs)[BK][BN / 2], int warp_id_n, int lan
         int b_row = k_offset + (lane_id % 16);
         int b_col = warp_id_n * 32 + n_idx * 8;
 
-        // 这里要区分chunk
+        // Chunk-dependent indexing
         int chunk_idx = b_col / (BN / 2);
         int local_col = b_col % (BN / 2);
 
@@ -200,7 +200,7 @@ ldmatrix_B_tma(uint32_t reg_b[4][2], T (*Bs)[BK][BN / 2], int warp_id_n, int lan
 template <typename T>
 __device__ __forceinline__ void mma_compute(float sum[4][4][4], uint32_t reg_a[4][4], uint32_t reg_b[4][2]) {
 
-    // MMA 核心运算：4x4 次 m16n8k16
+    // MMA body: 4x4 m16n8k16
 #pragma unroll
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
@@ -235,12 +235,12 @@ __device__ __forceinline__ void mma_compute(float sum[4][4][4], uint32_t reg_a[4
 template <const int BK, typename T>
 __device__ __forceinline__ void cp_async_load_A(T (*As)[BK], int load_a_row, int load_a_col, T *global_a_ptr, int k) {
 
-    // cp.async load A，每个线程加载 2 行，跨 64 行
+    // cp.async A: each thread 2 rows, spanning 64 rows
     uint32_t smem_a0 =
         static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row][SWIZZLE_A(load_a_row, load_a_col)]));
     uint32_t smem_a1 =
         static_cast<uint32_t>(__cvta_generic_to_shared(&As[load_a_row + 64][SWIZZLE_A(load_a_row + 64, load_a_col)]));
-    // a 矩阵跨 64 行
+    // A tile spans 64 rows
     CP_ASYNC_CG(smem_a0, global_a_ptr);
     CP_ASYNC_CG(smem_a1, global_a_ptr + 64 * k);
 }
@@ -248,12 +248,12 @@ __device__ __forceinline__ void cp_async_load_A(T (*As)[BK], int load_a_row, int
 template <const int BK, const int BN, typename T>
 __device__ __forceinline__ void cp_async_load_B(T (*Bs)[BN], int load_b_row, int load_b_col, T *global_b_ptr, int n) {
 
-    // cp.async load B，每个线程加载 2 行，跨 16 行
+    // cp.async B: each thread 2 rows, spanning 16 rows
     uint32_t smem_b0 =
         static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[load_b_row][SWIZZLE_B(load_b_row, load_b_col)]));
     uint32_t smem_b1 =
         static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[load_b_row + 16][SWIZZLE_B(load_b_row + 16, load_b_col)]));
-    // b 矩阵跨 16 行
+    // B tile spans 16 rows
     CP_ASYNC_CG(smem_b0, global_b_ptr);
     CP_ASYNC_CG(smem_b1, global_b_ptr + 16 * n);
 }
@@ -262,8 +262,8 @@ template <const int BM, const int BN, typename T>
 __device__ __forceinline__ void write_c_via_smem(
     T *c, int by, int bx, int n, float sum[4][4][4], int warp_id_m, int warp_id_n, int lane_id, int tid, T (*Cs)[BN]) {
 
-    // ---------------- 写回 C 矩阵 ----------------
-    // 复用 As/Bs 中转
+    // ---------------- Store C ----------------
+    // Reuse As/Bs smem as staging for C stores
     __syncthreads();
 
     int t_row = lane_id / 4;       // 0~7
@@ -274,10 +274,10 @@ __device__ __forceinline__ void write_c_via_smem(
     for (int m_idx = 0; m_idx < 4; ++m_idx) {
 #pragma unroll
         for (int n_idx = 0; n_idx < 4; ++n_idx) {
-            int c_base_row = warp_id_m * 64 + m_idx * 16; // m 跨16行
-            int c_base_col = warp_id_n * 32 + n_idx * 8;  // n 跨8列
+            int c_base_row = warp_id_m * 64 + m_idx * 16; // M: 16-row span
+            int c_base_col = warp_id_n * 32 + n_idx * 8;  // N: 8-column span
 
-            // 16行我们分成两次8行写入
+            // Store 16 rows in two 8-row passes
             int c_row_0 = c_base_row + t_row;
             int c_row_2 = c_base_row + t_row + 8;
             int c_col = c_base_col + t_col;
@@ -295,12 +295,12 @@ __device__ __forceinline__ void write_c_via_smem(
     __syncthreads();
 
     // smem to gmem
-    // 每个线程负责搬运 64 个元素 (fp16/bf16)，即 8 个 float4，每次 一个 warp 读写 32*4*4=512B， 256个线程一次写 4096B
+    // Each thread moves 64 elems (fp16/bf16) == 8 float4; one warp moves 32*4*4 = 512 B; 256 threads -> 4096 B
     T *c_block = &c[by * BM * n + bx * BN];
 
 #pragma unroll
     for (int step = 0; step < 8; ++step) {
-        // 保证同一个 warp 的 32 个线程，此时读取的 elem_idx 是绝对连续的
+        // Keep elem_idx contiguous within the warp (coalesced)
         int elem_idx = (step * 256 + tid) * 8;
         int row = elem_idx / 128;
         int col = elem_idx % 128;
@@ -318,7 +318,7 @@ template <const int BM = 128, const int BN = 128, const int BK = 32, typename T>
 __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     // grid swizzling
     int linear_id = blockIdx.y * gridDim.x + blockIdx.x;
-    const int SWIZZLE_W = 8; // 将执行块设置为 8 的宽度
+    const int SWIZZLE_W = 8; // swizzle / logical width = 8
 
     int bx = (linear_id % SWIZZLE_W) + (linear_id / (SWIZZLE_W * gridDim.y)) * SWIZZLE_W;
     int by = (linear_id / SWIZZLE_W) % gridDim.y;
@@ -327,36 +327,36 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 搬运映射
+    // GMEM->SMEM load indexing
     int load_a_row = tid / 4;        // 0~63
     int load_a_col = (tid % 4) * 8;  // 0,8,16,24
-    int load_b_row = tid / 16;       // 0~15 (K维度)
-    int load_b_col = (tid % 16) * 8; // 0,8,16 ... 120 (N维度)
+    int load_b_row = tid / 16;       // 0..15 (K)
+    int load_b_col = (tid % 16) * 8; // 0,8,...,120 (N)
 
-    // A/B 都行优先,用union复用同一块内存，写法优雅
+    // Layout works for both A and B; union aliases one smem block for A/B then C
     __shared__ __align__(128) union {
-        // 前半段计算用的 A 和 B
+        // First phase: A and B tiles
         struct {
             T As[2][BM][BK];
             T Bs[2][BK][BN];
         };
-        // 后半段写回用的 C
+        // Second phase: C writeback buffer
         T Cs[BM][BN];
     } smem;
 
     // warp tiling
-    // 每个 warp 负责  64 x 32 的 C 矩阵块
+    // Each warp owns a 64x32 C tile
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
+    // Accumulators: 4 M-fragments * 4 N-fragments * 4 float regs = 64
     float sum[4][4][4] = {0.f};
 
     T *global_a_ptr = &a[(by * BM + load_a_row) * k + load_a_col];
     T *global_b_ptr = &b[load_b_row * n + bx * BN + load_b_col];
 
-    // ----------------------------- Prologue 先加载一次As/Bs
-    // 内部已包含跨行加载逻辑，确保覆盖全部 128x32/32x128 元素
+    // ----------------------------- Prologue: prefetch As/Bs once
+    // Strided loader covers full 128x32 / 32x128 tiles
     cp_async_load_A<BK>(smem.As[0], load_a_row, load_a_col, global_a_ptr, k);
     cp_async_load_B<BK, BN>(smem.Bs[0], load_b_row, load_b_col, global_b_ptr, n);
 
@@ -367,10 +367,10 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
     int read_idx = 0;
     int write_idx = 1;
 
-    // 主循环
+    // Main K loop
     for (int bk = 32; bk < k; bk += BK) {
 
-        // 推进指针
+        // Advance source pointers
         global_a_ptr += BK;
         global_b_ptr += BK * n;
 
@@ -380,7 +380,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
 
         CP_ASYNC_COMMIT_GROUP();
 
-        // 2. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
+        // 2. Tensor Core: two K steps, 16 elements each
 #pragma unroll
         for (int k_step = 0; k_step < 2; ++k_step) {
             int k_offset = k_step * 16;
@@ -388,13 +388,13 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
             uint32_t reg_a[4][4];
             uint32_t reg_b[4][2];
 
-            // 4 次 ldmatrix A (4 * 16 = 64 行)
+            // Four ldmatrix.issue for A (4 * 16 = 64 rows)
             ldmatrix_A<BK>(reg_a, smem.As[read_idx], warp_id_m, lane_id, k_offset);
 
-            // 4 次 ldmatrix B (4 * 8 = 32 列)
+            // Four ldmatrix.issue for B (4 * 8 = 32 columns)
             ldmatrix_B<BN, BK>(reg_b, smem.Bs[read_idx], warp_id_n, lane_id, k_offset);
 
-            // MMA 核心运算：4x4 次 m16n8k16
+            // MMA body: 4x4 m16n8k16
             mma_compute<T>(sum, reg_a, reg_b);
         }
 
@@ -404,7 +404,7 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
         cp_async_wait_group<0>();
         __syncthreads();
     }
-    // ------------------- Epilogue 最后计算一次再写回
+    // ------------------- Epilogue: final MMA, then store C
 #pragma unroll
     for (int k_step = 0; k_step < 2; ++k_step) {
         int k_offset = k_step * 16;
@@ -412,13 +412,13 @@ __global__ void hgemm_bcf_dbf_rw_kernel(T *a, T *b, T *c, int m, int n, int k) {
         uint32_t reg_a[4][4];
         uint32_t reg_b[4][2];
 
-        // 4 次 ldmatrix A (4 * 16 = 64 行)
+        // Four ldmatrix.issue for A (4 * 16 = 64 rows)
         ldmatrix_A<BK>(reg_a, smem.As[read_idx], warp_id_m, lane_id, k_offset);
 
-        // 4 次 ldmatrix B (4 * 8 = 32 列)
+        // Four ldmatrix.issue for B (4 * 8 = 32 columns)
         ldmatrix_B<BN, BK>(reg_b, smem.Bs[read_idx], warp_id_n, lane_id, k_offset);
 
-        // MMA 核心运算：4x4 次 m16n8k16
+        // MMA body: 4x4 m16n8k16
         mma_compute<T>(sum, reg_a, reg_b);
     }
 
@@ -429,7 +429,7 @@ template <const int BM = 128, const int BN = 128, const int BK = 32, const int S
 __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
     // grid swizzling
     int linear_id = blockIdx.y * gridDim.x + blockIdx.x;
-    const int SWIZZLE_W = 8; // 将执行块设置为 8 的宽度
+    const int SWIZZLE_W = 8; // swizzle / logical width = 8
 
     int bx = (linear_id % SWIZZLE_W) + (linear_id / (SWIZZLE_W * gridDim.y)) * SWIZZLE_W;
     int by = (linear_id / SWIZZLE_W) % gridDim.y;
@@ -438,35 +438,35 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 搬运映射
+    // GMEM->SMEM load indexing
     int load_a_row = tid / 4;        // 0~63
     int load_a_col = (tid % 4) * 8;  // 0,8,16,24
-    int load_b_row = tid / 16;       // 0~15 (K维度)
-    int load_b_col = (tid % 16) * 8; // 0,8,16 ... 120 (N维度)
+    int load_b_row = tid / 16;       // 0..15 (K)
+    int load_b_col = (tid % 16) * 8; // 0,8,...,120 (N)
 
-    // A/B 都行优先,用union复用同一块内存，写法优雅
+    // Layout works for both A and B; union aliases one smem block for A/B then C
     __shared__ __align__(128) union {
-        // 前半段计算用的 A 和 B
+        // First phase: A and B tiles
         struct {
             T As[STAGES][BM][BK];
             T Bs[STAGES][BK][BN];
         };
-        // 后半段写回用的 C
+        // Second phase: C writeback buffer
         T Cs[BM][BN];
     } smem;
 
     // warp tiling
-    // 每个 warp 负责  64 x 32 的 C 矩阵块
+    // Each warp owns a 64x32 C tile
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
+    // Accumulators: 4 M-fragments * 4 N-fragments * 4 float regs = 64
     float sum[4][4][4] = {0.f};
 
     T *global_a_ptr = &a[(by * BM + load_a_row) * k + load_a_col];
     T *global_b_ptr = &b[load_b_row * n + bx * BN + load_b_col];
 
-    // 1. prologue: 加载stages-1 个As/Bs块
+    // 1. Prologue: prefetch STAGES-1 As/Bs blocks
 #pragma unroll
     for (int i = 0; i < STAGES - 1; ++i) {
         cp_async_load_A<BK>(smem.As[i], load_a_row, load_a_col, global_a_ptr, k);
@@ -477,54 +477,54 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
         global_a_ptr += BK;
         global_b_ptr += BK * n;
     }
-    // commit了两个group, 允许1个group后台在cp.async, 即等最早加载的load完毕
+    // Two commit groups: one may still be completing cp.async while the earliest load finishes
     cp_async_wait_group<STAGES - 2>();
     __syncthreads();
 
-    // 状态指针初始化
-    int load_stage = STAGES - 1; // 下一个要 Load 的位置
-    int compute_stage = 0;       // 当前要 Compute 的位置
+    // Pipeline state init
+    int load_stage = STAGES - 1; // next stage to fill
+    int compute_stage = 0;       // stage currently consumed by MMA
 
     // 2. main loop
     for (int bk = (STAGES - 1) * BK; bk < k; bk += BK) {
 
-        // 1. 先发起cp.async load As/Bs 到 load_stage
+        // 1. Issue cp.async loads into load_stage
         cp_async_load_A<BK>(smem.As[load_stage], load_a_row, load_a_col, global_a_ptr, k);
         cp_async_load_B<BK, BN>(smem.Bs[load_stage], load_b_row, load_b_col, global_b_ptr, n);
 
         CP_ASYNC_COMMIT_GROUP();
 
-        // 2. Tensor Core 计算阶段 (k维度分两次，一次 16 个k)
+        // 2. Tensor Core: two K steps, 16 elements each
 #pragma unroll
         for (int k_step = 0; k_step < 2; ++k_step) {
             int k_offset = k_step * 16;
             uint32_t reg_a[4][4];
             uint32_t reg_b[4][2];
 
-            // 4 次 ldmatrix A (4 * 16 = 64 行)
+            // Four ldmatrix.issue for A (4 * 16 = 64 rows)
             ldmatrix_A<BK>(reg_a, smem.As[compute_stage], warp_id_m, lane_id, k_offset);
 
-            // 4 次 ldmatrix B (4 * 8 = 32 列)
+            // Four ldmatrix.issue for B (4 * 8 = 32 columns)
             ldmatrix_B<BN, BK>(reg_b, smem.Bs[compute_stage], warp_id_n, lane_id, k_offset);
 
-            // MMA 核心运算：4x4 次 m16n8k16
+            // MMA body: 4x4 m16n8k16
             mma_compute<T>(sum, reg_a, reg_b);
         }
 
-        // 推进指针
+        // Advance source pointers
         global_a_ptr += BK;
         global_b_ptr += BK * n;
 
-        // 流水线往下推一级
+        // Advance pipeline by one stage
         load_stage = (load_stage + 1 == STAGES) ? 0 : load_stage + 1;
         compute_stage = (compute_stage + 1 == STAGES) ? 0 : compute_stage + 1;
 
-        // 保障最早的 group load 好
+        // Wait until the oldest group's loads complete
         cp_async_wait_group<STAGES - 2>();
         __syncthreads();
     }
 
-    // 3. epilogue 最后计算 stages-1 次 再写回
+    // 3. Epilogue: STAGES-1 remaining passes, then store
     cp_async_wait_group<0>();
     __syncthreads();
 #pragma unroll
@@ -535,13 +535,13 @@ __global__ void hgemm_k_stages_kernel(T *a, T *b, T *c, int m, int n, int k) {
             uint32_t reg_a[4][4];
             uint32_t reg_b[4][2];
 
-            // 4 次 ldmatrix A (4 * 16 = 64 行)
+            // Four ldmatrix.issue for A (4 * 16 = 64 rows)
             ldmatrix_A<BK>(reg_a, smem.As[compute_stage], warp_id_m, lane_id, k_offset);
 
-            // 4 次 ldmatrix B (4 * 8 = 32 列)
+            // Four ldmatrix.issue for B (4 * 8 = 32 columns)
             ldmatrix_B<BN, BK>(reg_b, smem.Bs[compute_stage], warp_id_n, lane_id, k_offset);
 
-            // MMA 核心运算：4x4 次 m16n8k16
+            // MMA body: 4x4 m16n8k16
             mma_compute<T>(sum, reg_a, reg_b);
         }
 
@@ -558,7 +558,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
     __grid_constant__ const CUtensorMap tma_a, __grid_constant__ const CUtensorMap tma_b, T *c, int m, int n, int k) {
     // grid swizzling
     int linear_id = blockIdx.y * gridDim.x + blockIdx.x;
-    const int SWIZZLE_W = 8; // 将执行块设置为 8 的宽度
+    const int SWIZZLE_W = 8; // swizzle / logical width = 8
 
     int bx = (linear_id % SWIZZLE_W) + (linear_id / (SWIZZLE_W * gridDim.y)) * SWIZZLE_W;
     int by = (linear_id / SWIZZLE_W) % gridDim.y;
@@ -567,43 +567,43 @@ __global__ void hgemm_tma_r_k_stages_kernel(
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 使用动态共享数组
+    // Dynamic shared memory
     extern __shared__ __align__(128) uint8_t smem_buf[];
     T(*As)[BM][BK] = reinterpret_cast<T(*)[BM][BK]>(smem_buf);
     T(*Bs)[2][BK][BN / 2] = reinterpret_cast<T(*)[2][BK][BN / 2]>(smem_buf + STAGES * BM * BK * sizeof(T));
     T(*Cs)[BN] = reinterpret_cast<T(*)[BN]>(smem_buf);
-    // 把 mbar 放在末尾( 8 字节对齐，3个stages)
+    // mbar array at end of SMEM (8-byte aligned; one per stage)
     mbarrier_t *mbar = reinterpret_cast<mbarrier_t *>(smem_buf + BM * BK * sizeof(T) * STAGES * 2);
 
-    // 初始化 MBarrier (仅需 tid 0 执行，期待到达次数为 1，因为只有 TMA 会给它发信号)
+    // Init MBarrier (tid 0 only; expected arrivals == 1 from TMA)
     if (tid == 0) {
         for (int i = 0; i < STAGES; ++i)
             mbarrier_init(&mbar[i], 1);
     }
-    __syncthreads(); // 保证 MBarrier 初始化完毕
+    __syncthreads(); // ensure mbar init is visible
 
     // warp tiling
-    // 每个 warp 负责  64 x 32 的 C 矩阵块
+    // Each warp owns a 64x32 C tile
     int warp_id_m = warp_id / 4; // 0, 1
     int warp_id_n = warp_id % 4; // 0, 1, 2, 3
 
-    // 寄存器总量：M维4块 * N维4块 * 每块4个寄存器 = 64
+    // Accumulators: 4 M-fragments * 4 N-fragments * 4 float regs = 64
     float sum[4][4][4] = {0.f};
 
-    // 每次 TMA 需要搬运的总字节数
+    // Bytes moved per TMA descriptor
     const uint32_t tx_bytes = (BM * BK + BK * BN) * sizeof(T);
 
-    // 只保留一个极其简单的坐标跟踪变量 (因为 TMA 的 Host 描述符里已经知道了跨度)
+    // Simple tile counter only (strides live in the TMA descriptor)
     int load_k_coord = 0;
 
-    // 1. prologue 加载 STAGES - 1 块
+    // 1. Prologue: prefetch STAGES - 1 tiles
     for (int i = 0; i < STAGES - 1; ++i) {
         if (tid == 0) {
-            // 设定这个 mbarrier 需要等多少字节的数据落盘
+            // Bytes this mbarrier must observe before completion
             mbarrier_expect_tx(&mbar[i], tx_bytes);
 
             cp_async_bulk_tensor_2d(&mbar[i], &tma_a, As[i], load_k_coord, by * BM);
-            // Bs要copy两次，分成两个tile
+            // Bs needs two TMA tiles
             cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i][0], bx * BN, load_k_coord);
             cp_async_bulk_tensor_2d(&mbar[i], &tma_b, Bs[i][1], bx * BN + BN / 2, load_k_coord);
         }
@@ -612,12 +612,12 @@ __global__ void hgemm_tma_r_k_stages_kernel(
 
     int load_stage = STAGES - 1;
     int compute_stage = 0;
-    int wait_phase = 0; // MBarrier 天然的 0/1 交替相位开关
+    int wait_phase = 0; // MBarrier phase bit (toggles 0/1)
     int total_k_step = BK / 16;
     // 2. main loop
     for (int bk = (STAGES - 1) * BK; bk < k; bk += BK) {
 
-        // 发起下一轮的 TMA (依然只有 tid 0 干活)
+        // Launch the next TMA (still only tid 0)
         if (tid == 0) {
             mbarrier_expect_tx(&mbar[load_stage], tx_bytes);
             cp_async_bulk_tensor_2d(&mbar[load_stage], &tma_a, As[load_stage], load_k_coord, by * BM);
@@ -626,10 +626,10 @@ __global__ void hgemm_tma_r_k_stages_kernel(
         }
         load_k_coord += BK;
 
-        // 所有线程：轮询等待当前 compute_stage 的数据被 TMA 搬运完毕
+        // All threads spin until TMA finishes the current compute_stage tile
         mbarrier_wait(&mbar[compute_stage], wait_phase);
 
-        // 寄存器双buffer: ldmatrix + mma
+        // Register double-buffer: ldmatrix + MMA
         uint32_t reg_a[2][4][4], reg_b[2][4][2];
         ldmatrix_A_tma<BK>(reg_a[0], As[compute_stage], warp_id_m, lane_id, 0);
         ldmatrix_B_tma<BN, BK>(reg_b[0], Bs[compute_stage], warp_id_n, lane_id, 0);
@@ -646,24 +646,24 @@ __global__ void hgemm_tma_r_k_stages_kernel(
             write_idx ^= 1;
         }
 
-        // 直接同步，没有warp 特化，不需要 arrive
+        // Whole-CTA sync; no producer warp arrive()
         __syncthreads();
 
-        // 状态轮转
+        // Rotate pipeline indices
         load_stage = (load_stage + 1 == STAGES) ? 0 : load_stage + 1;
         compute_stage = (compute_stage + 1 == STAGES) ? 0 : compute_stage + 1;
 
-        // 完成一次三级流水线，三个 mbarrier 的 phase 都反转了，我们也要反转给定的 wait_phase
+        // Full 3-stage lap: all mbar phases flipped; toggle wait_phase too
         if (compute_stage == 0)
             wait_phase ^= 1;
     }
-    // 3. epilogue 计算 stages-1 次
+    // 3. Epilogue: STAGES-1 passes
 #pragma unroll
     for (int i = 0; i < STAGES - 1; ++i) {
-        // 继续等 TMA
+        // Wait on TMA again
         mbarrier_wait(&mbar[compute_stage], wait_phase);
 
-        // 寄存器双buffer
+        // Register double-buffer
         uint32_t reg_a[2][4][4], reg_b[2][4][2];
         ldmatrix_A_tma<BK>(reg_a[0], As[compute_stage], warp_id_m, lane_id, 0);
         ldmatrix_B_tma<BN, BK>(reg_b[0], Bs[compute_stage], warp_id_n, lane_id, 0);
@@ -685,7 +685,7 @@ __global__ void hgemm_tma_r_k_stages_kernel(
             wait_phase ^= 1;
     }
 
-    // 4. 写回
+    // 4. Store C
     write_c_via_smem<BM, BN>(c, by, bx, n, sum, warp_id_m, warp_id_n, lane_id, tid, Cs);
 }
 
@@ -737,22 +737,22 @@ create_tensor_map(T *global_address, uint64_t fast_dim, uint64_t slow_dim, uint3
         std::is_same_v<T, __half> ? CU_TENSOR_MAP_DATA_TYPE_FLOAT16 : CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
     CUtensorMapSwizzle swizzle = rowBytes == 128 ? CU_TENSOR_MAP_SWIZZLE_128B : CU_TENSOR_MAP_SWIZZLE_64B;
 
-    // TMA 的核心逻辑：第 0 维永远是内存里最连续的维度 (Fastest Changing Dimension)
+    // TMA convention: dim 0 is the fastest-changing dimension in memory
     uint64_t globalDim[2] = {fast_dim, slow_dim};
-    uint64_t globalStrides[1] = {fast_dim * sizeof(T)}; // 外层维度的跨度（字节）
+    uint64_t globalStrides[1] = {fast_dim * sizeof(T)}; // outer-dim stride (bytes)
     uint32_t boxDim[2] = {fast_box, slow_box};
     uint32_t elementStrides[2] = {1, 1};
 
     CUresult res = cuTensorMapEncodeTiled(&tmap,
                                           type,
-                                          2, // Tensor Rank (二维矩阵)
+                                          2, // tensor rank (2D matrix)
                                           global_address,
                                           globalDim,
                                           globalStrides,
                                           boxDim,
                                           elementStrides,
                                           CU_TENSOR_MAP_INTERLEAVE_NONE,
-                                          swizzle, // 对应swizzle
+                                          swizzle, // swizzle mode
                                           CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
                                           CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
 

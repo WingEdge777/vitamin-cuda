@@ -1,25 +1,23 @@
 # GeMV
 
-## 说明
+## Overview
 
-矩阵向量代数运算，特别的，矩阵向量乘法多用于将特征向量纬度大小进行变换，比如映射到高/低纬度，batched gemv其实就相当于矩阵乘法了。机器学习和深度学习基本都会用上batch
+GEMV (matrix–vector multiply) shows up whenever you map a feature vector to another dimension (wider or narrower). Batched GEMV is effectively a batched matmul, and most ML workloads use batching.
 
-所以这里只做几个简单kernel实现，用于练手
+This folder keeps a few small reference kernels for practice.
 
-gemv kernel
-
-- [x] gemv fp32版
-- [x] gemv fp32x4（向量化读取）
+- [x] gemv — FP32
+- [x] gemv_fp32x4 — FP32 with vectorized loads
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 ####################################################################################################

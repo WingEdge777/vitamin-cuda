@@ -1,23 +1,23 @@
 # Rope
 
-## 说明
+## Overview
 
-rope kernel
+RoPE kernels.
 
-- [x] pytorch naive rope
-- [x] pytorch rope with cos/sin table
-- [x] rope fp32 版 (比pytorch naive 实现快一个数量级)
-- [x] rope fp32x4 版 (fp32向量化，快几十倍)
+- [x] PyTorch naive RoPE
+- [x] PyTorch RoPE with cos/sin cache
+- [x] rope — FP32 (~10× vs naive PyTorch)
+- [x] rope_fp32x4 — vectorized FP32 (much faster still)
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 ####################################################################################################

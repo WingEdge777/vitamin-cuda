@@ -1,27 +1,27 @@
 # embedding
 
-## 说明
+## Overview
 
-embedding kernel
+Embedding lookup kernels.
 
-- [x] embedding fp32/fp16 版
-- [x] embedding_fp32x4(fp32向量化)
-- [x] embedding_fp32x4(fp32向量化, packed r/w)
-- [x] embedding_fp16x2(fp16向量化)
-- [x] embedding_fp16x8(fp16向量化)
-- [x] embedding_fp16x8(fp16向量化, packed r/w)
+- [x] embedding — FP32 / FP16
+- [x] embedding_fp32x4 — vectorized FP32
+- [x] embedding_fp32x4_packed — vectorized FP32, packed r/w
+- [x] embedding_fp16x2 — vectorized FP16
+- [x] embedding_fp16x8 — vectorized FP16
+- [x] embedding_fp16x8_packed — vectorized FP16, packed r/w
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
-因embedding表过大，需要在显存较大的卡上测试
+Large embedding tables need a GPU with plenty of VRAM.
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=8.9
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 ninja: no work to do.

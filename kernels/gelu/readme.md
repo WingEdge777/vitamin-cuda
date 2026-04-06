@@ -1,25 +1,25 @@
 # GELU
 
-## 说明
+## Overview
 
-gelu kernel
+GELU kernels.
 
-- [x] gelu fp32/fp16 版
-- [x] gelu_fp16x2(fp16向量化)
-- [x] gelu_fp16x8(fp16向量化)
-- [x] gelu_fp16x8(fp16向量化，packed r/w, half2 近两倍提升)
+- [x] gelu — FP32 / FP16
+- [x] gelu_fp16x2 — vectorized FP16
+- [x] gelu_fp16x8 — vectorized FP16
+- [x] gelu_fp16x8_packed — vectorized FP16, packed r/w (~2× via `half2`)
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-这里 pytorch 的 GELU 实现没有提供预分配 output buffer 的版本，所以对比结果不是很公平，理论 pytorch 自带劣势。但在多次循环下，pytorch allocator 开销可以忽略，实际测试 pytorch 跑得飞快，原因待研究
+Torch’s GELU here had no preallocated-output fast path, so microbenchmarks favor our kernels. In tight loops the allocator noise fades and PyTorch can look surprisingly fast—worth revisiting apples-to-apples.
 
-### 输出
+### Sample output
 
 ```bash
 ####################################################################################################

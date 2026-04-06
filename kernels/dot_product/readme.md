@@ -1,23 +1,23 @@
 # Dot Product
 
-## 说明
+## Overview
 
-涵盖了dot_product各版本kernel
+Dot-product kernels (scalar and vectorized variants).
 
-- [x] dot_product fp32/fp16 版
-- [x] dot_product_fp32x4(fp32向量化)
-- [x] dot_product_fp16x2(fp16向量化)
-- [x] dot_product_fp16x8(fp16向量化, packed r/w)
+- [x] dot_product — FP32 / FP16
+- [x] dot_product_fp32x4 — vectorized FP32
+- [x] dot_product_fp16x2 — vectorized FP16
+- [x] dot_product_fp16x8 — vectorized FP16, packed r/w
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 ####################################################################################################

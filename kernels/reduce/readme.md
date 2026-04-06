@@ -1,26 +1,26 @@
 # reduce_sum
 
-## 说明
+## Overview
 
-reduce_sum kernel
+reduce-sum kernels.
 
-- [x] warp shuffle add
-- [x] reduce_sum fp32/fp16 版
-- [x] reduce_sum_fp16x2(fp16向量化)
-- [x] reduce_sum_fp16x8_packed(fp16向量化, packed r/w)
-- [x] reduce_sum int8 版
-- [x] reduce_sum_i8x16_packed (int8向量化，packed r/w)
-- [x] reduce_sum_i8x16_packed (int8向量化，packed r/w, dp4a, 相比torch朴素实现快几十倍)
-- [x] reduce_sum_i8x64_packed (int8向量化，packed r/w, dp4a)
+- [x] warp shuffle reduction
+- [x] reduce_sum — FP32 / FP16
+- [x] reduce_sum_fp16x2 — vectorized FP16
+- [x] reduce_sum_fp16x8_packed — vectorized FP16, packed r/w
+- [x] reduce_sum — INT8
+- [x] reduce_sum_i8x16_packed — vectorized INT8, packed r/w
+- [x] reduce_sum_i8x16_packed_dp4a — INT8, packed r/w, `dp4a` (orders of magnitude vs naive Torch)
+- [x] reduce_sum_i8x64_packed_dp4a — INT8, packed r/w, `dp4a`
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 n: 1024, m: 1024

@@ -1,10 +1,8 @@
 # hgemm_sm120
 
-## 说明
+## Overview
 
-hgemm kernel
-
-sm 120 kernels
+Half-precision GEMM on SM120 (Blackwell-class) targets.
 
 - [x] hgemm_cublas baseline
 - [x] hgemm_bcf_dbf_rw baseline: cp.async + ldmatrix + mma + double buffer + coalesced gmem r/w
@@ -14,21 +12,21 @@ sm 120 kernels
 - [] tma read/write + ldmatrix + mma
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 nvidia-smi -q -d SUPPORTED_CLOCKS
-nvidia-smi -lgc 3050  # 锁定核心频率范围 (Lock Graphics Clocks)
-nvidia-smi -lmc 12001  # 锁定显存频率 (Lock Memory Clocks)
+nvidia-smi -lgc 3050   # lock GPU core clock (example MHz)
+nvidia-smi -lmc 12001  # lock memory clock (example MHz)
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
-nvidia-smi -rgc  # 重置核心频率
-nvidia-smi -rmc  # 重置显存频率
+nvidia-smi -rgc  # reset GPU clocks
+nvidia-smi -rmc  # reset memory clocks
 ```
 
-经过调整，tma + ldmatrix + mma 的kernel跑通了，但是实测性能也就一般。
+TMA + ldmatrix + MMA kernels run correctly after tuning; measured performance is competent.
 
-## 输出
+## Sample output
 
 ```yaml
 ####################################################################################################

@@ -1,24 +1,24 @@
 # hgemm
 
-## 说明
+## Overview
 
-hgemm kernel
+Half-precision GEMM kernels (BF16/FP16).
 
-- [x] hgemm_cublas bf16/fp16 版
-- [x] hgemm_naive bf16/fp16 版 (ldmatrix + mma)
-- [x] hgemm_bcf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, 95~99% cuBLAS' performance)
-- [x] hgemm_bcf_dbf bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, outperforming cuBLAS)
-- [x] hgemm_bcf_dbf_rw bf16/fp16 版 (ldmatrix + mma, As/Bs swizzle bcf, double buffer, coalesced r/w gmem, outperforming cuBLAS)
+- [x] hgemm_cublas — bf16/fp16 (cuBLAS baseline)
+- [x] hgemm_naive — bf16/fp16 (ldmatrix + MMA)
+- [x] hgemm_bcf — bf16/fp16 (ldmatrix + MMA, As/Bs swizzle BCF, ~95–99% of cuBLAS)
+- [x] hgemm_bcf_dbf — bf16/fp16 (ldmatrix + MMA, BCF swizzle, double buffer, faster than cuBLAS)
+- [x] hgemm_bcf_dbf_rw — bf16/fp16 (ldmatrix + MMA, BCF, double buffer, coalesced global r/w, faster than cuBLAS)
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-## 输出
+## Sample output
 
 ```yaml
 ####################################################################################################

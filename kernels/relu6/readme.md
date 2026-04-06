@@ -1,23 +1,23 @@
 # relu6
 
-## 说明
+## Overview
 
-relu6 kernel
+ReLU6 kernels.
 
-- [x] relu6 fp32/fp16 版
-- [x] relu6_fp16x2(fp16向量化)
-- [x] relu6_fp16x8(fp16向量化)
-- [x] relu6_fp16x8(fp16向量化, packed r/w)
+- [x] relu6 — FP32 / FP16
+- [x] relu6_fp16x2 — vectorized FP16
+- [x] relu6_fp16x8 — vectorized FP16
+- [x] relu6_fp16x8_packed — vectorized FP16, packed r/w
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 

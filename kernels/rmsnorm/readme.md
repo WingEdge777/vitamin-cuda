@@ -1,27 +1,27 @@
 # rmsnorm
 
-## 说明
+## Overview
 
-rmsnorm kernel
+RMSNorm kernels.
 
-- [x] naive torch rmsnorm
-- [x] rmsnorm fp32/fp16 版
-- [x] rmsnorm fp32x4 版 (fp32向量化)
+- [x] naive Torch RMSNorm
+- [x] rmsnorm — FP32 / FP16
+- [x] rmsnorm_fp32x4 — vectorized FP32
 - [x] rmsnorm_fp32x4_smem
-- [x] rmsnorm fp16x8 版 (fp16向量化, packed r/w)
-- [x] rmsnorm_fp16x8_smem 版 (fp16向量化, packed r/w)
+- [x] rmsnorm_fp16x8 — vectorized FP16, packed r/w
+- [x] rmsnorm_fp16x8_smem — vectorized FP16, packed r/w
 - [x] pytorch op bindings && diff check
 
-## 测试
+## Run tests
 
-L2 cache 比较大,smem优化权重读取没什么效果,瓶颈还是在input/output读写上
+L2 is large enough that staging weights in shared memory barely helps; the bottleneck stays input/output traffic.
 
 ```bash
 export TORCH_CUDA_ARCH_LIST=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1)
 python test.py
 ```
 
-### 输出
+### Sample output
 
 ```bash
 ####################################################################################################

@@ -16,7 +16,7 @@ __device__ __forceinline__ float _gelu(float x) { return 0.5 * x * (1.f + erff(x
 
 __device__ __forceinline__ half _gelu(half x) {
     float val = __half2float(x);
-    // 使用标准 float 版本的 erff (这个所有 CUDA 版本都有)
+    // Standard `float` `erff` (available in all CUDA versions we target)
     // 0.70710678f = 1/sqrt(2)
     val = 0.5f * val * (1.0f + erff(val * 0.70710678f));
     return __float2half(val);
@@ -26,11 +26,11 @@ __device__ __forceinline__ half2 _gelu(half2 x) {
     float2 vals = __half22float2(x);
     const float kAlpha = 0.70710678f;
 
-    // 分别用 float 计算
+    // Evaluate both lanes in float
     vals.x = 0.5f * vals.x * (1.0f + erff(vals.x * kAlpha));
     vals.y = 0.5f * vals.y * (1.0f + erff(vals.y * kAlpha));
 
-    // 打包回 half2
+    // Pack back to half2
     return __float22half2_rn(vals);
 }
 
