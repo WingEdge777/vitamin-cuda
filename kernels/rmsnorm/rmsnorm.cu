@@ -153,21 +153,20 @@ __global__ void rmsnorm_fp16x8_packed_kernel(half *a, half *b, half *c, int hidd
     int row_offset = blockIdx.x * hidden_size;
     int tid = threadIdx.x;
 
-    half2 pack[WARP_SIZE >> 1];
+    pack128 pack[8];
     float val = 0.f;
 
     int i = 0;
     for (; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-        LDST128BITS(pack[i * 4]) = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
-        half2 tmp[4];
-        LDST128BITS(tmp[0]) = LDST128BITS(b[(tid + i * BLOCK_SIZE) * 8]);
+        pack[i].f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+        pack128 b_pack;
+        b_pack.f4 = LDST128BITS(b[(tid + i * BLOCK_SIZE) * 8]);
 #pragma unroll
         for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(pack[i * 4 + j]);
+            float2 f2 = __half22float2(pack[i].h2[j]);
             val += f2.x * f2.x + f2.y * f2.y;
-            float2 b2 = __half22float2(tmp[j]);
-            pack[i * 4 + j].x = f2.x * b2.x;
-            pack[i * 4 + j].y = f2.y * b2.y;
+            float2 b2 = __half22float2(b_pack.h2[j]);
+            pack[i].h2[j] = __float22half2_rn(make_float2(f2.x * b2.x, f2.y * b2.y));
         }
     }
     int cnt = i;
@@ -176,15 +175,15 @@ __global__ void rmsnorm_fp16x8_packed_kernel(half *a, half *b, half *c, int hidd
     float val_inv = rsqrtf(val / hidden_size + eps);
 
     for (int i = 0; i < cnt; i++) {
-        half2 out_vec[4];
+        pack128 out_pack;
 #pragma unroll
         for (int j = 0; j < 4; j++) {
-            float2 f2 = __half22float2(pack[i * 4 + j]);
+            float2 f2 = __half22float2(pack[i].h2[j]);
             f2.x = f2.x * val_inv;
             f2.y = f2.y * val_inv;
-            out_vec[j] = __float22half2_rn(f2);
+            out_pack.h2[j] = __float22half2_rn(f2);
         }
-        LDST128BITS(c[row_offset + (tid + i * BLOCK_SIZE) * 8]) = LDST128BITS(out_vec[0]);
+        LDST128BITS(c[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out_pack.f4;
     }
 }
 
@@ -200,21 +199,20 @@ __global__ void rmsnorm_fp16x8_packed_smem_kernel(half *a, half *b, half *c, int
     for (int row = blockIdx.x; row < bs; row += gridDim.x) {
         int row_offset = row * hidden_size;
 
-        half2 pack[WARP_SIZE >> 1];
+        pack128 pack[8];
         float val = 0.f;
 
         int i = 0;
         for (; (tid + i * BLOCK_SIZE) * 8 < hidden_size; i++) {
-            LDST128BITS(pack[i * 4]) = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
-            half2 tmp[4];
-            LDST128BITS(tmp[0]) = LDST128BITS(smem_f16[(tid + i * BLOCK_SIZE) * 8]);
+            pack[i].f4 = LDST128BITS(a[row_offset + (tid + i * BLOCK_SIZE) * 8]);
+            pack128 b_pack;
+            b_pack.f4 = LDST128BITS(smem_f16[(tid + i * BLOCK_SIZE) * 8]);
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(pack[i * 4 + j]);
+                float2 f2 = __half22float2(pack[i].h2[j]);
                 val += f2.x * f2.x + f2.y * f2.y;
-                float2 b2 = __half22float2(tmp[j]);
-                pack[i * 4 + j].x = f2.x * b2.x;
-                pack[i * 4 + j].y = f2.y * b2.y;
+                float2 b2 = __half22float2(b_pack.h2[j]);
+                pack[i].h2[j] = __float22half2_rn(make_float2(f2.x * b2.x, f2.y * b2.y));
             }
         }
         int cnt = i;
@@ -223,15 +221,15 @@ __global__ void rmsnorm_fp16x8_packed_smem_kernel(half *a, half *b, half *c, int
         float val_inv = rsqrtf(val / hidden_size + eps);
 
         for (int i = 0; i < cnt; i++) {
-            half2 out_vec[4];
+            pack128 out_pack;
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float2 f2 = __half22float2(pack[i * 4 + j]);
+                float2 f2 = __half22float2(pack[i].h2[j]);
                 f2.x = f2.x * val_inv;
                 f2.y = f2.y * val_inv;
-                out_vec[j] = __float22half2_rn(f2);
+                out_pack.h2[j] = __float22half2_rn(f2);
             }
-            LDST128BITS(c[row_offset + (tid + i * BLOCK_SIZE) * 8]) = LDST128BITS(out_vec[0]);
+            LDST128BITS(c[row_offset + (tid + i * BLOCK_SIZE) * 8]) = out_pack.f4;
         }
     }
 }

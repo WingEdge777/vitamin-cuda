@@ -119,12 +119,12 @@ __global__ void reduce_sum_fp16x8_packed_kernel(half *a, float *b, int N) {
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + tid;
     float sum = 0.0f;
-    alignas(16) half2 p[4];
+    pack128 pack_p;
     for (int i = idx * 8; i < N; i += gridDim.x * blockDim.x * 8) {
-        LDST128BITS(p[0]) = LDST128BITS(a[i]);
+        pack_p.f4 = LDST128BITS(a[i]);
 #pragma unroll
         for (int t = 0; t < 4; t++) {
-            float2 f = __half22float2(p[t]);
+            float2 f = __half22float2(pack_p.h2[t]);
             sum += f.x + f.y;
         }
     }
@@ -183,12 +183,12 @@ __global__ void reduce_sum_i8x16_packed_kernel(int8_t *a, int32_t *b, int N) {
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + tid;
     int32_t sum = 0;
-    alignas(16) int8_t p[16];
+    pack128 pack_i8;
     for (int i = idx * 16; i < N; i += gridDim.x * blockDim.x * 16) {
-        LDST128BITS(p[0]) = LDST128BITS(a[i]);
+        pack_i8.f4 = LDST128BITS(a[i]);
 #pragma unroll
         for (int t = 0; t < 16; t++) {
-            sum += static_cast<int32_t>(p[t]);
+            sum += static_cast<int32_t>(pack_i8.i8[t]);
         }
     }
 
