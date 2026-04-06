@@ -213,7 +213,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 | 📖type | 📖blog link | 📖author | 📖star rating |
 | ---- | --- | ---- | ---- |
-|  CUDA basics |[A Deep Dive into DeviceQuery: Understanding Your GPU Hardware](https://wingedge777.hashnode.dev/a-deep-dive-into-devicequery-understanding-your-gpu-hardware) | @WingEdge777 | ⭐️⭐️ |
+| CUDA basics | [A Deep Dive into DeviceQuery: Understanding Your GPU Hardware](https://wingedge777.hashnode.dev/a-deep-dive-into-devicequery-understanding-your-gpu-hardware) | @WingEdge777 | ⭐️⭐️ |
 
 ### 博客
 
