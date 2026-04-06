@@ -23,10 +23,13 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 - [Contents](#contents)
 - [Prerequisites](#prerequisites)
 - [Kernels (140+)](#kernels-140)
-  - [Easy](#easy)
-  - [Medium](#medium)
-  - [Hard](#hard)
+  - [Easy ⭐️ ~ ⭐️⭐️](#easy-️--️️)
+  - [Medium ⭐️⭐️ ~ ⭐️⭐️⭐️](#medium-️️--️️️)
+  - [Hard ⭐️⭐️⭐️~](#hard-️️️)
 - [Samples](#samples)
+- [Blogs](#blogs)
+  - [blogs](#blogs-1)
+  - [博客](#博客)
 - [References](#references)
 
 ## Prerequisites
@@ -45,7 +48,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 <div id="easy"></div>
 
-### Easy
+### Easy ⭐️ ~ ⭐️⭐️
 
 - [elementwise](./kernels/elementwise): element-wise add
   - [x] `elementwise_add` — FP32 / FP16
@@ -112,7 +115,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 <div id="medium"></div>
 
-### Medium
+### Medium ⭐️⭐️ ~ ⭐️⭐️⭐️
 
 - [reduce](./kernels/reduce/) — Warp-shuffle-based reductions
   - [x] `reduce_sum` — FP32 / FP16
@@ -159,7 +162,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 <div id="hard"></div>
 
-### Hard
+### Hard ⭐️⭐️⭐️~
 
 - [sgemv](./kernels/sgemv/) — Single-precision GEMV
   - [x] `gemv_fp32` — baseline
@@ -202,6 +205,24 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 - [deviceQuery](./samples/deviceQuery)
 - [bankConflictNCU](./samples/bank_conflict_ncu/)
+- [localMemory](./samples/local_memory/)
+
+## Blogs
+
+### blogs
+
+| 📖type | 📖blog link | 📖author | 📖star rating |
+| ---- | --- | ---- | ---- |
+|  CUDA basics |[A Deep Dive into DeviceQuery: Understanding Your GPU Hardware](https://wingedge777.hashnode.dev/a-deep-dive-into-devicequery-understanding-your-gpu-hardware) | @WingEdge777 | ⭐️⭐️ |
+
+### 博客
+
+| 📖类型 | 📖文章链接 | 📖作者 | 📖推荐 |
+| ---- | --- | ---- | ---- |
+| CUDA入门 | [深度解读 DeviceQuery：理解你的 GPU 硬件属性](https://zhuanlan.zhihu.com/p/2003100150063724182) | @WingEdge777 | ⭐️⭐️ |
+| CUDA入门 | [CUDA 开发者应该熟悉的数](https://zhuanlan.zhihu.com/p/2004291847716111737) | @WingEdge777 | ⭐️⭐️ |
+| CUDA入门 | [[CUDA 入门] L1/TEX/SMEM - 再识bank conflict](https://zhuanlan.zhihu.com/p/2012890332749145252) | @WingEdge777 | ⭐️⭐️ |
+| CUDA入门 | [[CUDA 入门] 认识 CUDA “不存在的存储层级” - local memory](https://zhuanlan.zhihu.com/p/2020146042205643425) | @WingEdge777 | ⭐️⭐️ |
 
 ## References
 
