@@ -85,17 +85,16 @@ __global__ void gemv_fp32x4_kernel(float *a, float *b, float *c, int out_channel
             sum[r] += va.w * vb.w;
         }
     }
-    float c_out[ROWS_PER_BLOCK] = {0.0f};
+    pack128 out_pack;
 #pragma unroll
     for (int r = 0; r < ROWS_PER_BLOCK; ++r) {
-        int current_row = row_start + r;
         float res = _block_reduce_sum<BLOCK_SIZE / WARP_SIZE>(sum[r]);
         if (tid == 0) {
-            c_out[r] = res;
+            out_pack.f[r] = res;
         }
     }
     if (tid == 0) {
-        LDST128BITS(c[row_start]) = LDST128BITS(c_out[0]);
+        LDST128BITS(c[row_start]) = out_pack.f4;
     }
 }
 
