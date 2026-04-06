@@ -1,5 +1,7 @@
 # [CUDA in Practice] SGEMM — Beating cuBLAS: A Deep Dive into Peak-Performance Matrix Multiplication in Pure CUDA C++
-
+>
+>Note: Text translated by AI. Code crafted by human.
+>
 ## 0. Preface — The Last Stand of Scalar Compute
 
 > **Warning:** Extremely dense content ahead, with many diagrams, heavy bit-manipulation, and memory-mapping derivations. Best read on a PC.

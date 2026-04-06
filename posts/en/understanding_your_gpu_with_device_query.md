@@ -1,5 +1,7 @@
 # A Deep Dive into DeviceQuery: Understanding Your GPU Hardware
-
+>
+>Note: Text translated by AI. Code crafted by human.
+>
 ## 0. Preface
 
 Before writing a single line of high-performance CUDA code, you must know your silicon. deviceQuery is often the first command a developer runs, yet its output is usually ignored. This post translates those raw hardware limits into actionable programming mental models.

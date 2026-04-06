@@ -1,5 +1,7 @@
 # [CUDA in Practice] Matrix Transpose — From Padding to XOR Swizzle: The Art of Shared Memory Optimization
-
+>
+>Note: Text translated by AI. Code crafted by human.
+>
 Matrix transpose is one of the most fundamental operations in deep learning and high-performance computing. The deceptively simple coordinate swap $B[y][x] = A[x][y]$ may be just a double loop on the CPU, but on a throughput-oriented GPU architecture, the **memory access pattern** often matters far more than the compute logic itself. Writing an efficient transpose kernel is a classic litmus test for a CUDA engineer's skills.
 
 This article walks through a real CUDA implementation step by step — from the most naive version, evolving into efficient variants that combine Shared Memory, Bank-Conflict-Free Padding, and XOR Swizzle. Along the way, we'll explain why shared memory bank conflicts arise and how a simple swizzle mechanism eliminates them.

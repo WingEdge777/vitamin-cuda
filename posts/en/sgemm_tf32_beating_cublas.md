@@ -1,5 +1,7 @@
 # [CUDA in Practice] SGEMM TF32 — Beating cuBLAS with Tensor Cores, cp.async, ldmatrix & mma
-
+>
+>Note: Text translated by AI. Code crafted by human.
+>
 ## 0. Preface — The Era of Vectorized Compute
 
 > **Heads up:** This is an intense, diagram-heavy deep dive. It covers hardcore swizzle derivations (if you still don't understand XOR swizzle after reading this, come find me), layout-to-address coordinate mapping, and detailed PTX instruction analysis. Best read on a desktop for the full experience.
