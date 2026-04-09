@@ -487,6 +487,8 @@ That said, swizzle has its own cost: extra registers and ALU operations for addr
 
 Implement a more refined swizzle scheme that enables fully vectorized SMEM reads/writes (packed data).
 
+Add grid swizzling to the kernel to further make good use of L2 cache.
+
 ## 5. Conclusion
 
 ### 5.1 Benchmark Results
@@ -523,6 +525,8 @@ transpose_Smem_swizzled_packed   0.414753 ms       2.73x      323.6 GB/s
 Curious readers may want to calculate the theoretical peak bandwidth. For the RTX 5060 Laptop: 128-bit bus width, 12,001 MHz memory clock. Theoretical peak = 12001 × 2 × 128 / 8 / 1000 ≈ **384 GB/s**. (As a baseline reference, `nvbandwidth` measures ~337 GB/s for raw bidirectional copy.)
 
 Our final optimized kernel (`transpose_Smem_swizzled_packed`) achieves **323.6 GB/s** effective bandwidth — **84.2% of theoretical peak**. For a laptop with background noise, this is excellent. In practice, DRAM refresh, page table translation, and bus protocol overhead mean that 80–85% of theoretical bandwidth is textbook-level saturation. NCU's measured compute-memory throughput reached **92%**, and L1-level throughput is also near the limit.
+
+![ncu report](../static/mat_transpose.png)
 
 **Conclusion:** Through SMEM + swizzle + vectorization, we achieved perfect coalesced access, completely eliminating the write amplification caused by strided stores. Every byte flowing through the 128-bit bus carries useful payload, pushing throughput to the hardware's physical limit.
 
