@@ -164,15 +164,19 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
                                 float scale) {
     // 1. 48KB smem + 2 mbar
     extern __shared__ __align__(128) uint8_t smem_buf[];
-    T(*Qs)[BM][HEAD_DIM / 2] = reinterpret_cast<T(*)[BM][HEAD_DIM / 2]>(smem_buf);
-    T(*Ks)[BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + BM * HEAD_DIM * sizeof(T));
-    T(*Vs)[BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + BM * HEAD_DIM * sizeof(T) * 2);
-    T(*Ps)[BN] = reinterpret_cast<T(*)[BN]>(smem_buf + BM * HEAD_DIM * sizeof(T)); // 8KB, 复用Ks的前 8KB
-    T(*Os)[BM][HEAD_DIM / 2] = reinterpret_cast<T(*)[BM][HEAD_DIM / 2]>(smem_buf); // 16KB, 结束时复用，用于写回 Global
+    T(*Qs)[BM][HEAD_DIM / 2] = reinterpret_cast<T(*)[BM][HEAD_DIM / 2]>(smem_buf); // BM*HEAD_DIM
+    T(*Ks)
+    [BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + BM * HEAD_DIM * sizeof(T)); // BN*HEAD_DIM
+    T(*Vs)
+    [BN][HEAD_DIM / 2] =
+        reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + (BM + BN) * HEAD_DIM * sizeof(T)); // BN*HEAD_DIM
+    T(*Ps)[BN] = reinterpret_cast<T(*)[BN]>(smem_buf + BM * HEAD_DIM * sizeof(T));             // 8KB, 复用Ks的前 8KB
+    T(*Os)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf); // 16KB, 结束时复用，用于写回 Global
 
-    // mbar array at end of SMEM (8-byte aligned; one per stage)
-    mbarrier_t *mbar_q = reinterpret_cast<mbarrier_t *>(smem_buf + BM * HEAD_DIM * sizeof(T) * 3);
-    mbarrier_t *mbar_kv = reinterpret_cast<mbarrier_t *>(smem_buf + BM * HEAD_DIM * sizeof(T) * 3 + sizeof(mbarrier_t));
+    // mbar array at end of SMEM (8-byte aligned;
+    mbarrier_t *mbar_q = reinterpret_cast<mbarrier_t *>(smem_buf + (BM + BN * 2) * HEAD_DIM * sizeof(T));
+    mbarrier_t *mbar_kv =
+        reinterpret_cast<mbarrier_t *>(smem_buf + (BM + BN * 2) * HEAD_DIM * sizeof(T) + sizeof(mbarrier_t));
 
     // 2. 坐标解析
     const int tid = threadIdx.x;
@@ -409,34 +413,39 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     // 写入 Os (复用内存)
 #pragma unroll
     for (int n_step = 0; n_step < 16; ++n_step) {
-        int chunk = (n_step >= 8) ? 1 : 0;
-        int col_base = (n_step % 8) * 8 + (lane_id % 4) * 2;
+        int col_base = n_step * 8 + (lane_id % 4) * 2;
 
         acc_o[n_step][0] /= d_i[0];
         acc_o[n_step][1] /= d_i[0];
         acc_o[n_step][2] /= d_i[1];
         acc_o[n_step][3] /= d_i[1];
 
-        Os[chunk][row_0][SWIZZLE_128B_TMA(row_0, col_base)] = __float2bfloat16(acc_o[n_step][0]);
-        Os[chunk][row_0][SWIZZLE_128B_TMA(row_0, col_base + 1)] = __float2bfloat16(acc_o[n_step][1]);
-        Os[chunk][row_1][SWIZZLE_128B_TMA(row_1, col_base)] = __float2bfloat16(acc_o[n_step][2]);
-        Os[chunk][row_1][SWIZZLE_128B_TMA(row_1, col_base + 1)] = __float2bfloat16(acc_o[n_step][3]);
+        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat16(FLOAT2(acc_o[n_step][0]));
+        BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat16(FLOAT2(acc_o[n_step][2]));
     }
 
     __syncthreads();
 
-    // o [batch, q_len, q_head, head_dim]
-    int global_o_base = batch_id * (q_len * q_head * HEAD_DIM) + head_id * HEAD_DIM;
+    const int CHUNKS_PER_ROW = HEAD_DIM / 8; // 16 块
 
-    for (int i = tid; i < BM * HEAD_DIM; i += blockDim.x) {
-        int r = i / HEAD_DIM;
-        int c = i % HEAD_DIM;
-        int chunk = (c >= 64) ? 1 : 0;
-        int local_c = c % 64;
+    // HEAD_DIM = 128。一个 float4 占 16 字节，刚好能塞下 8 个 bfloat16。所以一行 128 个元素，只需要 16 个 float4。
+    const int row_stride = q_head * HEAD_DIM;
+    const int block_base_idx = batch_id * (q_len * row_stride) + head_id * HEAD_DIM + q_start_idx * row_stride;
+
+    const int CHUNKS_PER_ROW = HEAD_DIM / 8;
+    const int THREADS_PER_BLOCK = 128;
+    const int TOTAL_CHUNKS = BM * CHUNKS_PER_ROW;
+    const int ITERS = TOTAL_CHUNKS / THREADS_PER_BLOCK;
+
+#pragma unroll
+    for (int iter = 0; iter < ITERS; ++iter) {
+        int i = tid + iter * THREADS_PER_BLOCK;
+        int r = i / CHUNKS_PER_ROW;
+        int c = (i % CHUNKS_PER_ROW) * 8;
 
         if (q_start_idx + r < q_len) {
-            int global_idx = global_o_base + (q_start_idx + r) * (q_head * HEAD_DIM) + c;
-            o[global_idx] = Os[chunk][r][SWIZZLE_128B_TMA(r, local_c)];
+            int global_idx = block_base_idx + r * row_stride + c;
+            LDST128BITS(o[global_idx]) = LDST128BITS(Os[r][SWIZZLE_128B_TMA(r, c)]);
         }
     }
 }
@@ -489,7 +498,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
     return tmap;
 }
 
-#define binding_tiled_tma_func_gen(name, expected_head_dim)                                                            \
+#define binding_tiled_tma_func_gen(name, HEAD_DIM)                                                                     \
     void name##_##expected_head_dim(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) { \
                                                                                                                        \
         CHECK_T(q);                                                                                                    \
@@ -505,10 +514,10 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         const int kv_len = k.size(1);                                                                                  \
         const int kv_head = k.size(2);                                                                                 \
                                                                                                                        \
-        /* 只校验编译期写死的 Head Dim 是否匹配 */                                                                     \
-        TORCH_CHECK(head_dim == expected_head_dim, "Head dim mismatch: expected ", expected_head_dim);                 \
+        /* 只校验编译期写死的 head_dim 是否匹配 */                                                                     \
+        TORCH_CHECK(head_dim == HEAD_DIM, "Head dim mismatch: expected ", HEAD_DIM);                                   \
                                                                                                                        \
-        /* 动态提取字节跨度 (TMA 需要 Bytes) */                                                                        \
+        /* 动态提取字节跨度 (TMA 需要 字节数) */                                                                       \
         int elem_bytes = q.element_size();                                                                             \
         uint64_t q_stride_h = q.stride(2) * elem_bytes;                                                                \
         uint64_t q_stride_s = q.stride(1) * elem_bytes;                                                                \
@@ -522,11 +531,9 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         uint64_t v_stride_s = v.stride(1) * elem_bytes;                                                                \
         uint64_t v_stride_b = v.stride(0) * elem_bytes;                                                                \
                                                                                                                        \
-        /* 核心分块参数：编译期常量 */                                                                                 \
         const int BM = 64;                                                                                             \
         const int BN = 64;                                                                                             \
                                                                                                                        \
-        /* 构建 4D TMA 描述符 (将动态的 head 数量传给 TMA 生成器) */                                                   \
         CUtensorMap tma_q = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),       \
                                                                 head_dim,                                              \
                                                                 q_head,                                                \
@@ -560,11 +567,11 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                                 head_dim / 2,                                          \
                                                                 BN);                                                   \
                                                                                                                        \
-        /* Grid 调度：动态根据 q_head 和 batch_size 发射 */                                                            \
+        /* q_head 放在x维上， 复用L2 cache的kv tile */                                                                 \
         const dim3 blocks_per_grid(q_head, (q_len + BM - 1) / BM, batch_size);                                         \
         const int threads_per_block = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-        const int smem_size = 49168;                                                                                   \
+        const int smem_size = (BM * q_head + BM * kv_head * 2) * sizeof(__nv_bfloat16) + 8 * 2;                        \
         cudaFuncSetAttribute(name##_kernel<BM, BN, expected_head_dim, __nv_bfloat16>,                                  \
                              cudaFuncAttributeMaxDynamicSharedMemorySize,                                              \
                              smem_size);                                                                               \
@@ -582,13 +589,12 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                 scale);                                                                                                \
     }
 
-// 生成具体的绑定函数：只需特化 Head_Dim
 binding_tiled_tma_func_gen(fmha_tma, 128);
 
 // ---------------- pybind ----------------
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    // 导出到 Python 的名字变为 fmha_tma_128
+    // fmha_tma_128
     torch_pybinding_func(fmha_tma_128);
 }
