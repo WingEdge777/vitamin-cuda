@@ -324,91 +324,75 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         // --- 6.3 Online Softmax (Max & Correction) ---
         int row_0 = warp_row_offset + (lane_id / 4);
         int row_1 = row_0 + 8;
+        bool need_causal_mask = (n + BN > q_start_idx);
 
         float m_prev[2] = {m_i[0], m_i[1]};
         float m_curr[2] = {-FLT_MAX, -FLT_MAX};
+        float local_d[2] = {0.0f, 0.0f};
 
-        // 找当前 K 块的局部最大值 (包含 Causal Mask)
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
-            int global_col_0 = n + col_base;
-            int global_col_1 = n + col_base + 1;
 
             acc_s[n_step][0] *= scale;
             acc_s[n_step][1] *= scale;
             acc_s[n_step][2] *= scale;
             acc_s[n_step][3] *= scale;
 
-            if (q_start_idx + row_0 < global_col_0)
-                acc_s[n_step][0] = -FLT_MAX;
-            if (q_start_idx + row_0 < global_col_1)
-                acc_s[n_step][1] = -FLT_MAX;
-            if (q_start_idx + row_1 < global_col_0)
-                acc_s[n_step][2] = -FLT_MAX;
-            if (q_start_idx + row_1 < global_col_1)
-                acc_s[n_step][3] = -FLT_MAX;
+            if (need_causal_mask) {
+                acc_s[n_step][0] = (q_start_idx + row_0 >= n + col_base) ? acc_s[n_step][0] : -FLT_MAX;
+                acc_s[n_step][1] = (q_start_idx + row_0 >= n + col_base + 1) ? acc_s[n_step][1] : -FLT_MAX;
+                acc_s[n_step][2] = (q_start_idx + row_1 >= n + col_base) ? acc_s[n_step][2] : -FLT_MAX;
+                acc_s[n_step][3] = (q_start_idx + row_1 >= n + col_base + 1) ? acc_s[n_step][3] : -FLT_MAX;
+            }
 
             m_curr[0] = fmaxf(m_curr[0], fmaxf(acc_s[n_step][0], acc_s[n_step][1]));
             m_curr[1] = fmaxf(m_curr[1], fmaxf(acc_s[n_step][2], acc_s[n_step][3]));
         }
 
-        // Warp Quad 内规约找这一行的真实最大值 (只需要和同 Quad 的 3 个兄弟通信)
 #pragma unroll
         for (int i = 1; i < 4; i *= 2) {
             m_curr[0] = fmaxf(m_curr[0], __shfl_xor_sync(0xffffffff, m_curr[0], i));
             m_curr[1] = fmaxf(m_curr[1], __shfl_xor_sync(0xffffffff, m_curr[1], i));
         }
 
-        // 更新全局最大值
         m_i[0] = fmaxf(m_prev[0], m_curr[0]);
         m_i[1] = fmaxf(m_prev[1], m_curr[1]);
 
-        // 计算修正因子并缩放老的分母 (d_i) 和老的输出 (acc_o)
-        float correction[2] = {expf(m_prev[0] - m_i[0]), expf(m_prev[1] - m_i[1])};
-        d_i[0] *= correction[0];
-        d_i[1] *= correction[1];
+        float exp_mprev_mnew[2] = {expf(m_prev[0] - m_i[0]), expf(m_prev[1] - m_i[1])};
+        d_i[0] *= exp_mprev_mnew[0];
+        d_i[1] *= exp_mprev_mnew[1];
 
 #pragma unroll
-        for (int i = 0; i < 16; ++i) { // 缩放之前的 O
-            acc_o[i][0] *= correction[0];
-            acc_o[i][1] *= correction[0];
-            acc_o[i][2] *= correction[1];
-            acc_o[i][3] *= correction[1];
+        for (int i = 0; i < 16; ++i) {
+            acc_o[i][0] *= exp_mprev_mnew[0];
+            acc_o[i][1] *= exp_mprev_mnew[0];
+            acc_o[i][2] *= exp_mprev_mnew[1];
+            acc_o[i][3] *= exp_mprev_mnew[1];
         }
 
-        // === 死锁 1：在写回 Ps 之前，必须确保别人已经把上一轮的 Ps 用完 (或者保护 Vs) ===
         __syncthreads();
-
-        // 并计算真正的 Softmax 概率 (acc_s -> Ps) ---
-        float local_d[2] = {0.0f, 0.0f};
 
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
-            float2 e0, e1;
-            e0.x = expf(acc_s[n_step][0] - m_i[0]);
-            e0.y = expf(acc_s[n_step][1] - m_i[0]);
-            e1.x = expf(acc_s[n_step][2] - m_i[1]);
-            e1.y = expf(acc_s[n_step][3] - m_i[1]);
 
-            // 只加给局部的 sum！
+            float2 e0 = {expf(acc_s[n_step][0] - m_i[0]), expf(acc_s[n_step][1] - m_i[0])};
+            float2 e1 = {expf(acc_s[n_step][2] - m_i[1]), expf(acc_s[n_step][3] - m_i[1])};
+
             local_d[0] += e0.x + e0.y;
             local_d[1] += e1.x + e1.y;
 
-            // 完美的降维数组 + 128B Swizzle 写回
             BFLOAT2(Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(e0);
             BFLOAT2(Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(e1);
         }
 
-        // Warp Quad 内规约累加 local_d (规约的只是局部新增加的值)
 #pragma unroll
         for (int i = 1; i < 4; i *= 2) {
             local_d[0] += __shfl_xor_sync(0xffffffff, local_d[0], i);
             local_d[1] += __shfl_xor_sync(0xffffffff, local_d[1], i);
         }
 
-        // 合并到全局大分母 d_i 里
         d_i[0] += local_d[0];
         d_i[1] += local_d[1];
 
