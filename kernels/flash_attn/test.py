@@ -108,23 +108,22 @@ def diff_check(a, b, prefix="torch", eps=0.016):
 
 
 def test_all():
+    for bs in [1]:
+        for seq in [512, 1024, 2048, 4096, 8192]:
+            dim = 128
+            head = 32
+            print("#" * 100)
+            print(f"prefill, batch:  {bs}, seq: {seq}, head: {head}, dim: {dim}")
+            q = torch.randn(bs, seq, head, dim, device="cuda", dtype=torch.bfloat16)
+            k = torch.randn(bs, seq, head, dim, device="cuda", dtype=torch.bfloat16)
+            v = torch.randn(bs, seq, head, dim, device="cuda", dtype=torch.bfloat16)
+            o = benchmark(
+                partial(F.scaled_dot_product_attention, is_causal=True), q, k, v, prefix="torch"
+            )
 
-    for seq in [512, 1024, 2048, 4096]:
-        b = 1
-        dim = 128
-        head = 32
-        print("#" * 100)
-        print(f"prefill, batch:  {b}, seq: {seq}, head: {head}, dim: {dim}")
-        q = torch.randn(b, seq, head, dim, device="cuda", dtype=torch.bfloat16)
-        k = torch.randn(b, seq, head, dim, device="cuda", dtype=torch.bfloat16)
-        v = torch.randn(b, seq, head, dim, device="cuda", dtype=torch.bfloat16)
-        o = benchmark(
-            partial(F.scaled_dot_product_attention, is_causal=True), q, k, v, prefix="torch"
-        )
-
-        o_my = torch.zeros_like(o)
-        o_my = benchmark(lib.fmha_tma_128, q, k, v, o_my, prefix="fmha_tma_128")
-        diff_check(o, o_my, prefix="fmha_tma_128")
+            o_my = torch.zeros_like(o)
+            o_my = benchmark(lib.fmha_tma_128, q, k, v, o_my, prefix="fmha_tma_128")
+            diff_check(o, o_my, prefix="fmha_tma_128")
 
 
 if __name__ == "__main__":

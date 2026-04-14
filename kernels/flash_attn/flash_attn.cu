@@ -564,7 +564,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                                 BN);                                                   \
                                                                                                                        \
         /* q_seq 放在x维上， 复用L2 cache的kv tile */                                                                  \
-        const dim3 blocks_per_grid((q_len + BM - 1) / BM, q_head, batch_size);                                         \
+        const dim3 blocks_per_grid((q_len + BM - 1) / BM, batch_size, q_head);                                         \
         const int threads_per_block = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         const int smem_size = (BM * HEAD_DIM + BN * HEAD_DIM * 2) * sizeof(__nv_bfloat16) + sizeof(mbarrier_t) * 2;    \
