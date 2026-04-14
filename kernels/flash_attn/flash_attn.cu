@@ -234,8 +234,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 
     // 2. 坐标解析
     const int tid = threadIdx.x;
-    const int head_id = blockIdx.x;
-    const int q_tile_idx = blockIdx.y;
+    const int q_tile_idx = blockIdx.x;
+    const int head_id = blockIdx.y;
     const int batch_id = blockIdx.z;
 
     const int group_size = q_head / kv_head;
@@ -561,8 +561,8 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                                 head_dim / 2,                                          \
                                                                 BN);                                                   \
                                                                                                                        \
-        /* q_head 放在x维上， 复用L2 cache的kv tile */                                                                 \
-        const dim3 blocks_per_grid(q_head, (q_len + BM - 1) / BM, batch_size);                                         \
+        /* q_seq 放在x维上， 复用L2 cache的kv tile */                                                                  \
+        const dim3 blocks_per_grid((q_len + BM - 1) / BM, q_head, batch_size);                                         \
         const int threads_per_block = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         const int smem_size = (BM * HEAD_DIM + BN * HEAD_DIM * 2) * sizeof(__nv_bfloat16) + sizeof(mbarrier_t) * 2;    \
