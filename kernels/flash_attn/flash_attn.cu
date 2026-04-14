@@ -151,6 +151,60 @@ __device__ __forceinline__ void mma_compute(float (*acc)[4], uint32_t (*reg_a)[4
     // MMA body: m16n8k16
 }
 
+template <const int BM, const int HEAD_DIM, typename T>
+__device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
+                                                   float m_i[2],
+                                                   float d_i[2],
+                                                   T (*Os)[HEAD_DIM],
+                                                   T *o,
+                                                   int warp_row_offset,
+                                                   int lane_id,
+                                                   int q_start_idx,
+                                                   int q_len,
+                                                   int q_head,
+                                                   int batch_id,
+                                                   int head_id) {
+
+    int row_0 = warp_row_offset + (lane_id / 4);
+    int row_1 = row_0 + 8;
+
+#pragma unroll
+    for (int n_step = 0; n_step < 16; ++n_step) {
+        int col_base = n_step * 8 + (lane_id % 4) * 2;
+
+        acc_o[n_step][0] /= d_i[0];
+        acc_o[n_step][1] /= d_i[0];
+        acc_o[n_step][2] /= d_i[1];
+        acc_o[n_step][3] /= d_i[1];
+
+        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][0]));
+        BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][2]));
+    }
+
+    __syncthreads();
+
+    const int CHUNKS_PER_ROW = HEAD_DIM / 8;
+    const int row_stride = q_head * HEAD_DIM;
+    const int block_base_idx = batch_id * (q_len * row_stride) + head_id * HEAD_DIM + q_start_idx * row_stride;
+
+    const int THREADS_PER_BLOCK = 128;
+    const int TOTAL_CHUNKS = BM * CHUNKS_PER_ROW;
+    const int ITERS = TOTAL_CHUNKS / THREADS_PER_BLOCK;
+    const int tid = threadIdx.x;
+
+#pragma unroll
+    for (int iter = 0; iter < ITERS; ++iter) {
+        int i = tid + iter * THREADS_PER_BLOCK;
+        int r = i / CHUNKS_PER_ROW;
+        int c = (i % CHUNKS_PER_ROW) * 8;
+
+        if (q_start_idx + r < q_len) {
+            int global_idx = block_base_idx + r * row_stride + c;
+            LDST128BITS(o[global_idx]) = LDST128BITS(Os[r][SWIZZLE_128B_TMA(r, c)]);
+        }
+    }
+}
+
 // tma copy implemett softmat(q x k.T)/scale * v
 template <const int BM = 64, const int BN = 64, const int HEAD_DIM = 128, typename T>
 __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
@@ -332,21 +386,19 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
-
-            float e0 = expf(acc_s[n_step][0] - m_i[0]);
-            float e1 = expf(acc_s[n_step][1] - m_i[0]);
-            float e2 = expf(acc_s[n_step][2] - m_i[1]);
-            float e3 = expf(acc_s[n_step][3] - m_i[1]);
+            float2 e0, e1;
+            e0.x = expf(acc_s[n_step][0] - m_i[0]);
+            e0.y = expf(acc_s[n_step][1] - m_i[0]);
+            e1.x = expf(acc_s[n_step][2] - m_i[1]);
+            e1.y = expf(acc_s[n_step][3] - m_i[1]);
 
             // 只加给局部的 sum！
-            local_d[0] += e0 + e1;
-            local_d[1] += e2 + e3;
+            local_d[0] += e0.x + e0.y;
+            local_d[1] += e1.x + e1.y;
 
             // 完美的降维数组 + 128B Swizzle 写回
-            Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base)] = __float2bfloat16(e0);
-            Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base + 1)] = __float2bfloat16(e1);
-            Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base)] = __float2bfloat16(e2);
-            Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base + 1)] = __float2bfloat16(e3);
+            BFLOAT2(Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(e0);
+            BFLOAT2(Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(e1);
         }
 
         // Warp Quad 内规约累加 local_d (规约的只是局部新增加的值)
@@ -404,49 +456,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         __syncthreads();
     }
 
-    // ========================================================
-    // 7. Epilogue: 最终归一化与写回
-    // ========================================================
-    int row_0 = warp_row_offset + (lane_id / 4);
-    int row_1 = row_0 + 8;
-
-    // 写入 Os (复用内存)
-#pragma unroll
-    for (int n_step = 0; n_step < 16; ++n_step) {
-        int col_base = n_step * 8 + (lane_id % 4) * 2;
-
-        acc_o[n_step][0] /= d_i[0];
-        acc_o[n_step][1] /= d_i[0];
-        acc_o[n_step][2] /= d_i[1];
-        acc_o[n_step][3] /= d_i[1];
-
-        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][0]));
-        BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][2]));
-    }
-
-    __syncthreads();
-
-    const int CHUNKS_PER_ROW = HEAD_DIM / 8; // 16 块
-
-    // HEAD_DIM = 128。一个 float4 占 16 字节，刚好能塞下 8 个 bfloat16。所以一行 128 个元素，只需要 16 个 float4。
-    const int row_stride = q_head * HEAD_DIM;
-    const int block_base_idx = batch_id * (q_len * row_stride) + head_id * HEAD_DIM + q_start_idx * row_stride;
-
-    const int THREADS_PER_BLOCK = 128;
-    const int TOTAL_CHUNKS = BM * CHUNKS_PER_ROW;
-    const int ITERS = TOTAL_CHUNKS / THREADS_PER_BLOCK;
-
-#pragma unroll
-    for (int iter = 0; iter < ITERS; ++iter) {
-        int i = tid + iter * THREADS_PER_BLOCK;
-        int r = i / CHUNKS_PER_ROW;
-        int c = (i % CHUNKS_PER_ROW) * 8;
-
-        if (q_start_idx + r < q_len) {
-            int global_idx = block_base_idx + r * row_stride + c;
-            LDST128BITS(o[global_idx]) = LDST128BITS(Os[r][SWIZZLE_128B_TMA(r, c)]);
-        }
-    }
+    epilogue_writeback<BM, HEAD_DIM>(
+        acc_o, m_i, d_i, Os, o, warp_row_offset, lane_id, q_start_idx, q_len, q_head, batch_id, head_id);
 }
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
