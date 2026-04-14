@@ -420,8 +420,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         acc_o[n_step][2] /= d_i[1];
         acc_o[n_step][3] /= d_i[1];
 
-        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat16(FLOAT2(acc_o[n_step][0]));
-        BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat16(FLOAT2(acc_o[n_step][2]));
+        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][0]));
+        BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][2]));
     }
 
     __syncthreads();
@@ -432,7 +432,6 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     const int row_stride = q_head * HEAD_DIM;
     const int block_base_idx = batch_id * (q_len * row_stride) + head_id * HEAD_DIM + q_start_idx * row_stride;
 
-    const int CHUNKS_PER_ROW = HEAD_DIM / 8;
     const int THREADS_PER_BLOCK = 128;
     const int TOTAL_CHUNKS = BM * CHUNKS_PER_ROW;
     const int ITERS = TOTAL_CHUNKS / THREADS_PER_BLOCK;
@@ -499,7 +498,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
 }
 
 #define binding_tiled_tma_func_gen(name, HEAD_DIM)                                                                     \
-    void name##_##expected_head_dim(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) { \
+    void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {          \
                                                                                                                        \
         CHECK_T(q);                                                                                                    \
         CHECK_T(k);                                                                                                    \
@@ -572,26 +571,23 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         const int threads_per_block = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         const int smem_size = (BM * q_head + BM * kv_head * 2) * sizeof(__nv_bfloat16) + 8 * 2;                        \
-        cudaFuncSetAttribute(name##_kernel<BM, BN, expected_head_dim, __nv_bfloat16>,                                  \
-                             cudaFuncAttributeMaxDynamicSharedMemorySize,                                              \
-                             smem_size);                                                                               \
-        /* 发射 Kernel */                                                                                              \
-        name##_kernel<BM, BN, expected_head_dim, __nv_bfloat16>                                                        \
-            <<<blocks_per_grid, threads_per_block, smem_size, stream>>>(                                               \
-                tma_q,                                                                                                 \
-                tma_k,                                                                                                 \
-                tma_v,                                                                                                 \
-                reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                                                       \
-                q_len,                                                                                                 \
-                kv_len,                                                                                                \
-                q_head,                                                                                                \
-                kv_head,                                                                                               \
-                scale);                                                                                                \
+        cudaFuncSetAttribute(                                                                                          \
+            name##_kernel<BM, BN, HEAD_DIM, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);   \
+        /* launch kernel */                                                                                            \
+        name##_kernel<BM, BN, HEAD_DIM, __nv_bfloat16><<<blocks_per_grid, threads_per_block, smem_size, stream>>>(     \
+            tma_q,                                                                                                     \
+            tma_k,                                                                                                     \
+            tma_v,                                                                                                     \
+            reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                                                           \
+            q_len,                                                                                                     \
+            kv_len,                                                                                                    \
+            q_head,                                                                                                    \
+            kv_head,                                                                                                   \
+            scale);                                                                                                    \
     }
 
 binding_tiled_tma_func_gen(fmha_tma, 128);
 
-// ---------------- pybind ----------------
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
