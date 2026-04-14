@@ -570,7 +570,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         const dim3 blocks_per_grid(q_head, (q_len + BM - 1) / BM, batch_size);                                         \
         const int threads_per_block = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-        const int smem_size = (BM * q_head + BM * kv_head * 2) * sizeof(__nv_bfloat16) + 8 * 2;                        \
+        const int smem_size = (BM * HEAD_DIM + BN * HEAD_DIM * 2) * sizeof(__nv_bfloat16) + sizeof(mbarrier_t) * 2;    \
         cudaFuncSetAttribute(                                                                                          \
             name##_kernel<BM, BN, HEAD_DIM, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);   \
         /* launch kernel */                                                                                            \

@@ -1,3 +1,4 @@
+import math
 import time
 from functools import partial
 from typing import Optional
@@ -34,7 +35,7 @@ baseline = None
 
 def benchmark(op, q, k, v, o=None, warmup=0, rep=1, prefix="torch"):
     if o is not None:
-        scale = 1 / torch.sqrt(q.shape[-1])
+        scale = 1 / math.sqrt(q.shape[-1])
         # warm up
         for i in range(warmup):
             op(q, k, v, o, scale)
