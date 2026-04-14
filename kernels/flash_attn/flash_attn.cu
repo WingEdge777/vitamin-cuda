@@ -439,7 +439,6 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
             }
         }
 
-        // === 死锁 3：保护 Union 不被下轮 TMA 覆盖 ===
         __syncthreads();
     }
 
