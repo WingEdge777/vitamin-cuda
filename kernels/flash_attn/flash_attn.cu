@@ -138,12 +138,36 @@ ldmatrix_Qs(uint32_t reg_q[8][4], T (*Qs)[BM][HEAD_DIM / 2], int warp_row_offset
 }
 
 template <const int BN, const int HEAD_DIM, typename T>
-__device__ __forceinline__ void
-ldmatrix_Ks(uint32_t reg_k[8][2], T (*Ks)[BN][HEAD_DIM / 2], int warp_row_offset, int lane_id, int k_offset) {}
+__device__ __forceinline__ void ldmatrix_Ks(uint32_t reg_k[8][2], T (*Ks)[BN][HEAD_DIM / 2], int lane_id, int k_step) {
+    int chunk = (k_step >= 4) ? 1 : 0;
+    int local_k_row = (k_step % 4) * 16;
+
+#pragma unroll
+    for (int n_step = 0; n_step < 8; ++n_step) {
+        int k_row_in_smem = n_step * 8 + (lane_id % 8);
+        int k_col_in_smem = local_k_row + ((lane_id % 16) / 8) * 8;
+
+        uint32_t smem_addr_k = static_cast<uint32_t>(
+            __cvta_generic_to_shared(&Ks[chunk][k_row_in_smem][SWIZZLE_128B_TMA(k_row_in_smem, k_col_in_smem)]));
+
+        LDMATRIX_X2(reg_k[n_step][0], reg_k[n_step][1], smem_addr_k);
+    }
+}
 
 template <const int BN, const int HEAD_DIM, typename T>
-__device__ __forceinline__ void
-ldmatrix_Vs(uint32_t reg_v[16][2], T (*Bs)[BN][HEAD_DIM / 2], int warp_row_offset, int lane_id, int k_offset) {}
+__device__ __forceinline__ void ldmatrix_Vs(uint32_t reg_v[16][2], T (*Vs)[BN][HEAD_DIM / 2], int lane_id, int k_step) {
+#pragma unroll
+    for (int n_step = 0; n_step < 16; ++n_step) {
+        int chunk = (n_step >= 8) ? 1 : 0;
+        int local_n = (n_step % 8) * 8;
+        int v_row = k_step * 16 + (lane_id % 16);
+
+        uint32_t smem_addr_v =
+            static_cast<uint32_t>(__cvta_generic_to_shared(&Vs[chunk][v_row][SWIZZLE_128B_TMA(v_row, local_n)]));
+
+        LDMATRIX_X2_TRANS(reg_v[n_step][0], reg_v[n_step][1], smem_addr_v);
+    }
+}
 
 template <typename T>
 __device__ __forceinline__ void mma_compute(float (*acc)[4], uint32_t (*reg_a)[4], uint32_t (*reg_b)[2], int step) {
@@ -292,19 +316,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 #pragma unroll
         for (int k_step = 0; k_step < 8; ++k_step) {
             uint32_t reg_k[8][2];
-            int chunk = (k_step >= 4) ? 1 : 0;
-            int local_k_row = (k_step % 4) * 16;
-
-#pragma unroll
-            for (int n_step = 0; n_step < 8; ++n_step) {
-                int k_row_in_smem = n_step * 8 + (lane_id % 8);
-                int k_col_in_smem = local_k_row + ((lane_id % 16) / 8) * 8;
-
-                uint32_t smem_addr_k = static_cast<uint32_t>(__cvta_generic_to_shared(
-                    &Ks[chunk][k_row_in_smem][SWIZZLE_128B_TMA(k_row_in_smem, k_col_in_smem)]));
-
-                LDMATRIX_X2(reg_k[n_step][0], reg_k[n_step][1], smem_addr_k);
-            }
+            ldmatrix_Ks<BN, HEAD_DIM>(reg_k, Ks, lane_id, k_step);
 
 #pragma unroll
             for (int n_step = 0; n_step < 8; ++n_step) {
@@ -410,16 +422,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
             LDMATRIX_X4(reg_p[0], reg_p[1], reg_p[2], reg_p[3], smem_addr_p);
 
             uint32_t reg_v[16][2];
-#pragma unroll
-            for (int n_step = 0; n_step < 16; ++n_step) {
-                int chunk = (n_step >= 8) ? 1 : 0;
-                int local_n = (n_step % 8) * 8;
-                // V is trans: row is k_step*16 + lane_id%16
-                int v_row = k_step * 16 + (lane_id % 16);
-                uint32_t smem_addr_v = static_cast<uint32_t>(
-                    __cvta_generic_to_shared(&Vs[chunk][v_row][SWIZZLE_128B_TMA(v_row, local_n)]));
-                LDMATRIX_X2_TRANS(reg_v[n_step][0], reg_v[n_step][1], smem_addr_v);
-            }
+            ldmatrix_Vs<BN, HEAD_DIM>(reg_v, Vs, lane_id, k_step);
 
 #pragma unroll
             for (int n_step = 0; n_step < 16; ++n_step) {
