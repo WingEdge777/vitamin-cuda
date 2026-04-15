@@ -200,15 +200,17 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
 
     int row_0 = warp_row_offset + (lane_id / 4);
     int row_1 = row_0 + 8;
+    float inv_d0 = __frcp_rn(d_i[0]);
+    float inv_d1 = __frcp_rn(d_i[1]);
 
 #pragma unroll
     for (int n_step = 0; n_step < 16; ++n_step) {
         int col_base = n_step * 8 + (lane_id % 4) * 2;
 
-        acc_o[n_step][0] /= d_i[0];
-        acc_o[n_step][1] /= d_i[0];
-        acc_o[n_step][2] /= d_i[1];
-        acc_o[n_step][3] /= d_i[1];
+        acc_o[n_step][0] *= inv_d0;
+        acc_o[n_step][1] *= inv_d0;
+        acc_o[n_step][2] *= inv_d1;
+        acc_o[n_step][3] *= inv_d1;
 
         BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][0]));
         BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][2]));
@@ -303,6 +305,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 
     const int k_end = min(kv_len, q_start_idx + BM); // Causal 优化边界, 上三角全0不用看
     int phase_kv = 0;
+    const float scale_log2 = scale * 1.44269504f; // scale*log2(e)
 
     // 6. kv loop
     for (int n = 0; n < k_end; n += BN) {
@@ -357,13 +360,13 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
             m_curr[0] = fmaxf(m_curr[0], __shfl_xor_sync(0xffffffff, m_curr[0], i));
             m_curr[1] = fmaxf(m_curr[1], __shfl_xor_sync(0xffffffff, m_curr[1], i));
         }
-        m_curr[0] = (m_curr[0] == -FLT_MAX) ? -FLT_MAX : m_curr[0] * scale;
-        m_curr[1] = (m_curr[1] == -FLT_MAX) ? -FLT_MAX : m_curr[1] * scale;
+        m_curr[0] = (m_curr[0] == -FLT_MAX) ? -FLT_MAX : m_curr[0] * scale_log2;
+        m_curr[1] = (m_curr[1] == -FLT_MAX) ? -FLT_MAX : m_curr[1] * scale_log2;
 
         m_i[0] = fmaxf(m_prev[0], m_curr[0]);
         m_i[1] = fmaxf(m_prev[1], m_curr[1]);
 
-        float exp_mprev_mnew[2] = {expf(m_prev[0] - m_i[0]), expf(m_prev[1] - m_i[1])};
+        float exp_mprev_mnew[2] = {exp2f(m_prev[0] - m_i[0]), exp2f(m_prev[1] - m_i[1])};
 
 #pragma unroll
         for (int i = 0; i < 16; ++i) {
@@ -374,13 +377,15 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         }
 
         __syncthreads();
-
+        // 6.4 acc_s 写入 Ps
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
 
-            float2 e0 = {expf(fmaf(acc_s[n_step][0], scale, -m_i[0])), expf(fmaf(acc_s[n_step][1], scale, -m_i[0]))};
-            float2 e1 = {expf(fmaf(acc_s[n_step][2], scale, -m_i[1])), expf(fmaf(acc_s[n_step][3], scale, -m_i[1]))};
+            float2 e0 = {exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0])),
+                         exp2f(fmaf(acc_s[n_step][1], scale_log2, -m_i[0]))};
+            float2 e1 = {exp2f(fmaf(acc_s[n_step][2], scale_log2, -m_i[1])),
+                         exp2f(fmaf(acc_s[n_step][3], scale_log2, -m_i[1]))};
 
             local_d[0] += e0.x + e0.y;
             local_d[1] += e1.x + e1.y;
