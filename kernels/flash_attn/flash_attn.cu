@@ -259,8 +259,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     // 2. 坐标解析
     const int tid = threadIdx.x;
     const int q_tile_idx = blockIdx.x;
-    const int head_id = blockIdx.y;
-    const int batch_id = blockIdx.z;
+    const int batch_id = blockIdx.y;
+    const int head_id = blockIdx.z;
 
     const int group_size = q_head / kv_head;
     const int kv_head_id = head_id / group_size;
