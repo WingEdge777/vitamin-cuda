@@ -331,20 +331,15 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         // --- 6.3 Online Softmax (Max & Correction) ---
         int row_0 = warp_row_offset + (lane_id / 4);
         int row_1 = row_0 + 8;
-        bool need_causal_mask = (n + BN > q_start_idx);
 
         float m_prev[2] = {m_i[0], m_i[1]};
         float m_curr[2] = {-FLT_MAX, -FLT_MAX};
         float local_d[2] = {0.0f, 0.0f};
 
+        bool need_causal_mask = (n + BN > q_start_idx);
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
-
-            acc_s[n_step][0] *= scale;
-            acc_s[n_step][1] *= scale;
-            acc_s[n_step][2] *= scale;
-            acc_s[n_step][3] *= scale;
 
             if (need_causal_mask) {
                 acc_s[n_step][0] = (q_start_idx + row_0 >= n + col_base) ? acc_s[n_step][0] : -FLT_MAX;
@@ -362,13 +357,13 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
             m_curr[0] = fmaxf(m_curr[0], __shfl_xor_sync(0xffffffff, m_curr[0], i));
             m_curr[1] = fmaxf(m_curr[1], __shfl_xor_sync(0xffffffff, m_curr[1], i));
         }
+        m_curr[0] = (m_curr[0] == -FLT_MAX) ? -FLT_MAX : m_curr[0] * scale;
+        m_curr[1] = (m_curr[1] == -FLT_MAX) ? -FLT_MAX : m_curr[1] * scale;
 
         m_i[0] = fmaxf(m_prev[0], m_curr[0]);
         m_i[1] = fmaxf(m_prev[1], m_curr[1]);
 
         float exp_mprev_mnew[2] = {expf(m_prev[0] - m_i[0]), expf(m_prev[1] - m_i[1])};
-        d_i[0] *= exp_mprev_mnew[0];
-        d_i[1] *= exp_mprev_mnew[1];
 
 #pragma unroll
         for (int i = 0; i < 16; ++i) {
@@ -384,8 +379,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
 
-            float2 e0 = {expf(acc_s[n_step][0] - m_i[0]), expf(acc_s[n_step][1] - m_i[0])};
-            float2 e1 = {expf(acc_s[n_step][2] - m_i[1]), expf(acc_s[n_step][3] - m_i[1])};
+            float2 e0 = {expf(fmaf(acc_s[n_step][0], scale, -m_i[0])), expf(fmaf(acc_s[n_step][1], scale, -m_i[0]))};
+            float2 e1 = {expf(fmaf(acc_s[n_step][2], scale, -m_i[1])), expf(fmaf(acc_s[n_step][3], scale, -m_i[1]))};
 
             local_d[0] += e0.x + e0.y;
             local_d[1] += e1.x + e1.y;
@@ -400,8 +395,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
             local_d[1] += __shfl_xor_sync(0xffffffff, local_d[1], i);
         }
 
-        d_i[0] += local_d[0];
-        d_i[1] += local_d[1];
+        d_i[0] = fmaf(d_i[0], exp_mprev_mnew[0], local_d[0]);
+        d_i[1] = fmaf(d_i[1], exp_mprev_mnew[1], local_d[1]);
 
         // 等待当前 Warp 把 Ps 全都写完，准备被下一步 O = P * V 读取 ===
         __syncthreads();
