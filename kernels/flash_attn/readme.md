@@ -19,18 +19,22 @@ python test.py
 ```yaml
 ####################################################################################################
 prefill, batch:  1, seq: 512, head: 32, dim: 128
-torch                                    mean time: 0.117051 ms, 18.35 tflops
-fmha_tma_128                             mean time: 0.101989 ms, speedup: 1.15, tflops: 21.06
+torch                                    mean time: 0.117084 ms, 18.34 tflops
+fmha_tma_128                             mean time: 0.101642 ms, speedup: 1.15, tflops: 21.13
 ####################################################################################################
 prefill, batch:  1, seq: 1024, head: 32, dim: 128
-torch                                    mean time: 0.410450 ms, 20.93 tflops
-fmha_tma_128                             mean time: 0.413180 ms, speedup: 0.99, tflops: 20.79
+torch                                    mean time: 0.386178 ms, 22.24 tflops
+fmha_tma_128                             mean time: 0.381567 ms, speedup: 1.01, tflops: 22.51
 ####################################################################################################
 prefill, batch:  1, seq: 2048, head: 32, dim: 128
-torch                                    mean time: 1.376297 ms, 24.97 tflops
-fmha_tma_128                             mean time: 1.377038 ms, speedup: 1.00, tflops: 24.95
+torch                                    mean time: 1.308728 ms, 26.25 tflops
+fmha_tma_128                             mean time: 1.304497 ms, speedup: 1.00, tflops: 26.34
 ####################################################################################################
 prefill, batch:  1, seq: 4096, head: 32, dim: 128
-torch                                    mean time: 5.215681 ms, 26.35 tflops
-fmha_tma_128                             mean time: 5.198346 ms, speedup: 1.00, tflops: 26.44
+torch                                    mean time: 4.823970 ms, 28.49 tflops
+fmha_tma_128                             mean time: 4.981584 ms, speedup: 0.97, tflops: 27.59
+####################################################################################################
+prefill, batch:  1, seq: 8192, head: 32, dim: 128
+torch                                    mean time: 18.516824 ms, 29.69 tflops
+fmha_tma_128                             mean time: 18.195139 ms, speedup: 1.02, tflops: 30.21
 ```

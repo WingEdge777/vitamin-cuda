@@ -198,6 +198,9 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] hgemm_tma_r_k_stages_64: TMA read + ldmatrix + mma: one block, 3 stages, 128x128x64, double buffer register
   - [x] hgemm_tma_r_k_stages_32: TMA read + ldmatrix + mma: two blocks, 3 stages, 128x128x32, double buffer register
   - [x] pytorch op bindings && diff check
+- [flash_attantion_sm120](./kernels/flash_attn/)
+  - [x] fmha: sigle buffer (BMxBN = 64x64, better for small seq_len size)
+  - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
 
