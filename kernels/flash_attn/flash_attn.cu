@@ -239,6 +239,22 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
     }
 }
 
+__device__ __forceinline__ void
+materialize_row_scale(float acc_o[16][4], float d_i[2], float row_scale[2], int row_idx) {
+    if (row_scale[row_idx] == 1.0f) {
+        return;
+    }
+
+    float scale = row_scale[row_idx];
+#pragma unroll
+    for (int i = 0; i < 16; ++i) {
+        acc_o[i][row_idx * 2 + 0] *= scale;
+        acc_o[i][row_idx * 2 + 1] *= scale;
+    }
+    d_i[row_idx] *= scale;
+    row_scale[row_idx] = 1.0f;
+}
+
 // tma copy implemett softmat(q x k.T)/scale * v
 template <const int BM = 64, const int BN = 64, const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 128, typename T>
 __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
@@ -304,10 +320,15 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     // m_i and d_i track max value and softmax denominator for each of the two rows per thread
     float m_i[2] = {-FLT_MAX, -FLT_MAX};
     float d_i[2] = {0.0f, 0.0f};
+    float row_scale[2] = {1.0f, 1.0f};
 
     const int k_end = min(kv_len, q_start_idx + BM); // Causal mask boundary, upper triangle is all zeros so skip
     int phase_kv = 0;
     const float scale_log2 = scale * 1.44269504f; // scale*log2(e)
+    // Ps is written out in BF16, so avoid letting the deferred renorm grow beyond
+    // roughly one BF16 mantissa's worth of amplification (2^7). Once row_scale
+    // drops below 2^-8, materialize it back into acc_o/d_i before quantizing Ps.
+    constexpr float lazy_scale_threshold = 0x1p-8f;
 
     // 6. kv loop
     for (int n = 0; n < k_end; n += BN) {
@@ -369,25 +390,34 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         m_i[1] = fmaxf(m_prev[1], m_curr[1]);
 
         float exp_mprev_mnew[2] = {exp2f(m_prev[0] - m_i[0]), exp2f(m_prev[1] - m_i[1])};
+        float alpha_0 = (m_prev[0] == -FLT_MAX) ? 1.0f : exp_mprev_mnew[0];
+        float alpha_1 = (m_prev[1] == -FLT_MAX) ? 1.0f : exp_mprev_mnew[1];
 
-#pragma unroll
-        for (int i = 0; i < 16; ++i) {
-            acc_o[i][0] *= exp_mprev_mnew[0];
-            acc_o[i][1] *= exp_mprev_mnew[0];
-            acc_o[i][2] *= exp_mprev_mnew[1];
-            acc_o[i][3] *= exp_mprev_mnew[1];
+        row_scale[0] *= alpha_0;
+        row_scale[1] *= alpha_1;
+
+        if (row_scale[0] < lazy_scale_threshold) {
+            materialize_row_scale(acc_o, d_i, row_scale, 0);
         }
+        if (row_scale[1] < lazy_scale_threshold) {
+            materialize_row_scale(acc_o, d_i, row_scale, 1);
+        }
+
+        float inv_row_scale_0 = __frcp_rn(row_scale[0]);
+        float inv_row_scale_1 = __frcp_rn(row_scale[1]);
 
         __syncthreads();
         // 6.4 write acc_s to Ps
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             int col_base = n_step * 8 + (lane_id % 4) * 2;
+            float e00 = exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0]));
+            float e01 = exp2f(fmaf(acc_s[n_step][1], scale_log2, -m_i[0]));
+            float e10 = exp2f(fmaf(acc_s[n_step][2], scale_log2, -m_i[1]));
+            float e11 = exp2f(fmaf(acc_s[n_step][3], scale_log2, -m_i[1]));
 
-            float2 e0 = {exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0])),
-                         exp2f(fmaf(acc_s[n_step][1], scale_log2, -m_i[0]))};
-            float2 e1 = {exp2f(fmaf(acc_s[n_step][2], scale_log2, -m_i[1])),
-                         exp2f(fmaf(acc_s[n_step][3], scale_log2, -m_i[1]))};
+            float2 e0 = {e00 * inv_row_scale_0, e01 * inv_row_scale_0};
+            float2 e1 = {e10 * inv_row_scale_1, e11 * inv_row_scale_1};
 
             local_d[0] += e0.x + e0.y;
             local_d[1] += e1.x + e1.y;
@@ -402,8 +432,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
             local_d[1] += __shfl_xor_sync(0xffffffff, local_d[1], i);
         }
 
-        d_i[0] = fmaf(d_i[0], exp_mprev_mnew[0], local_d[0]);
-        d_i[1] = fmaf(d_i[1], exp_mprev_mnew[1], local_d[1]);
+        d_i[0] += local_d[0];
+        d_i[1] += local_d[1];
 
         // wait for all warps to finish writing Ps before O = P * V reads it
         __syncthreads();
