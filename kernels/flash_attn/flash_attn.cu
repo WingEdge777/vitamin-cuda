@@ -169,13 +169,24 @@ __device__ __forceinline__ void ldmatrix_Vs(uint32_t reg_v[16][2], T (*Vs)[BN][H
     }
 }
 
-template <typename T>
-__device__ __forceinline__ void mma_compute(float (*acc)[4], uint32_t (*reg_a)[4], uint32_t (*reg_b)[2], int step) {
-
-    // MMA body: m16n8k16
+template <const int N_STEPS>
+__device__ __forceinline__ void mma_compute(float acc[N_STEPS][4], uint32_t reg_a[4], uint32_t reg_b[N_STEPS][2]) {
+#pragma unroll
+    for (int n_step = 0; n_step < N_STEPS; ++n_step) {
+        M16N8K16_BF16(acc[n_step][0],
+                      acc[n_step][1],
+                      acc[n_step][2],
+                      acc[n_step][3],
+                      reg_a[0],
+                      reg_a[1],
+                      reg_a[2],
+                      reg_a[3],
+                      reg_b[n_step][0],
+                      reg_b[n_step][1]);
+    }
 }
 
-template <const int BM, const int HEAD_DIM, typename T>
+template <const int BM, const int HEAD_DIM, const int THREADS_PER_BLOCK = 128, typename T>
 __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
                                                    float m_i[2],
                                                    float d_i[2],
@@ -211,7 +222,6 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
     const int row_stride = q_head * HEAD_DIM;
     const int block_base_idx = batch_id * (q_len * row_stride) + head_id * HEAD_DIM + q_start_idx * row_stride;
 
-    const int THREADS_PER_BLOCK = 128;
     const int TOTAL_CHUNKS = BM * CHUNKS_PER_ROW;
     const int ITERS = TOTAL_CHUNKS / THREADS_PER_BLOCK;
     const int tid = threadIdx.x;
@@ -230,7 +240,7 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
 }
 
 // tma copy implemett softmat(q x k.T)/scale * v
-template <const int BM = 64, const int BN = 64, const int HEAD_DIM = 128, typename T>
+template <const int BM = 64, const int BN = 64, const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 128, typename T>
 __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
                                 const __grid_constant__ CUtensorMap tma_k,
                                 const __grid_constant__ CUtensorMap tma_v,
@@ -317,20 +327,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         for (int k_step = 0; k_step < 8; ++k_step) {
             uint32_t reg_k[8][2];
             ldmatrix_Ks<BN, HEAD_DIM>(reg_k, Ks, lane_id, k_step);
-
-#pragma unroll
-            for (int n_step = 0; n_step < 8; ++n_step) {
-                M16N8K16_BF16(acc_s[n_step][0],
-                              acc_s[n_step][1],
-                              acc_s[n_step][2],
-                              acc_s[n_step][3],
-                              reg_q[k_step][0],
-                              reg_q[k_step][1],
-                              reg_q[k_step][2],
-                              reg_q[k_step][3],
-                              reg_k[n_step][0],
-                              reg_k[n_step][1]);
-            }
+            mma_compute<8>(acc_s, reg_q[k_step], reg_k);
         }
 
         // --- 6.3 Online Softmax (Max & Correction) ---
@@ -408,7 +405,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         d_i[0] += local_d[0];
         d_i[1] += local_d[1];
 
-        // === 死锁 2：等待当前 Warp 把 Ps 全都写完，准备被下一步 O = P * V 读取 ===
+        // 等待当前 Warp 把 Ps 全都写完，准备被下一步 O = P * V 读取 ===
         __syncthreads();
 
         // --- 6.5 计算 O = P * V ---
@@ -423,26 +420,13 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 
             uint32_t reg_v[16][2];
             ldmatrix_Vs<BN, HEAD_DIM>(reg_v, Vs, lane_id, k_step);
-
-#pragma unroll
-            for (int n_step = 0; n_step < 16; ++n_step) {
-                M16N8K16_BF16(acc_o[n_step][0],
-                              acc_o[n_step][1],
-                              acc_o[n_step][2],
-                              acc_o[n_step][3],
-                              reg_p[0],
-                              reg_p[1],
-                              reg_p[2],
-                              reg_p[3],
-                              reg_v[n_step][0],
-                              reg_v[n_step][1]);
-            }
+            mma_compute<16>(acc_o, reg_p, reg_v);
         }
 
         __syncthreads();
     }
 
-    epilogue_writeback<BM, HEAD_DIM>(
+    epilogue_writeback<BM, HEAD_DIM, THREADS_PER_BLOCK>(
         acc_o, m_i, d_i, Os, o, warp_row_offset, lane_id, q_start_idx, q_len, q_head, batch_id, head_id);
 }
 
@@ -565,22 +549,24 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                                                                                        \
         /* q_seq 放在x维上， 复用L2 cache的kv tile */                                                                  \
         const dim3 blocks_per_grid((q_len + BM - 1) / BM, batch_size, q_head);                                         \
-        const int threads_per_block = 128;                                                                             \
+        const int THREADS_PER_BLOCK = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         const int smem_size = (BM * HEAD_DIM + BN * HEAD_DIM * 2) * sizeof(__nv_bfloat16) + sizeof(mbarrier_t) * 2;    \
-        cudaFuncSetAttribute(                                                                                          \
-            name##_kernel<BM, BN, HEAD_DIM, __nv_bfloat16>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);   \
+        cudaFuncSetAttribute(name##_kernel<BM, BN, HEAD_DIM, THREADS_PER_BLOCK, __nv_bfloat16>,                        \
+                             cudaFuncAttributeMaxDynamicSharedMemorySize,                                              \
+                             smem_size);                                                                               \
         /* launch kernel */                                                                                            \
-        name##_kernel<BM, BN, HEAD_DIM, __nv_bfloat16><<<blocks_per_grid, threads_per_block, smem_size, stream>>>(     \
-            tma_q,                                                                                                     \
-            tma_k,                                                                                                     \
-            tma_v,                                                                                                     \
-            reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                                                           \
-            q_len,                                                                                                     \
-            kv_len,                                                                                                    \
-            q_head,                                                                                                    \
-            kv_head,                                                                                                   \
-            scale);                                                                                                    \
+        name##_kernel<BM, BN, HEAD_DIM, THREADS_PER_BLOCK, __nv_bfloat16>                                              \
+            <<<blocks_per_grid, THREADS_PER_BLOCK, smem_size, stream>>>(                                               \
+                tma_q,                                                                                                 \
+                tma_k,                                                                                                 \
+                tma_v,                                                                                                 \
+                reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                                                       \
+                q_len,                                                                                                 \
+                kv_len,                                                                                                \
+                q_head,                                                                                                \
+                kv_head,                                                                                               \
+                scale);                                                                                                \
     }
 
 binding_tiled_tma_func_gen(fmha_tma, 128);
