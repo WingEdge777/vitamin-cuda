@@ -121,8 +121,6 @@ __device__ __forceinline__ void cp_async_bulk_tensor_4d(
                  : "memory");
 }
 
-const int WARP_SIZE = 32;
-
 template <const int BM, const int HEAD_DIM, typename T>
 __device__ __forceinline__ void
 ldmatrix_Qs(uint32_t reg_q[8][4], T (*Qs)[BM][HEAD_DIM / 2], int warp_row_offset, int lane_id) {
@@ -169,20 +167,20 @@ __device__ __forceinline__ void ldmatrix_Vs(uint32_t reg_v[16][2], T (*Vs)[BN][H
     }
 }
 
-template <const int N_STEPS>
-__device__ __forceinline__ void mma_compute(float acc[N_STEPS][4], uint32_t reg_a[4], uint32_t reg_b[N_STEPS][2]) {
+template <const int STEPS>
+__device__ __forceinline__ void mma_compute(float acc[STEPS][4], uint32_t reg_a[4], uint32_t reg_b[STEPS][2]) {
 #pragma unroll
-    for (int n_step = 0; n_step < N_STEPS; ++n_step) {
-        M16N8K16_BF16(acc[n_step][0],
-                      acc[n_step][1],
-                      acc[n_step][2],
-                      acc[n_step][3],
+    for (int step = 0; step < STEPS; ++step) {
+        M16N8K16_BF16(acc[step][0],
+                      acc[step][1],
+                      acc[step][2],
+                      acc[step][3],
                       reg_a[0],
                       reg_a[1],
                       reg_a[2],
                       reg_a[3],
-                      reg_b[n_step][0],
-                      reg_b[n_step][1]);
+                      reg_b[step][0],
+                      reg_b[step][1]);
     }
 }
 
