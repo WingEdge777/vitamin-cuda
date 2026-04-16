@@ -361,6 +361,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         float m_prev[2] = {m_i[0], m_i[1]};
         float m_curr[2] = {-FLT_MAX, -FLT_MAX};
         float local_d[2] = {0.0f, 0.0f};
+        float2 p_row0[8];
+        float2 p_row1[8];
 
         bool need_causal_mask = (n + BN > q_start_idx);
 #pragma unroll
@@ -410,20 +412,28 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         // 6.4 write acc_s to Ps
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
-            int col_base = n_step * 8 + (lane_id % 4) * 2;
             float e00 = exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0]));
             float e01 = exp2f(fmaf(acc_s[n_step][1], scale_log2, -m_i[0]));
             float e10 = exp2f(fmaf(acc_s[n_step][2], scale_log2, -m_i[1]));
             float e11 = exp2f(fmaf(acc_s[n_step][3], scale_log2, -m_i[1]));
 
-            float2 e0 = {e00 * inv_row_scale_0, e01 * inv_row_scale_0};
-            float2 e1 = {e10 * inv_row_scale_1, e11 * inv_row_scale_1};
+            p_row0[n_step] = {e00 * inv_row_scale_0, e01 * inv_row_scale_0};
+            p_row1[n_step] = {e10 * inv_row_scale_1, e11 * inv_row_scale_1};
 
-            local_d[0] += e0.x + e0.y;
-            local_d[1] += e1.x + e1.y;
+            local_d[0] += p_row0[n_step].x + p_row0[n_step].y;
+            local_d[1] += p_row1[n_step].x + p_row1[n_step].y;
+        }
 
-            BFLOAT2(Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(e0);
-            BFLOAT2(Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(e1);
+#pragma unroll
+        for (int n_step = 0; n_step < 8; ++n_step) {
+            int col_base = n_step * 8 + (lane_id % 4) * 2;
+            BFLOAT2(Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(p_row0[n_step]);
+        }
+
+#pragma unroll
+        for (int n_step = 0; n_step < 8; ++n_step) {
+            int col_base = n_step * 8 + (lane_id % 4) * 2;
+            BFLOAT2(Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(p_row1[n_step]);
         }
 
 #pragma unroll
