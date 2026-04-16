@@ -112,13 +112,14 @@ def test_all():
         for seq in [512, 1024, 2048, 4096, 8192]:
             dim = 128
             head = 32
+            kv_head = 32
             print("#" * 100)
             print(f"prefill, batch:  {bs}, seq: {seq}, head: {head}, dim: {dim}")
             q = torch.randn(bs, seq, head, dim, device="cuda", dtype=torch.bfloat16)
-            k = torch.randn(bs, seq, head, dim, device="cuda", dtype=torch.bfloat16)
-            v = torch.randn(bs, seq, head, dim, device="cuda", dtype=torch.bfloat16)
+            k = torch.randn(bs, seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
+            v = torch.randn(bs, seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
             o = benchmark(
-                partial(F.scaled_dot_product_attention, is_causal=True), q, k, v, prefix="torch"
+                partial(F.scaled_dot_product_attention, is_causal=True, enable_gqa=head!=kv_head), q, k, v, prefix="torch"
             )
 
             o_my = torch.zeros_like(o)
