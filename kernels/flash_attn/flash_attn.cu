@@ -253,7 +253,7 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
 }
 
 __device__ __forceinline__ void
-materialize_row_scale(float acc_o[16][4], float d_i[2], float row_scale[2], int row_idx) {
+rescale_with_row_scale(float acc_o[16][4], float d_i[2], float row_scale[2], int row_idx) {
     if (row_scale[row_idx] == 1.0f) {
         return;
     }
@@ -268,7 +268,7 @@ materialize_row_scale(float acc_o[16][4], float d_i[2], float row_scale[2], int 
     row_scale[row_idx] = 1.0f;
 }
 
-// tma copy implemett softmat(q x k.T)/scale * v
+// tma copy implemett softmat(q x k.T/scale) * v
 template <const int BM = 64, const int BN = 64, const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 128, typename T>
 __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
                                 const __grid_constant__ CUtensorMap tma_k,
@@ -415,10 +415,10 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         row_scale[1] *= alpha_1;
 
         if (row_scale[0] < lazy_scale_threshold) {
-            materialize_row_scale(acc_o, d_i, row_scale, 0);
+            rescale_with_row_scale(acc_o, d_i, row_scale, 0);
         }
         if (row_scale[1] < lazy_scale_threshold) {
-            materialize_row_scale(acc_o, d_i, row_scale, 1);
+            rescale_with_row_scale(acc_o, d_i, row_scale, 1);
         }
 
         float inv_row_scale_0 = __frcp_rn(row_scale[0]);
