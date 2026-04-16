@@ -12,7 +12,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 
 ## News
 
-- **[2026.04.16]** [flash_attn](./kernels/flash_attn/) — Outperforms torch.sdpa(FA2) in small seq_len cases via `TMA saving register`.
+- **[2026.04.16]** [flash_attn](./kernels/flash_attn/) — Outperforms torch.sdpa(FA2) in all cases with `TMA` which saving an amount of registers!
 - **[2026.04.04]** [hgemm_120](./kernels/hgemm_sm120/) — FP16/BF16 Tensor-Core kernel pushing the absolute compute limit of the GPU. Outperforms cuBLAS via `TMA copy + 3-stage pipeline + double register buffer + swizzle + ldmatrix + mma`.
 - **[2026.03.18]** [hgemm](./kernels/hgemm/) — FP16/BF16 Tensor-Core kernel outperforming cuBLAS via `cp.async + double SMEM buffer + swizzle + ldmatrix + mma`.
 - **[2026.03.10]** [sgemm_tf32](./kernels/sgemm/) — TF32 Tensor-Core kernel outperforming cuBLAS via `cp.async + double SMEM buffer + swizzle + ldmatrix + mma`.

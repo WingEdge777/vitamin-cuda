@@ -136,12 +136,13 @@ ldmatrix_Qs(uint32_t reg_q[8][4], T (*Qs)[BM][HEAD_DIM / 2], int warp_row_offset
 }
 
 template <const int BN, const int HEAD_DIM, typename T>
-__device__ __forceinline__ void ldmatrix_Ks(uint32_t reg_k[8][2], T (*Ks)[BN][HEAD_DIM / 2], int lane_id, int k_step) {
+__device__ __forceinline__ void
+ldmatrix_Ks(uint32_t reg_k[BN / 8][2], T (*Ks)[BN][HEAD_DIM / 2], int lane_id, int k_step) {
     int chunk = (k_step >= 4) ? 1 : 0;
     int local_k_row = (k_step % 4) * 16;
 
 #pragma unroll
-    for (int n_step = 0; n_step < 8; ++n_step) {
+    for (int n_step = 0; n_step < BN / 8; ++n_step) {
         int k_row_in_smem = n_step * 8 + (lane_id % 8);
         int k_col_in_smem = local_k_row + ((lane_id % 16) / 8) * 8;
 
@@ -278,7 +279,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
                                 int q_head,
                                 int kv_head,
                                 float scale) {
-    // 1. 48KB smem + 2 mbarriers
+    // 1. 48KB smem + 3 mbarriers
     extern __shared__ __align__(128) uint8_t smem_buf[];
     T(*Qs)[BM][HEAD_DIM / 2] = reinterpret_cast<T(*)[BM][HEAD_DIM / 2]>(smem_buf); // BM*HEAD_DIM
     T(*Ks)
@@ -292,8 +293,9 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 
     // mbar array at end of SMEM (8-byte aligned;
     mbarrier_t *mbar_q = reinterpret_cast<mbarrier_t *>(smem_buf + (BM + BN * 2) * HEAD_DIM * sizeof(T));
-    mbarrier_t *mbar_kv =
+    mbarrier_t *mbar_k =
         reinterpret_cast<mbarrier_t *>(smem_buf + (BM + BN * 2) * HEAD_DIM * sizeof(T) + sizeof(mbarrier_t));
+    mbarrier_t *mbar_v = mbar_k + 1;
 
     // 2. coordinates
     const int tid = threadIdx.x;
@@ -307,7 +309,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
 
     if (tid == 0) {
         mbarrier_init(mbar_q, 1);
-        mbarrier_init(mbar_kv, 1);
+        mbarrier_init(mbar_k, 1);
+        mbarrier_init(mbar_v, 1);
 
         mbarrier_expect_tx(mbar_q, BM * HEAD_DIM * sizeof(T));
         // 2 TMA instructions to load the 128-dim split into left and right halves
@@ -334,26 +337,28 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     float row_scale[2] = {1.0f, 1.0f};
 
     const int k_end = min(kv_len, q_start_idx + BM); // Causal mask boundary, upper triangle is all zeros so skip
-    int phase_kv = 0;
+    int phase_k = 0;
+    int phase_v = 0;
     const float scale_log2 = scale * 1.44269504f; // scale*log2(e)
-    // Ps is written out in BF16, so avoid letting the deferred renorm grow beyond
-    // roughly one BF16 mantissa's worth of amplification (2^7). Once row_scale
-    // drops below 2^-8, materialize it back into acc_o/d_i before quantizing Ps.
+    // P is written out in BF16, so avoid letting the deferred renorm grow beyond
+    // roughly one BF16 mantissa's worth of amplification (2^8). Once row_scale
+    // drops below 2^-8, materialize it back into acc_o/d_i before quantizing P.
     constexpr float lazy_scale_threshold = 0x1p-8f;
 
     // 6. kv loop
     for (int n = 0; n < k_end; n += BN) {
         // --- 6.1 TMA async load KV ---
         if (tid == 0) {
-            mbarrier_expect_tx(mbar_kv, 2 * BN * HEAD_DIM * sizeof(T));
-            cp_async_bulk_tensor_4d(mbar_kv, &tma_k, Ks[0], 0, kv_head_id, n, batch_id);
-            cp_async_bulk_tensor_4d(mbar_kv, &tma_k, Ks[1], 64, kv_head_id, n, batch_id);
-            cp_async_bulk_tensor_4d(mbar_kv, &tma_v, Vs[0], 0, kv_head_id, n, batch_id);
-            cp_async_bulk_tensor_4d(mbar_kv, &tma_v, Vs[1], 64, kv_head_id, n, batch_id);
+            mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
+            mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
+            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks[0], 0, kv_head_id, n, batch_id);
+            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks[1], 64, kv_head_id, n, batch_id);
+            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs[0], 0, kv_head_id, n, batch_id);
+            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs[1], 64, kv_head_id, n, batch_id);
         }
         __syncthreads();
-        mbarrier_wait(mbar_kv, phase_kv);
-        phase_kv ^= 1; // flip phase
+        mbarrier_wait(mbar_k, phase_k);
+        phase_k ^= 1; // flip phase
 
         // --- 6.2 Compute S = Q * K^T ---
         float acc_s[8][4] = {0.f};
@@ -444,6 +449,8 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         d_i[1] += local_d[1];
 
         // --- 6.5 O = P * V ---
+        mbarrier_wait(mbar_v, phase_v);
+        phase_v ^= 1;
 #pragma unroll
         for (int k_step = 0; k_step < 4; ++k_step) {
             uint32_t reg_p[4];
@@ -585,7 +592,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         const dim3 blocks_per_grid((q_len + BM - 1) / BM, batch_size, q_head);                                         \
         const int THREADS_PER_BLOCK = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-        const int smem_size = (BM * HEAD_DIM + BN * HEAD_DIM * 2) * sizeof(__nv_bfloat16) + sizeof(mbarrier_t) * 2;    \
+        const int smem_size = (BM * HEAD_DIM + BN * HEAD_DIM * 2) * sizeof(__nv_bfloat16) + sizeof(mbarrier_t) * 3;    \
         cudaFuncSetAttribute(name##_kernel<BM, BN, HEAD_DIM, THREADS_PER_BLOCK, __nv_bfloat16>,                        \
                              cudaFuncAttributeMaxDynamicSharedMemorySize,                                              \
                              smem_size);                                                                               \
