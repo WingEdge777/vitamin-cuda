@@ -167,6 +167,15 @@ __device__ __forceinline__ void ldmatrix_Vs(uint32_t reg_v[16][2], T (*Vs)[BN][H
     }
 }
 
+__device__ __forceinline__ uint32_t pack_bfloat2(float2 x) {
+    union {
+        __nv_bfloat162 bf16x2;
+        uint32_t u32;
+    } packed;
+    packed.bf16x2 = __float22bfloat162_rn(x);
+    return packed.u32;
+}
+
 template <const int STEPS>
 __device__ __forceinline__ void mma_compute(float acc[STEPS][4], uint32_t reg_a[4], uint32_t reg_b[STEPS][2]) {
 #pragma unroll
@@ -206,13 +215,16 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
 #pragma unroll
     for (int n_step = 0; n_step < 16; ++n_step) {
         int col_base = n_step * 8 + (lane_id % 4) * 2;
-
         acc_o[n_step][0] *= inv_d0;
         acc_o[n_step][1] *= inv_d0;
+        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][0]));
+    }
+
+#pragma unroll
+    for (int n_step = 0; n_step < 16; ++n_step) {
+        int col_base = n_step * 8 + (lane_id % 4) * 2;
         acc_o[n_step][2] *= inv_d1;
         acc_o[n_step][3] *= inv_d1;
-
-        BFLOAT2(Os[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][0]));
         BFLOAT2(Os[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(FLOAT2(acc_o[n_step][2]));
     }
 
@@ -274,7 +286,6 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     T(*Vs)
     [BN][HEAD_DIM / 2] =
         reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + (BM + BN) * HEAD_DIM * sizeof(T)); // BN*HEAD_DIM
-    T(*Ps)[BN] = reinterpret_cast<T(*)[BN]>(smem_buf + BM * HEAD_DIM * sizeof(T)); // 8KB, reuses first 8KB of Ks
     T(*Os)
     [HEAD_DIM] =
         reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf); // 16KB, reused at the end for writing back to global memory
@@ -408,8 +419,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         float inv_row_scale_0 = __frcp_rn(row_scale[0]);
         float inv_row_scale_1 = __frcp_rn(row_scale[1]);
 
-        __syncthreads();
-        // 6.4 write acc_s to Ps
+        // 6.4 Normalize P in registers and accumulate local denominator
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
             float e00 = exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0]));
@@ -425,18 +435,6 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         }
 
 #pragma unroll
-        for (int n_step = 0; n_step < 8; ++n_step) {
-            int col_base = n_step * 8 + (lane_id % 4) * 2;
-            BFLOAT2(Ps[row_0][SWIZZLE_128B_TMA(row_0, col_base)]) = __float22bfloat162_rn(p_row0[n_step]);
-        }
-
-#pragma unroll
-        for (int n_step = 0; n_step < 8; ++n_step) {
-            int col_base = n_step * 8 + (lane_id % 4) * 2;
-            BFLOAT2(Ps[row_1][SWIZZLE_128B_TMA(row_1, col_base)]) = __float22bfloat162_rn(p_row1[n_step]);
-        }
-
-#pragma unroll
         for (int i = 1; i < 4; i *= 2) {
             local_d[0] += __shfl_xor_sync(0xffffffff, local_d[0], i);
             local_d[1] += __shfl_xor_sync(0xffffffff, local_d[1], i);
@@ -445,18 +443,14 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         d_i[0] += local_d[0];
         d_i[1] += local_d[1];
 
-        // wait for all warps to finish writing Ps before O = P * V reads it
-        __syncthreads();
-
         // --- 6.5 O = P * V ---
 #pragma unroll
         for (int k_step = 0; k_step < 4; ++k_step) {
             uint32_t reg_p[4];
-            int local_k_col = k_step * 16;
-            int p_row = warp_row_offset + (lane_id % 16);
-            uint32_t smem_addr_p = static_cast<uint32_t>(
-                __cvta_generic_to_shared(&Ps[p_row][SWIZZLE_128B_TMA(p_row, local_k_col + (lane_id / 16) * 8)]));
-            LDMATRIX_X4(reg_p[0], reg_p[1], reg_p[2], reg_p[3], smem_addr_p);
+            reg_p[0] = pack_bfloat2(p_row0[k_step * 2 + 0]);
+            reg_p[1] = pack_bfloat2(p_row1[k_step * 2 + 0]);
+            reg_p[2] = pack_bfloat2(p_row0[k_step * 2 + 1]);
+            reg_p[3] = pack_bfloat2(p_row1[k_step * 2 + 1]);
 
             uint32_t reg_v[16][2];
             ldmatrix_Vs<BN, HEAD_DIM>(reg_v, Vs, lane_id, k_step);
