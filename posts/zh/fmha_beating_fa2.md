@@ -542,7 +542,7 @@ attention 可做的事情就太多了，水很深。
 - decode attention
   - prefill causal attention 是算力密集（拼 Tensor Core 和访存隐藏），而 decode 彻底变成了带宽瓶颈（GEMV 纯拼访存带宽）。从 mma 切换到如何极致压榨 L2 和 HBM 带宽，这是完全不同的优化哲学。
 - attention with kv cache block
-  - 这是 paged attention 核心，要想直接接入现有 LLM 推理结构，这种实现必不可少
+  - 这是 paged attention 核心，要想直接接入现有 LLM 推理框架，这种实现必不可少
 - fp8 混合精度与 KV 量化
   - 拥抱 sm120 的 fp8 特性，并探索 INT8/INT4 KV Cache 量化，进一步优化访存
 
