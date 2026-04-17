@@ -335,7 +335,7 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
     float d_i[2] = {0.0f, 0.0f};
     float row_scale[2] = {1.0f, 1.0f};
 
-    const int k_end = min(kv_len, q_start_idx + BM); // Causal mask boundary, upper triangle is all zeros so skip
+    const int k_end = min(kv_len, q_start_idx + BM); // causal mask boundary, upper triangle is all zeros so skip
     int phase_k = 0;
     int phase_v = 0;
     const float scale_log2 = scale * 1.44269504f; // scale*log2(e)
