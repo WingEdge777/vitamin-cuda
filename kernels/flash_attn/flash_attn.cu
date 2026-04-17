@@ -252,8 +252,7 @@ __device__ __forceinline__ void epilogue_writeback(float acc_o[16][4],
     }
 }
 
-__device__ __forceinline__ void
-rescale_with_row_scale(float acc_o[16][4], float d_i[2], float row_scale[2], int row_idx) {
+__device__ __forceinline__ void lazy_rescale(float acc_o[16][4], float d_i[2], float row_scale[2], int row_idx) {
     if (row_scale[row_idx] == 1.0f) {
         return;
     }
@@ -268,7 +267,7 @@ rescale_with_row_scale(float acc_o[16][4], float d_i[2], float row_scale[2], int
     row_scale[row_idx] = 1.0f;
 }
 
-// tma copy implemett softmat(q x k.T/scale) * v
+// tma copy implement softmax(q @ k.T*scale) @ v
 template <const int BM = 64, const int BN = 64, const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 128, typename T>
 __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
                                 const __grid_constant__ CUtensorMap tma_k,
@@ -415,10 +414,10 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         row_scale[1] *= alpha_1;
 
         if (row_scale[0] < lazy_scale_threshold) {
-            rescale_with_row_scale(acc_o, d_i, row_scale, 0);
+            lazy_rescale(acc_o, d_i, row_scale, 0);
         }
         if (row_scale[1] < lazy_scale_threshold) {
-            rescale_with_row_scale(acc_o, d_i, row_scale, 1);
+            lazy_rescale(acc_o, d_i, row_scale, 1);
         }
 
         float inv_row_scale_0 = __frcp_rn(row_scale[0]);
@@ -427,13 +426,13 @@ __global__ void fmha_tma_kernel(const __grid_constant__ CUtensorMap tma_q,
         // 6.4 Normalize P in registers and accumulate local denominator
 #pragma unroll
         for (int n_step = 0; n_step < 8; ++n_step) {
-            float e00 = exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0]));
-            float e01 = exp2f(fmaf(acc_s[n_step][1], scale_log2, -m_i[0]));
-            float e10 = exp2f(fmaf(acc_s[n_step][2], scale_log2, -m_i[1]));
-            float e11 = exp2f(fmaf(acc_s[n_step][3], scale_log2, -m_i[1]));
+            float e_0_0 = exp2f(fmaf(acc_s[n_step][0], scale_log2, -m_i[0]));
+            float e_0_1 = exp2f(fmaf(acc_s[n_step][1], scale_log2, -m_i[0]));
+            float e_1_0 = exp2f(fmaf(acc_s[n_step][2], scale_log2, -m_i[1]));
+            float e_1_1 = exp2f(fmaf(acc_s[n_step][3], scale_log2, -m_i[1]));
 
-            p_row0[n_step] = {e00 * inv_row_scale_0, e01 * inv_row_scale_0};
-            p_row1[n_step] = {e10 * inv_row_scale_1, e11 * inv_row_scale_1};
+            p_row0[n_step] = {e_0_0 * inv_row_scale_0, e_0_1 * inv_row_scale_0};
+            p_row1[n_step] = {e_1_0 * inv_row_scale_1, e_1_1 * inv_row_scale_1};
 
             local_d[0] += p_row0[n_step].x + p_row0[n_step].y;
             local_d[1] += p_row1[n_step].x + p_row1[n_step].y;
