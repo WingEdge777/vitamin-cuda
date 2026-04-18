@@ -7,6 +7,12 @@ flash attention on SM120 (Blackwell-class) targets.
 - [x] fmha: sigle buffer (BMxBN = 64x64, better for small seq_len)
 - [x] pytorch op bindings && diff check
 
+Here is a breakdown of the technical decisions under the hood:
+
+- BMxBN = 64x64 Tiling: Optimized for sequence chunks with head_dim=128.
+- Raw TMA via PTX: Splitting head_dim into two chunks (issuing two TMA copies for each tile).
+- Deferred Lazy Rescaling: Reduces overhead for online softmax.
+
 ## Run tests
 
 ```bash
