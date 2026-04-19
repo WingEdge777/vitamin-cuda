@@ -235,6 +235,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 | CUDA实战 | [[CUDA 优化实战] hgemm - 超越 cuBLAS：Tensor-core、cp.async、ldmatrix、mma](<https://zhuanlan.zhihu.com/p/2017717179840214041>) | @WingEdge777 | ⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] safe online softmax - 面试必问：任意 hidden_size、one/two pass、trade-off、split-k](https://zhuanlan.zhihu.com/p/2021584505874434002) | @WingEdge777 | ⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] hgemm sm120 - 100KB SMEM 中的“微雕”战争：Tensor-core、TMA、ldmatrix、mma](https://zhuanlan.zhihu.com/p/2023845339765981480) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] 纯手搓 flash attention (fmha) - sm120 : 超越 torch.sdpa(FA2)](https://zhuanlan.zhihu.com/p/2028452875341144849) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 
 ## References
 
