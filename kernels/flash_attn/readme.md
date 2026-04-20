@@ -4,7 +4,7 @@
 
 flash attention on SM120 (Blackwell-class) targets.
 
-- [x] fmha: sigle buffer (BMxBN = 64x64, better for small seq_len)
+- [x] fmha_tma_128: sigle buffer (BMxBN = 64x64, better for small seq_len)
 - [x] pytorch op bindings && diff check
 
 Here is a breakdown of the technical decisions under the hood:
