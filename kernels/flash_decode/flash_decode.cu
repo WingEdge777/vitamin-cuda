@@ -99,9 +99,9 @@ __global__ void flash_decode_tma_kernel(T *q,
     // 2. coordinates
     const int tid = threadIdx.x;
     const int chunk_id = blockIdx.x;
-    const int q_head_base = blockIdx.y * 4; // one block 4 q heads
+    const int q_head_id = blockIdx.y;
     const int group_size = q_head / kv_head;
-    const int kv_head_id = q_head_base / group_size;
+    const int kv_head_id = q_head_id / group_size;
 
     if (tid == 0) {
         mbarrier_init(&mbar_k, 1);
@@ -112,7 +112,6 @@ __global__ void flash_decode_tma_kernel(T *q,
     const int warp_id = tid / 32;
     const int lane_id = tid % 32;
     const int num_warps = THREADS_PER_BLOCK / 32;
-    const int q_head_id = q_head_base + warp_id;
 
     // 4. ldmatrix q
     pack64 qs{FLOAT2(q[q_head_id * HEAD_DIM + lane_id * 4])};
@@ -146,7 +145,7 @@ __global__ void flash_decode_tma_kernel(T *q,
         phase_k ^= 1; // flip phase
 
         // --- 6.2 Compute S = Q * K^T ---
-        float acc_s[4];
+        float acc_s[64];
 #pragma unroll
         for (int row = warp_id; row < BN; row += 4 * num_warps) {
             pack64 ks{FLOAT2(Ks[row * HEAD_DIM + lane_id * 4])};
@@ -158,7 +157,7 @@ __global__ void flash_decode_tma_kernel(T *q,
             }
 
 #pragma unroll
-            for (int offset = 16; offset > 0; offset /= 2) {
+            for (int offset = 16; offset > 0; offset >> 1) {
                 sum += __shfl_xor_sync(0xffffffff, sum, offset); // warp reduce
             }
             acc_s[row] = sum * scale_log2;
@@ -310,9 +309,6 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         uint64_t k_stride_h = k.stride(1) * elem_bytes;                                                                \
         uint64_t k_stride_s = k.stride(0) * elem_bytes;                                                                \
                                                                                                                        \
-        uint64_t v_stride_h = v.stride(1) * elem_bytes;                                                                \
-        uint64_t v_stride_s = v.stride(0) * elem_bytes;                                                                \
-                                                                                                                       \
         const int BN = 64;                                                                                             \
         const int num_sms = 26;                                                                                        \
         const int chunk_size = get_chunk_size(kv_head, kv_len, num_sms);                                               \
@@ -330,12 +326,12 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                                                 head_dim,                                              \
                                                                 kv_head,                                               \
                                                                 kv_len,                                                \
-                                                                v_stride_h,                                            \
-                                                                v_stride_s,                                            \
+                                                                k_stride_h,                                            \
+                                                                k_stride_s,                                            \
                                                                 head_dim,                                              \
                                                                 BN);                                                   \
                                                                                                                        \
-        const dim3 blocks_per_grid((kv_len + chunk_size - 1) / chunk_size, q_head / 4);                                \
+        const dim3 blocks_per_grid((kv_len + chunk_size - 1) / chunk_size, q_head);                                    \
         const int THREADS_PER_BLOCK = 128;                                                                             \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         auto options = torch::TensorOptions().dtype(torch::kFloat32).device(q.device());                               \
