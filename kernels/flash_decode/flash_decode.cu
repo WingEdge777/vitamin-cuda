@@ -8,6 +8,7 @@
 #include <cuda_fp8.h>
 
 #include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAException.h>
 #include <torch/extension.h>
 #include <torch/types.h>
 
@@ -38,23 +39,21 @@ __device__ __forceinline__ void mbarrier_arrive(mbarrier_t *mbar) {
     asm volatile("mbarrier.arrive.shared.b64 _, [%0];\n" ::"r"(static_cast<uint32_t>(__cvta_generic_to_shared(mbar))));
 }
 
-// Wait until the TMA copy completes
-__device__ __forceinline__ void mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
+// Wait until the TMA copy completes. Return false on timeout so caller can diagnose instead of hanging forever.
+__device__ __forceinline__ bool mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
-    // Large spin timeout (0x989680 == 10,000,000 cycles)
-    uint32_t ticks = 0x989680;
+    uint32_t ticks = 1000;
+    uint32_t done = 0;
 
     asm volatile("{\n\t"
                  ".reg .pred p; \n\t"
-                 "LAB_WAIT: \n\t"
-                 "mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1, %2; \n\t"
-                 "@p bra DONE; \n\t"
-                 "bra LAB_WAIT; \n\t"
-                 "DONE: \n\t"
+                 "mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2, %3; \n\t"
+                 "selp.b32 %0, 1, 0, p; \n\t"
                  "}\n"
-                 :
+                 : "=r"(done)
                  : "r"(smem_addr), "r"(phase), "r"(ticks)
                  : "memory");
+    return done != 0;
 }
 
 // CTA 3D TMA: global -> shared
@@ -141,14 +140,24 @@ __global__ void flash_decode_tma_kernel(T *q,
             cp_async_bulk_tensor_3d(&mbar_v, &tma_v, Vs, 0, kv_head_id, n);
         }
         __syncthreads();
-        mbarrier_wait(&mbar_k, phase_k);
+        if (!mbarrier_wait(&mbar_k, phase_k)) {
+            if (tid == 0) {
+                printf("flash_decode timeout waiting K: chunk=%d q_head=%d kv_head=%d n=%d phase=%d\n",
+                       chunk_id,
+                       q_head_id,
+                       kv_head_id,
+                       n,
+                       phase_k);
+            }
+            return;
+        }
         phase_k ^= 1; // flip phase
 
         // --- 6.2 Compute S = Q * K^T ---
         float acc_s[64];
 #pragma unroll
         for (int row = warp_id; row < BN; row += 4 * num_warps) {
-            pack64 ks{FLOAT2(Ks[row * HEAD_DIM + lane_id * 4])};
+            pack64 ks{FLOAT2(Ks[row][lane_id * 4])};
 
             float sum = 0.0f;
 #pragma unroll
@@ -178,7 +187,17 @@ __global__ void flash_decode_tma_kernel(T *q,
         }
 
         // --- 6.4 O = P * V ---
-        mbarrier_wait(&mbar_v, phase_v);
+        if (!mbarrier_wait(&mbar_v, phase_v)) {
+            if (tid == 0) {
+                printf("flash_decode timeout waiting V: chunk=%d q_head=%d kv_head=%d n=%d phase=%d\n",
+                       chunk_id,
+                       q_head_id,
+                       kv_head_id,
+                       n,
+                       phase_v);
+            }
+            return;
+        }
         phase_v ^= 1;
 #pragma unroll 4
         for (int row = 0; row < current_bn; ++row) {
@@ -245,15 +264,12 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         std::is_same_v<T, __half> ? CU_TENSOR_MAP_DATA_TYPE_FLOAT16 : CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
     CUtensorMapSwizzle swizzle = CU_TENSOR_MAP_SWIZZLE_NONE;
 
-    // TMA dimensions: from fastest (0) to slowest (3)
-    // Assuming memory layout [Batch, Seq, Head, Dim], Dim is fastest
+    // TMA dimensions: from fastest (0) to slowest (2)
     uint64_t globalDim[3] = {dim_d, dim_h, dim_s};
 
     // globalStrides are strides for dimensions 1, 2, must be in Bytes
     uint64_t globalStrides[2] = {stride_h, stride_s};
 
-    // boxDim is the size we load at once for each dimension
-    // For Head dimensions, we only load one at a time (hence 1)
     uint32_t boxDim[3] = {box_d, 1, box_s};
     uint32_t elementStrides[3] = {1, 1, 1};
 
@@ -346,6 +362,8 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
             case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512); break;                                                 \
             default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                                       \
         }                                                                                                              \
+        C10_CUDA_KERNEL_LAUNCH_CHECK();                                                                                \
+        /*TODO reduce*/                                                                                                \
     }
 
 binding_tiled_tma_func_gen(flash_decode_tma, 128);

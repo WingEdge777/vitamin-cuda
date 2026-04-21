@@ -3,7 +3,7 @@ import time
 from functools import partial
 from typing import Optional
 
-import flashinfer
+# import flashinfer
 import torch
 from torch.nn import functional as F
 from torch.utils.cpp_extension import load
