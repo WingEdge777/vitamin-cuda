@@ -42,32 +42,37 @@ __device__ __forceinline__ void mbarrier_arrive(mbarrier_t *mbar) {
 // Wait until the TMA copy completes. Return false on timeout so caller can diagnose instead of hanging forever.
 __device__ __forceinline__ bool mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
-    uint32_t ticks = 1000;
+    // Large spin timeout (0x989680 == 10,000,000 cycles)
+    uint32_t ticks = 10000000;
     uint32_t done = 0;
 
-    asm volatile("{\n\t"
-                 ".reg .pred p; \n\t"
-                 "mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2, %3; \n\t"
-                 "selp.b32 %0, 1, 0, p; \n\t"
-                 "}\n"
-                 : "=r"(done)
-                 : "r"(smem_addr), "r"(phase), "r"(ticks)
-                 : "memory");
-    return done != 0;
+    while (!done) {
+        asm volatile("{\n\t"
+                     ".reg .pred p; \n\t"
+                     "mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2, %3; \n\t"
+                     "selp.b32 %0, 1, 0, p; \n\t"
+                     "}\n"
+                     : "=r"(done)
+                     : "r"(smem_addr), "r"(phase), "r"(ticks)
+                     : "memory");
+    }
+
+    return true;
 }
 
-// CTA 3D TMA: global -> shared
-__device__ __forceinline__ void cp_async_bulk_tensor_3d(
-    mbarrier_t *mbar, const void *tmap, const void *smem_ptr, int32_t s_0, int32_t s_1, int32_t s_2) {
+// CTA 4D TMA: global -> shared
+__device__ __forceinline__ void cp_async_bulk_tensor_4d(
+    mbarrier_t *mbar, const void *tmap, const void *smem_ptr, int32_t s_0, int32_t s_1, int32_t s_2, int32_t s_3) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
     uint32_t mbar_addr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar));
 
-    asm volatile("cp.async.bulk.tensor.3d.shared::cta.global.mbarrier::complete_tx::bytes"
-                 " [%0], [%1, {%2, %3, %4}], [%5];\n" ::"r"(smem_addr),
+    asm volatile("cp.async.bulk.tensor.4d.shared::cta.global.mbarrier::complete_tx::bytes"
+                 " [%0], [%1, {%2, %3, %4, %5}], [%6];\n" ::"r"(smem_addr),
                  "l"(tmap),
                  "r"(s_0),
                  "r"(s_1),
                  "r"(s_2),
+                 "r"(s_3),
                  "r"(mbar_addr)
                  : "memory");
 }
@@ -88,12 +93,11 @@ __global__ void flash_decode_tma_kernel(T *q,
                                         int q_head,
                                         int kv_head,
                                         float scale) {
-    // 1. 32KB smem + 2 mbarriers
-    __align__(128) __shared__ T Ks[BN][HEAD_DIM];
-    __align__(128) __shared__ T Vs[BN][HEAD_DIM];
-
-    // mbar at end of SMEM (8-byte aligned;
-    __shared__ mbarrier_t mbar_k, mbar_v;
+    extern __shared__ __align__(128) uint8_t smem_buf[];
+    T(*Ks)[BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf);
+    T(*Vs)[BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + BN * HEAD_DIM * sizeof(T));
+    mbarrier_t *mbar_k = reinterpret_cast<mbarrier_t *>(smem_buf + BN * HEAD_DIM * sizeof(T) * 2);
+    mbarrier_t *mbar_v = mbar_k + 1;
 
     // 2. coordinates
     const int tid = threadIdx.x;
@@ -102,8 +106,8 @@ __global__ void flash_decode_tma_kernel(T *q,
     const int group_size = q_head / kv_head;
 
     if (tid == 0) {
-        mbarrier_init(&mbar_k, 1);
-        mbarrier_init(&mbar_v, 1);
+        mbarrier_init(mbar_k, 1);
+        mbarrier_init(mbar_v, 1);
     }
     __syncthreads();
 
@@ -111,8 +115,7 @@ __global__ void flash_decode_tma_kernel(T *q,
     const int lane_id = tid % 32;
     const int num_warps = THREADS_PER_BLOCK / 32;
     const int q_head_in_group = warp_id;
-    const int q_head_id = kv_head_id * group_size + q_head_in_group;
-    const bool active_q_head = q_head_in_group < group_size;
+    const int q_head_id = kv_head_id;
 
     // 4. ldmatrix q
     pack64 qs{FLOAT2(q[q_head_id * HEAD_DIM + lane_id * 4])};
@@ -136,23 +139,15 @@ __global__ void flash_decode_tma_kernel(T *q,
 
         // --- 6.1 TMA async load KV ---
         if (tid == 0) {
-            mbarrier_expect_tx(&mbar_k, BN * HEAD_DIM * sizeof(T));
-            mbarrier_expect_tx(&mbar_v, BN * HEAD_DIM * sizeof(T));
-            cp_async_bulk_tensor_3d(&mbar_k, &tma_k, Ks, 0, kv_head_id, n);
-            cp_async_bulk_tensor_3d(&mbar_v, &tma_v, Vs, 0, kv_head_id, n);
+            mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
+            mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
+            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks[0], 0, kv_head_id, n, 0);
+            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks[1], 64, kv_head_id, n, 0);
+            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs[0], 0, kv_head_id, n, 0);
+            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs[1], 64, kv_head_id, n, 0);
         }
         __syncthreads();
-        if (!mbarrier_wait(&mbar_k, phase_k)) {
-            if (tid == 0) {
-                printf("flash_decode timeout waiting K: chunk=%d q_head=%d kv_head=%d n=%d phase=%d\n",
-                       chunk_id,
-                       q_head_id,
-                       kv_head_id,
-                       n,
-                       phase_k);
-            }
-            return;
-        }
+        mbarrier_wait(mbar_k, phase_k);
         phase_k ^= 1; // flip phase
 
         // --- 6.2 Compute S = Q * K^T ---
@@ -160,8 +155,11 @@ __global__ void flash_decode_tma_kernel(T *q,
 #pragma unroll
         for (int row = 0; row < BN; ++row) {
             float sum = 0.0f;
-            if (active_q_head && row < current_bn) {
-                pack64 ks{FLOAT2(Ks[row][lane_id * 4])};
+            if (row < current_bn) {
+                pack64 ks;
+                int half = lane_id / 16;
+                int col = (lane_id % 16) * 4;
+                ks.f2 = FLOAT2(Ks[half][row][col]);
 #pragma unroll
                 for (int i = 0; i < 4; i++) {
                     sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
@@ -190,24 +188,17 @@ __global__ void flash_decode_tma_kernel(T *q,
         }
 
         // --- 6.4 O = P * V ---
-        if (!mbarrier_wait(&mbar_v, phase_v)) {
-            if (tid == 0) {
-                printf("flash_decode timeout waiting V: chunk=%d q_head=%d kv_head=%d n=%d phase=%d\n",
-                       chunk_id,
-                       q_head_id,
-                       kv_head_id,
-                       n,
-                       phase_v);
-            }
-            return;
-        }
+        mbarrier_wait(mbar_v, phase_v);
         phase_v ^= 1;
 #pragma unroll 4
         for (int row = 0; row < current_bn; ++row) {
             float p = exp2f(acc_s[row] - m_i);
             d_i += p;
 
-            pack64 vs{FLOAT2(Vs[row][lane_id * 4])};
+            pack64 vs;
+            int half = lane_id / 16;
+            int col = (lane_id % 16) * 4;
+            vs.f2 = FLOAT2(Vs[half][row][col]);
 
 #pragma unroll
             for (int i = 0; i < 4; ++i) {
@@ -226,10 +217,9 @@ __global__ void flash_decode_tma_kernel(T *q,
     out_pack.bf2[1] = __float22bfloat162_rn(FLOAT2(acc_o[2]));
     FLOAT2(ws_o[out_base_idx]) = out_pack.f2;
 
-    // ws_m 和 ws_d shape: [grid_x, q_head]
     if (lane_id == 0) {
         int scalar_idx = chunk_id * q_head + q_head_id;
-        ws_m[scalar_idx] = m_i / scale_log2; // restore m_i
+        ws_m[scalar_idx] = m_i / scale_log2;
         ws_d[scalar_idx] = d_i;
     }
 }
@@ -253,12 +243,14 @@ inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
 template <typename T, const int rowBytes = 128>
-inline CUtensorMap create_3d_tensor_map(T *global_address,
+inline CUtensorMap create_4d_tensor_map(T *global_address,
                                         uint64_t dim_d,
                                         uint64_t dim_h,
                                         uint64_t dim_s,
+                                        uint64_t dim_b,
                                         uint64_t stride_h,
-                                        uint64_t stride_s, // Byte stride
+                                        uint64_t stride_s,
+                                        uint64_t stride_b, // Byte stride
                                         uint32_t box_d,
                                         uint32_t box_s) // Each kernel load takes a (box_s x box_d) block
 {
@@ -267,18 +259,18 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         std::is_same_v<T, __half> ? CU_TENSOR_MAP_DATA_TYPE_FLOAT16 : CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
     CUtensorMapSwizzle swizzle = CU_TENSOR_MAP_SWIZZLE_NONE;
 
-    // TMA dimensions: from fastest (0) to slowest (2)
-    uint64_t globalDim[3] = {dim_d, dim_h, dim_s};
+    // TMA dimensions: from fastest (0) to slowest (3)
+    uint64_t globalDim[4] = {dim_d, dim_h, dim_s, dim_b};
 
-    // globalStrides are strides for dimensions 1, 2, must be in Bytes
-    uint64_t globalStrides[2] = {stride_h, stride_s};
+    // globalStrides are strides for dimensions 1, 2, 3, must be in Bytes
+    uint64_t globalStrides[3] = {stride_h, stride_s, stride_b};
 
-    uint32_t boxDim[3] = {box_d, 1, box_s};
-    uint32_t elementStrides[3] = {1, 1, 1};
+    uint32_t boxDim[4] = {box_d, 1, box_s, 1};
+    uint32_t elementStrides[4] = {1, 1, 1, 1};
 
     CUresult res = cuTensorMapEncodeTiled(&tmap,
                                           type,
-                                          3, // Rank = 3
+                                          4, // Rank = 4
                                           global_address,
                                           globalDim,
                                           globalStrides,
@@ -295,16 +287,17 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
 
 #define DISPATCH_TMA_KERNEL(NAME, HEAD_DIM, CHUNK_SIZE)                                                                \
     NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, THREADS_PER_BLOCK, __nv_bfloat16>                                          \
-        <<<blocks_per_grid, THREADS_PER_BLOCK, 0, stream>>>(reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),           \
-                                                            tma_k,                                                     \
-                                                            tma_v,                                                     \
-                                                            reinterpret_cast<__nv_bfloat16 *>(ws_o.data_ptr()),        \
-                                                            reinterpret_cast<float *>(ws_m.data_ptr()),                \
-                                                            reinterpret_cast<float *>(ws_d.data_ptr()),                \
-                                                            kv_len,                                                    \
-                                                            q_head,                                                    \
-                                                            kv_head,                                                   \
-                                                            scale);
+        <<<blocks_per_grid, THREADS_PER_BLOCK, smem_bytes, stream>>>(                                                  \
+            reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),                                                           \
+            tma_k,                                                                                                     \
+            tma_v,                                                                                                     \
+            reinterpret_cast<__nv_bfloat16 *>(ws_o.data_ptr()),                                                        \
+            reinterpret_cast<float *>(ws_m.data_ptr()),                                                                \
+            reinterpret_cast<float *>(ws_d.data_ptr()),                                                                \
+            kv_len,                                                                                                    \
+            q_head,                                                                                                    \
+            kv_head,                                                                                                   \
+            scale);
 
 #define binding_tiled_tma_func_gen(name, HEAD_DIM)                                                                     \
     void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {          \
@@ -323,39 +316,49 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         /* Only validate that head_dim matches the compile-time constant */                                            \
         TORCH_CHECK(head_dim == HEAD_DIM, "Head dim mismatch: expected ", HEAD_DIM);                                   \
                                                                                                                        \
-        /* Extract byte strides dynamically (TMA requires byte counts) */                                              \
+        /* Build real 4D [B, S, H, D] views so TMA sees the same layout shape as flash_attn. */                        \
+        torch::Tensor k4 = k.unsqueeze(0);                                                                             \
+        torch::Tensor v4 = v.unsqueeze(0);                                                                             \
         int elem_bytes = k.element_size();                                                                             \
-        uint64_t k_stride_h = k.stride(1) * elem_bytes;                                                                \
-        uint64_t k_stride_s = k.stride(0) * elem_bytes;                                                                \
+        uint64_t k_stride_h = k4.stride(2) * elem_bytes;                                                               \
+        uint64_t k_stride_s = k4.stride(1) * elem_bytes;                                                               \
+        uint64_t k_stride_b = k4.stride(0) * elem_bytes;                                                               \
+        uint64_t v_stride_h = v4.stride(2) * elem_bytes;                                                               \
+        uint64_t v_stride_s = v4.stride(1) * elem_bytes;                                                               \
+        uint64_t v_stride_b = v4.stride(0) * elem_bytes;                                                               \
                                                                                                                        \
         const int BN = 64;                                                                                             \
         const int num_sms = 26;                                                                                        \
         const int chunk_size = get_chunk_size(kv_head, kv_len, num_sms);                                               \
         const int group_size = q_head / kv_head;                                                                       \
                                                                                                                        \
-        CUtensorMap tma_k = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k.data_ptr()),       \
+        CUtensorMap tma_k = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k4.data_ptr()),      \
                                                                 head_dim,                                              \
                                                                 kv_head,                                               \
                                                                 kv_len,                                                \
+                                                                1,                                                     \
                                                                 k_stride_h,                                            \
                                                                 k_stride_s,                                            \
-                                                                head_dim,                                              \
+                                                                k_stride_b,                                            \
+                                                                64,                                                    \
                                                                 BN);                                                   \
                                                                                                                        \
-        CUtensorMap tma_v = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(v.data_ptr()),       \
+        CUtensorMap tma_v = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(v4.data_ptr()),      \
                                                                 head_dim,                                              \
                                                                 kv_head,                                               \
                                                                 kv_len,                                                \
-                                                                k_stride_h,                                            \
-                                                                k_stride_s,                                            \
-                                                                head_dim,                                              \
+                                                                1,                                                     \
+                                                                v_stride_h,                                            \
+                                                                v_stride_s,                                            \
+                                                                v_stride_b,                                            \
+                                                                64,                                                    \
                                                                 BN);                                                   \
                                                                                                                        \
         const int THREADS_PER_BLOCK = 128;                                                                             \
         TORCH_CHECK(q_head % kv_head == 0, "q_head must be divisible by kv_head");                                     \
-        TORCH_CHECK(group_size <= THREADS_PER_BLOCK / 32, "group_size exceeds warps per block");                       \
         const dim3 blocks_per_grid((kv_len + chunk_size - 1) / chunk_size, kv_head);                                   \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
+        const size_t smem_bytes = BN * head_dim * sizeof(__nv_bfloat16) * 2 + sizeof(mbarrier_t) * 2;                  \
         auto options = torch::TensorOptions().dtype(torch::kFloat32).device(q.device());                               \
         auto ws_m = torch::empty({blocks_per_grid.x, q_head}, options);                                                \
         auto ws_d = torch::empty({blocks_per_grid.x, q_head}, options);                                                \

@@ -3,7 +3,7 @@ import time
 from functools import partial
 from typing import Optional
 
-# import flashinfer
+import flashinfer
 import torch
 from torch.nn import functional as F
 from torch.utils.cpp_extension import load
@@ -56,7 +56,7 @@ def torch_native_decode(q, k, v, scale=None):
     return out.squeeze(1)  # [32, 128]
 
 
-def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="torch"):
+def benchmark(op, q, k, v, o=None, warmup=0, rep=1, prefix="torch"):
     scale = 1 / math.sqrt(q.shape[-1])
     if o is not None:
         # warm up
@@ -116,7 +116,7 @@ def test_all():
         v = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
         # flashinfer throw exception!
         # o = benchmark(
-        #     flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
+        #     partial(flashinfer.single_decode_with_kv_cache), q, k, v, prefix="flash-infer"
         # )
         o = benchmark(torch_native_decode, q, k, v, prefix="torch")
 
