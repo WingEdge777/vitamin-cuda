@@ -91,8 +91,8 @@ __global__ void flash_decode_tma_kernel(T *q,
                                         int kv_head,
                                         float scale) {
     extern __shared__ __align__(128) uint8_t smem_buf[];
-    T(*Ks)[BN][HEAD_DIM] = reinterpret_cast<T(*)[BN][HEAD_DIM]>(smem_buf);
-    T(*Vs)[BN][HEAD_DIM] = reinterpret_cast<T(*)[BN][HEAD_DIM]>(smem_buf + BN * HEAD_DIM * sizeof(T));
+    T(*Ks)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf);
+    T(*Vs)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf + BN * HEAD_DIM * sizeof(T));
     mbarrier_t *mbar_k = reinterpret_cast<mbarrier_t *>(smem_buf + BN * HEAD_DIM * sizeof(T) * 2);
     mbarrier_t *mbar_v = mbar_k + 1;
 
