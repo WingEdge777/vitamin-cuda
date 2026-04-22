@@ -40,24 +40,22 @@ __device__ __forceinline__ void mbarrier_arrive(mbarrier_t *mbar) {
 }
 
 // Wait until the TMA copy completes. Return false on timeout so caller can diagnose instead of hanging forever.
-__device__ __forceinline__ bool mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
+__device__ __forceinline__ void mbarrier_wait(uint64_t *smem_ptr, uint32_t phase) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
     // Large spin timeout (0x989680 == 10,000,000 cycles)
-    uint32_t ticks = 10000000;
-    uint32_t done = 0;
+    uint32_t ticks = 0x989680;
 
-    while (!done) {
-        asm volatile("{\n\t"
-                     ".reg .pred p; \n\t"
-                     "mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2, %3; \n\t"
-                     "selp.b32 %0, 1, 0, p; \n\t"
-                     "}\n"
-                     : "=r"(done)
-                     : "r"(smem_addr), "r"(phase), "r"(ticks)
-                     : "memory");
-    }
-
-    return true;
+    asm volatile("{\n\t"
+                 ".reg .pred p; \n\t"
+                 "LAB_WAIT: \n\t"
+                 "mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1, %2; \n\t"
+                 "@p bra DONE; \n\t"
+                 "bra LAB_WAIT; \n\t"
+                 "DONE: \n\t"
+                 "}\n"
+                 :
+                 : "r"(smem_addr), "r"(phase), "r"(ticks)
+                 : "memory");
 }
 
 // CTA 4D TMA: global -> shared
@@ -86,16 +84,15 @@ template <const int BN = 64,
 __global__ void flash_decode_tma_kernel(T *q,
                                         const __grid_constant__ CUtensorMap tma_k,
                                         const __grid_constant__ CUtensorMap tma_v,
-                                        T *ws_o,     // [grid_x, q_head, HEAD_DIM]
-                                        float *ws_m, // [grid_x, q_head]
-                                        float *ws_d, // [grid_x, q_head]
+                                        float *ws_o,   // [grid_x, q_head, HEAD_DIM]
+                                        float *ws_lse, // [grid_x, q_head]
                                         int kv_len,
                                         int q_head,
                                         int kv_head,
                                         float scale) {
     extern __shared__ __align__(128) uint8_t smem_buf[];
-    T(*Ks)[BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf);
-    T(*Vs)[BN][HEAD_DIM / 2] = reinterpret_cast<T(*)[BN][HEAD_DIM / 2]>(smem_buf + BN * HEAD_DIM * sizeof(T));
+    T(*Ks)[BN][HEAD_DIM] = reinterpret_cast<T(*)[BN][HEAD_DIM]>(smem_buf);
+    T(*Vs)[BN][HEAD_DIM] = reinterpret_cast<T(*)[BN][HEAD_DIM]>(smem_buf + BN * HEAD_DIM * sizeof(T));
     mbarrier_t *mbar_k = reinterpret_cast<mbarrier_t *>(smem_buf + BN * HEAD_DIM * sizeof(T) * 2);
     mbarrier_t *mbar_v = mbar_k + 1;
 
@@ -113,9 +110,8 @@ __global__ void flash_decode_tma_kernel(T *q,
 
     const int warp_id = tid / 32;
     const int lane_id = tid % 32;
-    const int num_warps = THREADS_PER_BLOCK / 32;
     const int q_head_in_group = warp_id;
-    const int q_head_id = kv_head_id;
+    const int q_head_id = kv_head_id * group_size + q_head_in_group;
 
     // 4. ldmatrix q
     pack64 qs{FLOAT2(q[q_head_id * HEAD_DIM + lane_id * 4])};
@@ -141,10 +137,8 @@ __global__ void flash_decode_tma_kernel(T *q,
         if (tid == 0) {
             mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
             mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
-            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks[0], 0, kv_head_id, n, 0);
-            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks[1], 64, kv_head_id, n, 0);
-            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs[0], 0, kv_head_id, n, 0);
-            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs[1], 64, kv_head_id, n, 0);
+            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks, 0, kv_head_id, n, 0);
+            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs, 0, kv_head_id, n, 0);
         }
         __syncthreads();
         mbarrier_wait(mbar_k, phase_k);
@@ -156,10 +150,7 @@ __global__ void flash_decode_tma_kernel(T *q,
         for (int row = 0; row < BN; ++row) {
             float sum = 0.0f;
             if (row < current_bn) {
-                pack64 ks;
-                int half = lane_id / 16;
-                int col = (lane_id % 16) * 4;
-                ks.f2 = FLOAT2(Ks[half][row][col]);
+                pack64 ks{FLOAT2(Ks[row][lane_id * 4])};
 #pragma unroll
                 for (int i = 0; i < 4; i++) {
                     sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
@@ -195,10 +186,7 @@ __global__ void flash_decode_tma_kernel(T *q,
             float p = exp2f(acc_s[row] - m_i);
             d_i += p;
 
-            pack64 vs;
-            int half = lane_id / 16;
-            int col = (lane_id % 16) * 4;
-            vs.f2 = FLOAT2(Vs[half][row][col]);
+            pack64 vs{FLOAT2(Vs[row][lane_id * 4])};
 
 #pragma unroll
             for (int i = 0; i < 4; ++i) {
@@ -213,15 +201,59 @@ __global__ void flash_decode_tma_kernel(T *q,
     int out_base_idx = (chunk_id * q_head + q_head_id) * HEAD_DIM + lane_id * 4;
 
     pack64 out_pack;
-    out_pack.bf2[0] = __float22bfloat162_rn(FLOAT2(acc_o[0]));
-    out_pack.bf2[1] = __float22bfloat162_rn(FLOAT2(acc_o[2]));
-    FLOAT2(ws_o[out_base_idx]) = out_pack.f2;
+    float inv_d = __frcp_rn(d_i);
+    ws_o[out_base_idx + 0] = acc_o[0] * inv_d;
+    ws_o[out_base_idx + 1] = acc_o[1] * inv_d;
+    ws_o[out_base_idx + 2] = acc_o[2] * inv_d;
+    ws_o[out_base_idx + 3] = acc_o[3] * inv_d;
 
     if (lane_id == 0) {
         int scalar_idx = chunk_id * q_head + q_head_id;
-        ws_m[scalar_idx] = m_i / scale_log2;
-        ws_d[scalar_idx] = d_i;
+        ws_lse[scalar_idx] = m_i * 0.6931471805599453f + logf(d_i);
     }
+}
+
+template <const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 32, typename T>
+__global__ void flash_decode_reduce_kernel(const float *ws_o, const float *ws_lse, T *o, int num_chunks, int q_head) {
+    const int q_head_id = blockIdx.x;
+    const int tid = threadIdx.x;
+
+    __shared__ float s_lse;
+
+    if (tid == 0) {
+        float lse_max = -FLT_MAX;
+        for (int chunk = 0; chunk < num_chunks; ++chunk) {
+            lse_max = fmaxf(lse_max, ws_lse[chunk * q_head + q_head_id]);
+        }
+
+        float lse_sum = 0.0f;
+        for (int chunk = 0; chunk < num_chunks; ++chunk) {
+            lse_sum += expf(ws_lse[chunk * q_head + q_head_id] - lse_max);
+        }
+        s_lse = logf(lse_sum) + lse_max;
+    }
+    __syncthreads();
+
+    const int col = tid * 4;
+    if (col >= HEAD_DIM) {
+        return;
+    }
+
+    float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (int chunk = 0; chunk < num_chunks; ++chunk) {
+        const int scalar_idx = chunk * q_head + q_head_id;
+        const float weight = expf(ws_lse[scalar_idx] - s_lse);
+        const int base_idx = scalar_idx * HEAD_DIM + col;
+        out[0] += ws_o[base_idx + 0] * weight;
+        out[1] += ws_o[base_idx + 1] * weight;
+        out[2] += ws_o[base_idx + 2] * weight;
+        out[3] += ws_o[base_idx + 3] * weight;
+    }
+
+    pack64 out_pack;
+    out_pack.bf2[0] = __float22bfloat162_rn(make_float2(out[0], out[1]));
+    out_pack.bf2[1] = __float22bfloat162_rn(make_float2(out[2], out[3]));
+    FLOAT2(o[q_head_id * HEAD_DIM + col]) = out_pack.f2;
 }
 
 inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
@@ -285,19 +317,25 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
     return tmap;
 }
 
-#define DISPATCH_TMA_KERNEL(NAME, HEAD_DIM, CHUNK_SIZE)                                                                \
-    NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, THREADS_PER_BLOCK, __nv_bfloat16>                                          \
-        <<<blocks_per_grid, THREADS_PER_BLOCK, smem_bytes, stream>>>(                                                  \
-            reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),                                                           \
-            tma_k,                                                                                                     \
-            tma_v,                                                                                                     \
-            reinterpret_cast<__nv_bfloat16 *>(ws_o.data_ptr()),                                                        \
-            reinterpret_cast<float *>(ws_m.data_ptr()),                                                                \
-            reinterpret_cast<float *>(ws_d.data_ptr()),                                                                \
-            kv_len,                                                                                                    \
-            q_head,                                                                                                    \
-            kv_head,                                                                                                   \
-            scale);
+#define DISPATCH_TMA_KERNEL(NAME, HEAD_DIM, CHUNK_SIZE, THREADS)                                                       \
+    NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, THREADS, __nv_bfloat16>                                                    \
+        <<<blocks_per_grid, THREADS, smem_bytes, stream>>>(reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),            \
+                                                           tma_k,                                                      \
+                                                           tma_v,                                                      \
+                                                           reinterpret_cast<float *>(ws_o.data_ptr()),                 \
+                                                           reinterpret_cast<float *>(ws_lse.data_ptr()),               \
+                                                           kv_len,                                                     \
+                                                           q_head,                                                     \
+                                                           kv_head,                                                    \
+                                                           scale);
+
+#define DISPATCH_REDUCE_KERNEL(HEAD_DIM)                                                                               \
+    flash_decode_reduce_kernel<HEAD_DIM, 32, __nv_bfloat16>                                                            \
+        <<<dim3(q_head), 32, 0, stream>>>(reinterpret_cast<float *>(ws_o.data_ptr()),                                  \
+                                          reinterpret_cast<float *>(ws_lse.data_ptr()),                                \
+                                          reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                             \
+                                          blocks_per_grid.x,                                                           \
+                                          q_head);
 
 #define binding_tiled_tma_func_gen(name, HEAD_DIM)                                                                     \
     void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {          \
@@ -340,7 +378,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                                 k_stride_h,                                            \
                                                                 k_stride_s,                                            \
                                                                 k_stride_b,                                            \
-                                                                64,                                                    \
+                                                                head_dim,                                              \
                                                                 BN);                                                   \
                                                                                                                        \
         CUtensorMap tma_v = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(v4.data_ptr()),      \
@@ -351,28 +389,61 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                                 v_stride_h,                                            \
                                                                 v_stride_s,                                            \
                                                                 v_stride_b,                                            \
-                                                                64,                                                    \
+                                                                head_dim,                                              \
                                                                 BN);                                                   \
                                                                                                                        \
-        const int THREADS_PER_BLOCK = 128;                                                                             \
         TORCH_CHECK(q_head % kv_head == 0, "q_head must be divisible by kv_head");                                     \
+        TORCH_CHECK(group_size == 1 || group_size == 2 || group_size == 4 || group_size == 8,                          \
+                    "group_size must be 1/2/4/8");                                                                     \
         const dim3 blocks_per_grid((kv_len + chunk_size - 1) / chunk_size, kv_head);                                   \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         const size_t smem_bytes = BN * head_dim * sizeof(__nv_bfloat16) * 2 + sizeof(mbarrier_t) * 2;                  \
         auto options = torch::TensorOptions().dtype(torch::kFloat32).device(q.device());                               \
-        auto ws_m = torch::empty({blocks_per_grid.x, q_head}, options);                                                \
-        auto ws_d = torch::empty({blocks_per_grid.x, q_head}, options);                                                \
-        auto ws_o = torch::empty({blocks_per_grid.x, q_head, head_dim}, q.options());                                  \
+        auto ws_lse = torch::empty({blocks_per_grid.x, q_head}, options);                                              \
+        auto ws_o = torch::empty({blocks_per_grid.x, q_head, head_dim}, options);                                      \
         /* launch kernel */                                                                                            \
-        switch (chunk_size) {                                                                                          \
-            case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64); break;                                                   \
-            case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128); break;                                                 \
-            case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256); break;                                                 \
-            case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512); break;                                                 \
-            default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                                       \
+        switch (group_size) {                                                                                          \
+            case 1:                                                                                                    \
+                switch (chunk_size) {                                                                                  \
+                    case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64, 32); break;                                       \
+                    case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128, 32); break;                                     \
+                    case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256, 32); break;                                     \
+                    case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512, 32); break;                                     \
+                    default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                               \
+                }                                                                                                      \
+                break;                                                                                                 \
+            case 2:                                                                                                    \
+                switch (chunk_size) {                                                                                  \
+                    case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64, 64); break;                                       \
+                    case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128, 64); break;                                     \
+                    case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256, 64); break;                                     \
+                    case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512, 64); break;                                     \
+                    default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                               \
+                }                                                                                                      \
+                break;                                                                                                 \
+            case 4:                                                                                                    \
+                switch (chunk_size) {                                                                                  \
+                    case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64, 128); break;                                      \
+                    case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128, 128); break;                                    \
+                    case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256, 128); break;                                    \
+                    case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512, 128); break;                                    \
+                    default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                               \
+                }                                                                                                      \
+                break;                                                                                                 \
+            case 8:                                                                                                    \
+                switch (chunk_size) {                                                                                  \
+                    case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64, 256); break;                                      \
+                    case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128, 256); break;                                    \
+                    case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256, 256); break;                                    \
+                    case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512, 256); break;                                    \
+                    default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                               \
+                }                                                                                                      \
+                break;                                                                                                 \
+            default: TORCH_CHECK(false, "Unsupported group size: ", group_size);                                       \
         }                                                                                                              \
         C10_CUDA_KERNEL_LAUNCH_CHECK();                                                                                \
-        /*TODO reduce*/                                                                                                \
+        DISPATCH_REDUCE_KERNEL(HEAD_DIM);                                                                              \
+        C10_CUDA_KERNEL_LAUNCH_CHECK();                                                                                \
     }
 
 binding_tiled_tma_func_gen(flash_decode_tma, 128);
