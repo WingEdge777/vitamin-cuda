@@ -98,9 +98,8 @@ __global__ void flash_decode_tma_kernel(T *q,
     // 2. coordinates
     const int tid = threadIdx.x;
     const int chunk_id = blockIdx.x;
-    const int q_head_id = blockIdx.y;
+    const int kv_head_id = blockIdx.y;
     const int group_size = q_head / kv_head;
-    const int kv_head_id = q_head_id / group_size;
 
     if (tid == 0) {
         mbarrier_init(&mbar_k, 1);
@@ -111,6 +110,9 @@ __global__ void flash_decode_tma_kernel(T *q,
     const int warp_id = tid / 32;
     const int lane_id = tid % 32;
     const int num_warps = THREADS_PER_BLOCK / 32;
+    const int q_head_in_group = warp_id;
+    const int q_head_id = kv_head_id * group_size + q_head_in_group;
+    const bool active_q_head = q_head_in_group < group_size;
 
     // 4. ldmatrix q
     pack64 qs{FLOAT2(q[q_head_id * HEAD_DIM + lane_id * 4])};
@@ -156,20 +158,21 @@ __global__ void flash_decode_tma_kernel(T *q,
         // --- 6.2 Compute S = Q * K^T ---
         float acc_s[64];
 #pragma unroll
-        for (int row = warp_id; row < BN; row += 4 * num_warps) {
-            pack64 ks{FLOAT2(Ks[row][lane_id * 4])};
-
+        for (int row = 0; row < BN; ++row) {
             float sum = 0.0f;
+            if (active_q_head && row < current_bn) {
+                pack64 ks{FLOAT2(Ks[row][lane_id * 4])};
 #pragma unroll
-            for (int i = 0; i < 4; i++) {
-                sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
+                for (int i = 0; i < 4; i++) {
+                    sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
+                }
             }
 
 #pragma unroll
             for (int offset = 16; offset > 0; offset >> 1) {
                 sum += __shfl_xor_sync(0xffffffff, sum, offset); // warp reduce
             }
-            acc_s[row] = sum * scale_log2;
+            acc_s[row] = row < current_bn ? sum * scale_log2 : -FLT_MAX;
         }
 
         // --- 6.3 Online Softmax (Max & Correction) ---
@@ -328,6 +331,7 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         const int BN = 64;                                                                                             \
         const int num_sms = 26;                                                                                        \
         const int chunk_size = get_chunk_size(kv_head, kv_len, num_sms);                                               \
+        const int group_size = q_head / kv_head;                                                                       \
                                                                                                                        \
         CUtensorMap tma_k = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k.data_ptr()),       \
                                                                 head_dim,                                              \
@@ -347,8 +351,10 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                                                 head_dim,                                              \
                                                                 BN);                                                   \
                                                                                                                        \
-        const dim3 blocks_per_grid((kv_len + chunk_size - 1) / chunk_size, q_head);                                    \
         const int THREADS_PER_BLOCK = 128;                                                                             \
+        TORCH_CHECK(q_head % kv_head == 0, "q_head must be divisible by kv_head");                                     \
+        TORCH_CHECK(group_size <= THREADS_PER_BLOCK / 32, "group_size exceeds warps per block");                       \
+        const dim3 blocks_per_grid((kv_len + chunk_size - 1) / chunk_size, kv_head);                                   \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
         auto options = torch::TensorOptions().dtype(torch::kFloat32).device(q.device());                               \
         auto ws_m = torch::empty({blocks_per_grid.x, q_head}, options);                                                \
