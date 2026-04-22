@@ -320,7 +320,7 @@ __global__ void flash_decode_reduce_kernel(const float *ws_o, const float *ws_ls
         return;
     }
 
-    float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float out[4] = {0.0f};
     for (int chunk = 0; chunk < num_chunks; ++chunk) {
         const int scalar_idx = q_head_id * num_chunks + chunk;
         const float weight = expf(ws_lse[scalar_idx] - s_lse);
