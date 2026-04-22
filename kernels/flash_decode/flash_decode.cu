@@ -156,9 +156,8 @@ __global__ void flash_decode_tma_kernel(T *q,
                     sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
                 }
             }
-
 #pragma unroll
-            for (int offset = 16; offset > 0; offset >> 1) {
+            for (int offset = 16; offset > 0; offset >>= 1) {
                 sum += __shfl_xor_sync(0xffffffff, sum, offset); // warp reduce
             }
             acc_s[row] = row < current_bn ? sum * scale_log2 : -FLT_MAX;

@@ -33,7 +33,7 @@ lib = load(
 
 baseline = None
 
-@torch.compile
+# @torch.compile
 def torch_native_decode(q, k, v, scale=None):
     # q: [head, dim] -> [32, 128]
     # k: [seq, head, dim] -> [4096, 32, 128]
@@ -56,9 +56,18 @@ def torch_native_decode(q, k, v, scale=None):
     return out.squeeze(1)  # [32, 128]
 
 
-def benchmark(op, q, k, v, o=None, warmup=0, rep=1, prefix="torch"):
+def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="torch"):
     scale = 1 / math.sqrt(q.shape[-1])
-    if o is not None:
+    if prefix == "flash-infer":
+        # warm up
+        for i in range(warmup):
+            op(q, k, v)
+        torch.cuda.synchronize()
+        start = time.perf_counter()
+        for i in range(rep):
+            op(q, k, v)
+        torch.cuda.synchronize()
+    elif o is not None:
         # warm up
         for i in range(warmup):
             op(q, k, v, o, scale)
@@ -78,19 +87,19 @@ def benchmark(op, q, k, v, o=None, warmup=0, rep=1, prefix="torch"):
         torch.cuda.synchronize()
 
     duration = time.perf_counter() - start
-    # tflops ~= 2*q_h*s_q*s_kv*dim
-    tflops = 2 * q.shape[0] * k.shape[0] * v.shape[2] * rep / 1e12 / duration
+    io_bytes = (q.numel() + k.numel() + v.numel() + o.numel()) * q.element_size() * rep
+    bandwidth = io_bytes / duration / 1e9
 
     if prefix == "torch":
         global baseline
         baseline = duration
         print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {tflops:.2f} tflops"
+            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s"
         )
     else:
         speedup = baseline / duration
         print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, tflops: {tflops:.2f}"
+            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, GB/s: {bandwidth:.2f}"
         )
     return o
 
@@ -105,7 +114,7 @@ def diff_check(a, b, prefix="torch", eps=0.016):
 
 
 def test_all():
-    for seq in [4096, 8192, 8192 * 2]:
+    for seq in [4096, 8192, 8192 * 2, 1024 * 10, 1024 * 64]:
         dim = 128
         head = 32
         kv_head = 32
@@ -116,7 +125,7 @@ def test_all():
         v = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
         # flashinfer throw exception!
         # o = benchmark(
-        #     partial(flashinfer.single_decode_with_kv_cache), q, k, v, prefix="flash-infer"
+        #     flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
         # )
         o = benchmark(torch_native_decode, q, k, v, prefix="torch")
 
