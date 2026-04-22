@@ -202,6 +202,9 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 - [flash_attantion_sm120](./kernels/flash_attn/)
   - [x] fmha: sigle buffer (BMxBN = 64x64, better for small seq_len size)
   - [x] pytorch op bindings && diff check
+- [flash_decoding_sm120](./kernels/flash_decode/)
+  - [x] flash_decode_tma_128
+  - [x] pytorch op bindings && diff check
 
 <div id="samples"></div>
 

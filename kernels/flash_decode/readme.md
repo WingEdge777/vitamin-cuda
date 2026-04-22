@@ -4,7 +4,7 @@
 
 flash decoing on SM120 (Blackwell-class) targets.
 
-- [x] flash_decode
+- [x] flash_decode_tma_128
 - [x] pytorch op bindings && diff check
 
 ## Run tests
@@ -19,22 +19,22 @@ python test.py
 ```yaml
 ####################################################################################################
 prefill, kv seq: 8192, head: 32, dim: 128
-torch                                    mean time: 0.457898 ms, 293.15 GB/s
-flash_decode_tma_128                     mean time: 0.405664 ms, speedup: 1.13, GB/s: 330.90
+torch                                    mean time: 0.458729 ms, 292.62 GB/s
+flash_decode_tma_128                     mean time: 0.409808 ms, speedup: 1.12, GB/s: 327.55
 ####################################################################################################
 prefill, kv seq: 16384, head: 32, dim: 128
-torch                                    mean time: 0.860155 ms, 312.10 GB/s
-flash_decode_tma_128                     mean time: 0.740989 ms, speedup: 1.16, GB/s: 362.29
+torch                                    mean time: 0.858288 ms, 312.78 GB/s
+flash_decode_tma_128                     mean time: 0.736965 ms, speedup: 1.16, GB/s: 364.27
 ####################################################################################################
 prefill, kv seq: 10240, head: 32, dim: 128
-torch                                    mean time: 0.557957 ms, 300.72 GB/s
-flash_decode_tma_128                     mean time: 0.477874 ms, speedup: 1.17, GB/s: 351.11
+torch                                    mean time: 0.556543 ms, 301.48 GB/s
+flash_decode_tma_128                     mean time: 0.522694 ms, speedup: 1.06, GB/s: 321.01
 ####################################################################################################
 prefill, kv seq: 65536, head: 32, dim: 128
-torch                                    mean time: 2.920055 ms, 367.72 GB/s
-flash_decode_tma_128                     mean time: 2.983609 ms, speedup: 0.98, GB/s: 359.89
+torch                                    mean time: 2.962036 ms, 362.51 GB/s
+flash_decode_tma_128                     mean time: 2.896064 ms, speedup: 1.02, GB/s: 370.76
 ####################################################################################################
 prefill, kv seq: 131072, head: 32, dim: 128
-torch                                    mean time: 5.877745 ms, 365.36 GB/s
-flash_decode_tma_128                     mean time: 5.768781 ms, speedup: 1.02, GB/s: 372.26
+torch                                    mean time: 5.868828 ms, 365.92 GB/s
+flash_decode_tma_128                     mean time: 5.731302 ms, speedup: 1.02, GB/s: 374.70
 ```
