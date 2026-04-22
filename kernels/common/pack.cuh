@@ -12,7 +12,7 @@
 #define BFLOAT2(value) (reinterpret_cast<__nv_bfloat162 *>(&(value))[0])
 #define LDST128BITS(value) (reinterpret_cast<float4 *>(&(value))[0])
 
-const int warp_size = 32;
+const int WARP_SIZE = 32;
 
 union alignas(16) pack128 {
     float4 f4;

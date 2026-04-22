@@ -69,6 +69,88 @@ __device__ __forceinline__ void cp_async_bulk_tensor_4d(
                  : "memory");
 }
 
+template <const int warp_size = WARP_SIZE>
+__device__ __forceinline__ float warp_reduce_sum(float val) {
+#pragma unroll
+    for (int offset = warp_size >> 1; offset > 0; offset >>= 1) {
+        val += __shfl_xor_sync(0xffffffff, val, offset);
+    }
+    return val;
+}
+
+template <const int warp_size = WARP_SIZE>
+__device__ __forceinline__ float warp_reduce_max(float val) {
+#pragma unroll
+    for (int offset = warp_size >> 1; offset > 0; offset >>= 1) {
+        val = fmaxf(val, __shfl_xor_sync(0xffffffff, val, offset));
+    }
+    return val;
+}
+
+template <const int num_warp>
+__device__ __forceinline__ float block_reduce_sum(float val) {
+    val = warp_reduce_sum<WARP_SIZE>(val);
+
+    __shared__ float sdata[num_warp];
+    int lane_id = threadIdx.x % WARP_SIZE;
+    int warp_id = threadIdx.x / WARP_SIZE;
+    if (lane_id == 0) {
+        sdata[warp_id] = val;
+    }
+    __syncthreads();
+    if (warp_id == 0) {
+        val = lane_id < num_warp ? sdata[lane_id] : 0.f;
+        val = warp_reduce_sum<num_warp>(val);
+        if (lane_id == 0) {
+            sdata[0] = val;
+        }
+    }
+    __syncthreads();
+    return sdata[0];
+}
+
+template <const int num_warp>
+__device__ __forceinline__ float block_reduce_max(float val) {
+    val = warp_reduce_max<WARP_SIZE>(val);
+
+    __shared__ float sdata[num_warp];
+    int lane_id = threadIdx.x % WARP_SIZE;
+    int warp_id = threadIdx.x / WARP_SIZE;
+    if (lane_id == 0) {
+        sdata[warp_id] = val;
+    }
+    __syncthreads();
+    if (warp_id == 0) {
+        val = lane_id < num_warp ? sdata[lane_id] : -FLT_MAX;
+        val = warp_reduce_max<num_warp>(val);
+        if (lane_id == 0) {
+            sdata[0] = val;
+        }
+    }
+    __syncthreads();
+    return sdata[0];
+}
+
+template <const int num_warp>
+__device__ __forceinline__ float block_reduce_sum_by_lane(float val) {
+    __shared__ float sdata[num_warp][WARP_SIZE];
+    int lane_id = threadIdx.x % WARP_SIZE;
+    int warp_id = threadIdx.x / WARP_SIZE;
+
+    sdata[warp_id][lane_id] = val;
+    __syncthreads();
+    if (warp_id == 0) {
+        val = 0.0f;
+#pragma unroll
+        for (int warp = 0; warp < num_warp; ++warp) {
+            val += sdata[warp][lane_id];
+        }
+        sdata[0][lane_id] = val;
+    }
+    __syncthreads();
+    return sdata[0][lane_id];
+}
+
 // flash decoding softmax(q @ k.T*scale) @ v
 template <const int BN = 64,
           const int CHUNK_SIZE = 256,
@@ -86,14 +168,13 @@ __global__ void flash_decode_tma_kernel(T *q,
                                         float scale) {
     static_assert(THREADS_PER_BLOCK == 128);
     static_assert(BN == 64);
+
+    // 1. shared memory: K tile, V tile, mbarriers
     extern __shared__ __align__(128) uint8_t smem_buf[];
     T(*Ks)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf);
     T(*Vs)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf + BN * HEAD_DIM * sizeof(T));
     mbarrier_t *mbar_k = reinterpret_cast<mbarrier_t *>(smem_buf + BN * HEAD_DIM * sizeof(T) * 2);
     mbarrier_t *mbar_v = mbar_k + 1;
-    __shared__ float s_part_m[THREADS_PER_BLOCK / 32];
-    __shared__ float s_part_d[THREADS_PER_BLOCK / 32];
-    __shared__ float s_part_o[THREADS_PER_BLOCK / 32][32][4];
 
     // 2. coordinates
     const int tid = threadIdx.x;
@@ -108,18 +189,16 @@ __global__ void flash_decode_tma_kernel(T *q,
     }
     __syncthreads();
 
-    const int warp_id = tid / 32;
-    const int lane_id = tid % 32;
+    const int warp_id = tid / WARP_SIZE;
+    const int lane_id = tid % WARP_SIZE;
     constexpr int NUM_WARPS = THREADS_PER_BLOCK / 32;
     constexpr int ROWS_PER_WARP = BN / NUM_WARPS;
 
-    // 4. ldmatrix q
+    // 3. load q fragment
     pack64 qs{FLOAT2(q[q_head_id * HEAD_DIM + lane_id * 4])};
 
-    // 5. Initialize output registers
+    // 4. init online softmax state
     __align__(16) float acc_o[4] = {0.0f};
-
-    // m_i and d_i track max value and softmax denominator for each of the two rows per thread
     float m_i = -FLT_MAX;
     float d_i = 0.0f;
 
@@ -129,11 +208,11 @@ __global__ void flash_decode_tma_kernel(T *q,
     const int chunk_start = chunk_id * CHUNK_SIZE;
     const int chunk_end = min(chunk_start + CHUNK_SIZE, kv_len);
 
-    // 6. kv loop
+    // 5. loop over KV tiles inside this chunk
     for (int n = chunk_start; n < chunk_end; n += BN) {
         int current_bn = min(BN, chunk_end - n);
 
-        // --- 6.1 TMA async load KV ---
+        // 5.1 TMA async load K/V
         if (tid == 0) {
             mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
             mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
@@ -144,7 +223,7 @@ __global__ void flash_decode_tma_kernel(T *q,
         mbarrier_wait(mbar_k, phase_k);
         phase_k ^= 1; // flip phase
 
-        // --- 6.2 Compute S = Q * K^T ---
+        // 5.2 compute S = Q * K^T, keep 16 rows per warp in registers
         const int row_begin = warp_id * ROWS_PER_WARP;
         const int row_end = min(row_begin + ROWS_PER_WARP, current_bn);
         float acc_s[ROWS_PER_WARP];
@@ -161,31 +240,15 @@ __global__ void flash_decode_tma_kernel(T *q,
             for (int i = 0; i < 4; i++) {
                 sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
             }
-#pragma unroll
-            for (int offset = 16; offset > 0; offset >>= 1) {
-                sum += __shfl_xor_sync(0xffffffff, sum, offset); // warp reduce
-            }
+            sum = warp_reduce_sum<WARP_SIZE>(sum);
             acc_s[row - row_begin] = sum * scale_log2;
             m_part = fmaxf(m_part, acc_s[row - row_begin]);
         }
-        if (lane_id == 0) {
-            s_part_m[warp_id] = m_part;
-        }
-        __syncthreads();
 
-        // --- 6.3 Online Softmax (Max & Correction) ---
-        float m_curr = m_i;
-        if (warp_id == 0 && lane_id == 0) {
-#pragma unroll
-            for (int warp = 0; warp < NUM_WARPS; ++warp) {
-                m_curr = fmaxf(m_curr, s_part_m[warp]);
-            }
-            s_part_m[0] = m_curr;
-        }
-        __syncthreads();
-        m_curr = s_part_m[0];
+        // 5.3 merge row max across warps
+        const float m_curr = block_reduce_max<NUM_WARPS>(lane_id == 0 ? m_part : -FLT_MAX);
 
-        // --- 6.4 O = P * V ---
+        // 5.4 accumulate O = P * V, then merge across warps
         mbarrier_wait(mbar_v, phase_v);
         phase_v ^= 1;
         float part_d = 0.0f;
@@ -202,47 +265,16 @@ __global__ void flash_decode_tma_kernel(T *q,
                 part_o[i] += p * static_cast<float>(vs.bf[i]);
             }
         }
-        if (lane_id == 0) {
-            s_part_d[warp_id] = part_d;
-        }
+        const float alpha = exp2f(m_i - m_curr);
 #pragma unroll
         for (int i = 0; i < 4; ++i) {
-            s_part_o[warp_id][lane_id][i] = part_o[i];
+            acc_o[i] = acc_o[i] * alpha + block_reduce_sum_by_lane<NUM_WARPS>(part_o[i]);
         }
-        __syncthreads();
-
-        if (warp_id == 0) {
-            float alpha = exp2f(m_i - m_curr);
-            float tile_o[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-#pragma unroll
-            for (int warp = 0; warp < NUM_WARPS; ++warp) {
-#pragma unroll
-                for (int i = 0; i < 4; ++i) {
-                    tile_o[i] += s_part_o[warp][lane_id][i];
-                }
-            }
-#pragma unroll
-            for (int i = 0; i < 4; ++i) {
-                acc_o[i] = acc_o[i] * alpha + tile_o[i];
-            }
-
-            if (lane_id == 0) {
-                float total_d = 0.0f;
-#pragma unroll
-                for (int warp = 0; warp < NUM_WARPS; ++warp) {
-                    total_d += s_part_d[warp];
-                }
-                d_i = d_i * alpha + total_d;
-                m_i = m_curr;
-            }
-            m_i = __shfl_sync(0xffffffff, m_i, 0);
-            d_i = __shfl_sync(0xffffffff, d_i, 0);
-        }
-        __syncthreads();
+        d_i = d_i * alpha + block_reduce_sum<NUM_WARPS>(lane_id == 0 ? part_d : 0.0f);
+        m_i = m_curr;
     }
 
-    // 7. write ws_o/ws_m/ws_d gmem
-    // ws_o shape: [grid_x, q_head, head_dim]
+    // 6. write split results to workspace
     if (warp_id == 0) {
         int out_base_idx = (chunk_id * q_head + q_head_id) * HEAD_DIM + lane_id * 4;
         float inv_d = __frcp_rn(d_i);
