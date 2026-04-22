@@ -93,6 +93,7 @@ def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="torch"):
     if prefix == "torch":
         global baseline
         baseline = duration
+        prefix = "torch.compile"
         print(
             f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s"
         )
