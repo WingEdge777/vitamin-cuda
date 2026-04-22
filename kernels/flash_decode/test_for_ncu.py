@@ -3,7 +3,6 @@ import time
 from functools import partial
 from typing import Optional
 
-import flashifer
 import flashinfer
 import torch
 from torch.nn import functional as F
@@ -34,10 +33,41 @@ lib = load(
 
 baseline = None
 
+# @torch.compile
+def torch_native_decode(q, k, v, scale=None):
+    # q: [head, dim] -> [32, 128]
+    # k: [seq, head, dim] -> [4096, 32, 128]
+    # v: [seq, head, dim] -> [4096, 32, 128]
+    if scale is None:
+        scale = 1.0 / math.sqrt(q.shape[-1])
 
-def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="flash-infer"):
-    if o is not None:
-        scale = 1 / math.sqrt(q.shape[-1])
+    # 调整维度以适应 Batched GEMV
+    q_b = q.unsqueeze(1)  # [32, 1, 128]
+    k_b = k.permute(1, 2, 0)  # [32, 128, 4096]
+    v_b = v.transpose(0, 1)  # [32, 4096, 128]
+
+    # S = Q @ K^T
+    attn_scores = torch.matmul(q_b, k_b) * scale  # [32, 1, 4096]
+    attn_probs = torch.softmax(attn_scores, dim=-1)
+
+    # O = P @ V
+    out = torch.matmul(attn_probs, v_b)  # [32, 1, 128]
+
+    return out.squeeze(1)  # [32, 128]
+
+
+def benchmark(op, q, k, v, o=None, warmup=0, rep=1, prefix="torch"):
+    scale = 1 / math.sqrt(q.shape[-1])
+    if prefix == "flash-infer":
+        # warm up
+        for i in range(warmup):
+            op(q, k, v)
+        torch.cuda.synchronize()
+        start = time.perf_counter()
+        for i in range(rep):
+            op(q, k, v)
+        torch.cuda.synchronize()
+    elif o is not None:
         # warm up
         for i in range(warmup):
             op(q, k, v, o, scale)
@@ -47,33 +77,29 @@ def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="flash-infer"):
             op(q, k, v, o, scale)
         torch.cuda.synchronize()
     else:
-        q = q.transpose(1, 2).contiguous()
-        k = k.transpose(1, 2).contiguous()
-        v = v.transpose(1, 2).contiguous()
         # warm up
         for i in range(warmup):
-            o = op(q, k, v)
+            o = op(q, k, v, scale)
         torch.cuda.synchronize()
         start = time.perf_counter()
         for i in range(rep):
-            o = op(q, k, v)
+            o = op(q, k, v, scale)
         torch.cuda.synchronize()
-        o = o.transpose(1, 2).contiguous()
 
     duration = time.perf_counter() - start
-    # tflops ~= 2*q_h*s_q*s_kv*dim
-    tflops = 2 * q.shape[0] * k.shape[0] * v.shape[2] * rep / 1e12 / duration
+    io_bytes = (q.numel() + k.numel() + v.numel() + o.numel()) * q.element_size() * rep
+    bandwidth = io_bytes / duration / 1e9
 
-    if prefix == "flash-infer":
+    if prefix == "torch":
         global baseline
         baseline = duration
         print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {tflops:.2f} tflops"
+            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s"
         )
     else:
         speedup = baseline / duration
         print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, tflops: {tflops:.2f}"
+            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, GB/s: {bandwidth:.2f}"
         )
     return o
 
@@ -88,7 +114,7 @@ def diff_check(a, b, prefix="torch", eps=0.016):
 
 
 def test_all():
-    for seq in [4096, 8192, 8192 * 2]:
+    for seq in [1024 * 64]:
         dim = 128
         head = 32
         kv_head = 32
@@ -97,12 +123,15 @@ def test_all():
         q = torch.randn(head, dim, device="cuda", dtype=torch.bfloat16)
         k = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
         v = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
-        o = benchmark(
-            flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
-        )
+
+        o = benchmark(torch_native_decode, q, k, v, prefix="torch")
+        # # flashinfer throw exception!
+        # o = benchmark(
+        #     flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
+        # )
 
         o_my = torch.zeros_like(o)
-        o_my = benchmark(lib.flash_decode, q, k, v, o_my, prefix="flash_decode")
+        o_my = benchmark(lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128")
 
 
 if __name__ == "__main__":

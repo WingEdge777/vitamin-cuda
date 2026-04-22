@@ -33,7 +33,7 @@ lib = load(
 
 baseline = None
 
-# @torch.compile
+@torch.compile
 def torch_native_decode(q, k, v, scale=None):
     # q: [head, dim] -> [32, 128]
     # k: [seq, head, dim] -> [4096, 32, 128]
@@ -123,11 +123,12 @@ def test_all():
         q = torch.randn(head, dim, device="cuda", dtype=torch.bfloat16)
         k = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
         v = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
-        # flashinfer throw exception!
+
+        o = benchmark(torch_native_decode, q, k, v, prefix="torch")
+        # # flashinfer throw exception!
         # o = benchmark(
         #     flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
         # )
-        o = benchmark(torch_native_decode, q, k, v, prefix="torch")
 
         o_my = torch.zeros_like(o)
         o_my = benchmark(lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128")

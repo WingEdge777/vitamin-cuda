@@ -201,10 +201,10 @@ __global__ void flash_decode_tma_kernel(T *q,
 
     pack64 out_pack;
     float inv_d = __frcp_rn(d_i);
-    ws_o[out_base_idx + 0] = acc_o[0] * inv_d;
-    ws_o[out_base_idx + 1] = acc_o[1] * inv_d;
-    ws_o[out_base_idx + 2] = acc_o[2] * inv_d;
-    ws_o[out_base_idx + 3] = acc_o[3] * inv_d;
+#pragma unroll
+    for (int i = 0; i < 4; i++)
+        acc_o[i] *= inv_d;
+    FLOAT4(ws_o[out_base_idx + 0]) = FLOAT4(acc_o[0]);
 
     if (lane_id == 0) {
         int scalar_idx = chunk_id * q_head + q_head_id;
