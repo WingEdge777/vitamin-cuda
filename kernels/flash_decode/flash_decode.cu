@@ -357,7 +357,13 @@ __global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int
     FLOAT4(o[q_head_id * HEAD_DIM + col]) = out_pack.f4;
 }
 
-inline int round_chunk_size(int chunk) {
+inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
+    int target_blocks = num_sms * 2;
+
+    // Total_Blocks = q_head * (kv_len / chunk_size)
+    // chunk_size = (q_head * kv_len) / target_blocks
+    int chunk = (q_head * kv_len) / target_blocks;
+
     if (chunk <= 64)
         return 64;
     if (chunk <= 128)
@@ -457,17 +463,9 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         uint64_t v_stride_b = v4.stride(0) * elem_bytes;                                                               \
                                                                                                                        \
         const int BN = 64;                                                                                             \
-        const int num_sms = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;                               \
-        const int threads_per_block = 128;                                                                             \
+        const int num_sms = 26;                                                                                        \
         const size_t smem_bytes = BN * head_dim * sizeof(__nv_bfloat16) * 2 + sizeof(mbarrier_t) * 2;                  \
-        int active_blocks_per_sm = 0;                                                                                  \
-        cudaOccupancyMaxActiveBlocksPerMultiprocessor(&active_blocks_per_sm,                                           \
-                                                      name##_kernel<BN, 256, HEAD_DIM, 128, __nv_bfloat16>,            \
-                                                      threads_per_block,                                               \
-                                                      smem_bytes);                                                     \
-        const int max_grid_size = active_blocks_per_sm * num_sms;                                                      \
-        const int max_num_kv_chunks = max(1, max_grid_size / kv_head);                                                 \
-        const int chunk_size = round_chunk_size(max((kv_len + max_num_kv_chunks - 1) / max_num_kv_chunks, 256));       \
+        const int chunk_size = get_chunk_size(q_head, kv_len, num_sms);                                                \
         CUtensorMap tma_k = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k4.data_ptr()),      \
                                                                 head_dim,                                              \
                                                                 kv_head,                                               \
