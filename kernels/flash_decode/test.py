@@ -115,7 +115,7 @@ def diff_check(a, b, prefix="torch", eps=0.016):
 
 
 def test_all():
-    for seq in [8192, 8192 * 2, 1024 * 10, 1024 * 64, 1024 * 128]:
+    for seq in [8192, 8192 * 2, 1024 * 10, 1024 * 64, 1024 * 128, 1024 * 128 + 1]:
         dim = 128
         head = 32
         kv_head = 32
