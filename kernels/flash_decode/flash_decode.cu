@@ -363,10 +363,6 @@ inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
     // chunk_size = (q_head * kv_len) / target_blocks
     int chunk = (q_head * kv_len) / target_blocks;
 
-    if (chunk <= 64)
-        return 64;
-    if (chunk <= 128)
-        return 128;
     if (chunk <= 256)
         return 256;
     if (chunk <= 512)
