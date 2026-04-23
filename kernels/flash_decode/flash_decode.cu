@@ -52,19 +52,18 @@ __device__ __forceinline__ void mbarrier_wait(uint64_t *smem_ptr, uint32_t phase
                  : "memory");
 }
 
-// CTA 4D TMA: global -> shared
-__device__ __forceinline__ void cp_async_bulk_tensor_4d(
-    mbarrier_t *mbar, const void *tmap, const void *smem_ptr, int32_t s_0, int32_t s_1, int32_t s_2, int32_t s_3) {
+// CTA 3D TMA: global -> shared
+__device__ __forceinline__ void cp_async_bulk_tensor_3d(
+    mbarrier_t *mbar, const void *tmap, const void *smem_ptr, int32_t s_0, int32_t s_1, int32_t s_2) {
     uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
     uint32_t mbar_addr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar));
 
-    asm volatile("cp.async.bulk.tensor.4d.shared::cta.global.mbarrier::complete_tx::bytes"
-                 " [%0], [%1, {%2, %3, %4, %5}], [%6];\n" ::"r"(smem_addr),
+    asm volatile("cp.async.bulk.tensor.3d.shared::cta.global.mbarrier::complete_tx::bytes"
+                 " [%0], [%1, {%2, %3, %4}], [%5];\n" ::"r"(smem_addr),
                  "l"(tmap),
                  "r"(s_0),
                  "r"(s_1),
                  "r"(s_2),
-                 "r"(s_3),
                  "r"(mbar_addr)
                  : "memory");
 }
@@ -218,8 +217,8 @@ __global__ void flash_decode_tma_kernel(T *q,
         if (tid == 0) {
             mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
             mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
-            cp_async_bulk_tensor_4d(mbar_k, &tma_k, Ks, 0, kv_head_id, n, 0);
-            cp_async_bulk_tensor_4d(mbar_v, &tma_v, Vs, 0, kv_head_id, n, 0);
+            cp_async_bulk_tensor_3d(mbar_k, &tma_k, Ks, 0, kv_head_id, n);
+            cp_async_bulk_tensor_3d(mbar_v, &tma_v, Vs, 0, kv_head_id, n);
         }
         __syncthreads();
         mbarrier_wait(mbar_k, phase_k);
@@ -380,14 +379,12 @@ inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
 template <typename T, const int rowBytes = 128>
-inline CUtensorMap create_4d_tensor_map(T *global_address,
+inline CUtensorMap create_3d_tensor_map(T *global_address,
                                         uint64_t dim_d,
                                         uint64_t dim_h,
                                         uint64_t dim_s,
-                                        uint64_t dim_b,
                                         uint64_t stride_h,
                                         uint64_t stride_s,
-                                        uint64_t stride_b, // Byte stride
                                         uint32_t box_d,
                                         uint32_t box_s) // Each kernel load takes a (box_s x box_d) block
 {
@@ -396,18 +393,18 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         std::is_same_v<T, __half> ? CU_TENSOR_MAP_DATA_TYPE_FLOAT16 : CU_TENSOR_MAP_DATA_TYPE_BFLOAT16;
     CUtensorMapSwizzle swizzle = CU_TENSOR_MAP_SWIZZLE_NONE;
 
-    // TMA dimensions: from fastest (0) to slowest (3)
-    uint64_t globalDim[4] = {dim_d, dim_h, dim_s, dim_b};
+    // TMA dimensions: from fastest (0) to slowest (2)
+    uint64_t globalDim[3] = {dim_d, dim_h, dim_s};
 
-    // globalStrides are strides for dimensions 1, 2, 3, must be in Bytes
-    uint64_t globalStrides[3] = {stride_h, stride_s, stride_b};
+    // globalStrides are strides for dimensions 1, 2, must be in Bytes
+    uint64_t globalStrides[2] = {stride_h, stride_s};
 
-    uint32_t boxDim[4] = {box_d, 1, box_s, 1};
-    uint32_t elementStrides[4] = {1, 1, 1, 1};
+    uint32_t boxDim[3] = {box_d, 1, box_s};
+    uint32_t elementStrides[3] = {1, 1, 1};
 
     CUresult res = cuTensorMapEncodeTiled(&tmap,
                                           type,
-                                          4, // Rank = 4
+                                          3, // Rank = 3
                                           global_address,
                                           globalDim,
                                           globalStrides,
@@ -418,7 +415,7 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                           CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
                                           CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
 
-    TORCH_CHECK(res == CUDA_SUCCESS, "cuTensorMapEncodeTiled failed for 4D Tensor!");
+    TORCH_CHECK(res == CUDA_SUCCESS, "cuTensorMapEncodeTiled failed for 3D Tensor!");
     return tmap;
 }
 
@@ -451,40 +448,31 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
         /* Only validate that head_dim matches the compile-time constant */                                            \
         TORCH_CHECK(head_dim == HEAD_DIM, "Head dim mismatch: expected ", HEAD_DIM);                                   \
                                                                                                                        \
-        /* Build real 4D [B, S, H, D] views so TMA sees the same layout shape as flash_attn. */                        \
-        torch::Tensor k4 = k.unsqueeze(0);                                                                             \
-        torch::Tensor v4 = v.unsqueeze(0);                                                                             \
         int elem_bytes = k.element_size();                                                                             \
-        uint64_t k_stride_h = k4.stride(2) * elem_bytes;                                                               \
-        uint64_t k_stride_s = k4.stride(1) * elem_bytes;                                                               \
-        uint64_t k_stride_b = k4.stride(0) * elem_bytes;                                                               \
-        uint64_t v_stride_h = v4.stride(2) * elem_bytes;                                                               \
-        uint64_t v_stride_s = v4.stride(1) * elem_bytes;                                                               \
-        uint64_t v_stride_b = v4.stride(0) * elem_bytes;                                                               \
+        uint64_t k_stride_h = k.stride(1) * elem_bytes;                                                                \
+        uint64_t k_stride_s = k.stride(0) * elem_bytes;                                                                \
+        uint64_t v_stride_h = v.stride(1) * elem_bytes;                                                                \
+        uint64_t v_stride_s = v.stride(0) * elem_bytes;                                                                \
                                                                                                                        \
         const int BN = 64;                                                                                             \
         const int num_sms = 26;                                                                                        \
         const size_t smem_bytes = BN * head_dim * sizeof(__nv_bfloat16) * 2 + sizeof(mbarrier_t) * 2;                  \
         const int chunk_size = get_chunk_size(q_head, kv_len, num_sms);                                                \
-        CUtensorMap tma_k = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k4.data_ptr()),      \
+        CUtensorMap tma_k = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k.data_ptr()),       \
                                                                 head_dim,                                              \
                                                                 kv_head,                                               \
                                                                 kv_len,                                                \
-                                                                1,                                                     \
                                                                 k_stride_h,                                            \
                                                                 k_stride_s,                                            \
-                                                                k_stride_b,                                            \
                                                                 head_dim,                                              \
                                                                 BN);                                                   \
                                                                                                                        \
-        CUtensorMap tma_v = create_4d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(v4.data_ptr()),      \
+        CUtensorMap tma_v = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(v.data_ptr()),       \
                                                                 head_dim,                                              \
                                                                 kv_head,                                               \
                                                                 kv_len,                                                \
-                                                                1,                                                     \
                                                                 v_stride_h,                                            \
                                                                 v_stride_s,                                            \
-                                                                v_stride_b,                                            \
                                                                 head_dim,                                              \
                                                                 BN);                                                   \
                                                                                                                        \
