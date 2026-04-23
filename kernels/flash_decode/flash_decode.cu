@@ -69,39 +69,39 @@ __device__ __forceinline__ void cp_async_bulk_tensor_4d(
                  : "memory");
 }
 
-template <const int warp_size = WARP_SIZE>
+template <const int group_size>
 __device__ __forceinline__ float warp_reduce_sum(float val) {
 #pragma unroll
-    for (int offset = warp_size >> 1; offset > 0; offset >>= 1) {
-        val += __shfl_xor_sync(0xffffffff, val, offset);
+    for (int offset = group_size >> 1; offset > 0; offset >>= 1) {
+        val += __shfl_xor_sync(0xffffffff, val, offset, group_size);
     }
     return val;
 }
 
-template <const int warp_size = WARP_SIZE>
+template <const int group_size>
 __device__ __forceinline__ float warp_reduce_max(float val) {
 #pragma unroll
-    for (int offset = warp_size >> 1; offset > 0; offset >>= 1) {
-        val = fmaxf(val, __shfl_xor_sync(0xffffffff, val, offset));
+    for (int offset = group_size >> 1; offset > 0; offset >>= 1) {
+        val = fmaxf(val, __shfl_xor_sync(0xffffffff, val, offset, group_size));
     }
     return val;
 }
 
-template <const int num_warp>
+template <const int num_group, const int group_size>
 __device__ __forceinline__ float block_reduce_sum(float val) {
-    val = warp_reduce_sum<WARP_SIZE>(val);
+    val = warp_reduce_sum<group_size>(val);
 
-    __shared__ float sdata[num_warp];
-    int lane_id = threadIdx.x % WARP_SIZE;
-    int warp_id = threadIdx.x / WARP_SIZE;
+    __shared__ float sdata[num_group];
+    const int lane_id = threadIdx.x % group_size;
+    const int group_id = threadIdx.x / group_size;
     if (lane_id == 0) {
-        sdata[warp_id] = val;
+        sdata[group_id] = val;
     }
     __syncthreads();
-    if (warp_id == 0) {
-        val = lane_id < num_warp ? sdata[lane_id] : 0.f;
-        val = warp_reduce_sum<num_warp>(val);
-        if (lane_id == 0) {
+    if (threadIdx.x < WARP_SIZE) {
+        val = threadIdx.x < num_group ? sdata[threadIdx.x] : 0.0f;
+        val = warp_reduce_sum<WARP_SIZE>(val);
+        if (threadIdx.x == 0) {
             sdata[0] = val;
         }
     }
@@ -109,21 +109,21 @@ __device__ __forceinline__ float block_reduce_sum(float val) {
     return sdata[0];
 }
 
-template <const int num_warp>
+template <const int num_group, const int group_size>
 __device__ __forceinline__ float block_reduce_max(float val) {
-    val = warp_reduce_max<WARP_SIZE>(val);
+    val = warp_reduce_max<group_size>(val);
 
-    __shared__ float sdata[num_warp];
-    int lane_id = threadIdx.x % WARP_SIZE;
-    int warp_id = threadIdx.x / WARP_SIZE;
+    __shared__ float sdata[num_group];
+    const int lane_id = threadIdx.x % group_size;
+    const int group_id = threadIdx.x / group_size;
     if (lane_id == 0) {
-        sdata[warp_id] = val;
+        sdata[group_id] = val;
     }
     __syncthreads();
-    if (warp_id == 0) {
-        val = lane_id < num_warp ? sdata[lane_id] : -FLT_MAX;
-        val = warp_reduce_max<num_warp>(val);
-        if (lane_id == 0) {
+    if (threadIdx.x < WARP_SIZE) {
+        val = threadIdx.x < num_group ? sdata[threadIdx.x] : -FLT_MAX;
+        val = warp_reduce_max<WARP_SIZE>(val);
+        if (threadIdx.x == 0) {
             sdata[0] = val;
         }
     }
@@ -131,19 +131,19 @@ __device__ __forceinline__ float block_reduce_max(float val) {
     return sdata[0];
 }
 
-template <const int num_warp>
+template <const int num_group, const int group_size>
 __device__ __forceinline__ float block_reduce_sum_by_lane(float val) {
-    __shared__ float sdata[num_warp][WARP_SIZE];
-    int lane_id = threadIdx.x % WARP_SIZE;
-    int warp_id = threadIdx.x / WARP_SIZE;
+    __shared__ float sdata[num_group][group_size];
+    const int lane_id = threadIdx.x % group_size;
+    const int group_id = threadIdx.x / group_size;
 
-    sdata[warp_id][lane_id] = val;
+    sdata[group_id][lane_id] = val;
     __syncthreads();
-    if (warp_id == 0) {
+    if (group_id == 0) {
         val = 0.0f;
 #pragma unroll
-        for (int warp = 0; warp < num_warp; ++warp) {
-            val += sdata[warp][lane_id];
+        for (int group = 0; group < num_group; ++group) {
+            val += sdata[group][lane_id];
         }
         sdata[0][lane_id] = val;
     }
@@ -180,8 +180,14 @@ __global__ void flash_decode_tma_kernel(T *q,
     const int tid = threadIdx.x;
     const int chunk_id = blockIdx.x;
     const int q_head_id = blockIdx.y;
-    const int group_size = q_head / kv_head;
-    const int kv_head_id = q_head_id / group_size;
+    const int kv_group_size = q_head / kv_head;
+    const int kv_head_id = q_head_id / kv_group_size;
+
+    constexpr int THREADS_PER_ROW = 16;
+    constexpr int NUM_GROUPS = THREADS_PER_BLOCK / THREADS_PER_ROW;
+    constexpr int ROWS_PER_GROUP = BN / NUM_GROUPS;
+    const int group_id = tid / THREADS_PER_ROW;
+    const int lane_id = tid % THREADS_PER_ROW;
 
     if (tid == 0) {
         mbarrier_init(mbar_k, 1);
@@ -189,16 +195,11 @@ __global__ void flash_decode_tma_kernel(T *q,
     }
     __syncthreads();
 
-    const int warp_id = tid / WARP_SIZE;
-    const int lane_id = tid % WARP_SIZE;
-    constexpr int NUM_WARPS = THREADS_PER_BLOCK / 32;
-    constexpr int ROWS_PER_WARP = BN / NUM_WARPS;
-
     // 3. load q fragment
-    pack64 qs{FLOAT2(q[q_head_id * HEAD_DIM + lane_id * 4])};
+    pack128 qs{FLOAT4(q[q_head_id * HEAD_DIM + lane_id * 8])};
 
     // 4. init online softmax state
-    __align__(16) float acc_o[4] = {0.0f};
+    __align__(16) float acc_o[8] = {0.0f};
     float m_i = -FLT_MAX;
     float d_i = 0.0f;
 
@@ -224,66 +225,79 @@ __global__ void flash_decode_tma_kernel(T *q,
         mbarrier_wait(mbar_k, phase_k);
         phase_k ^= 1; // flip phase
 
-        // 5.2 compute S = Q * K^T, keep 16 rows per warp in registers
-        const int row_begin = warp_id * ROWS_PER_WARP;
-        const int row_end = min(row_begin + ROWS_PER_WARP, current_bn);
-        float acc_s[ROWS_PER_WARP];
+        // 5.2 compute S = Q * K^T, keep rows per subgroup in registers
+        const int row_begin = group_id * ROWS_PER_GROUP;
+        float acc_s[ROWS_PER_GROUP];
         float m_part = -FLT_MAX;
 #pragma unroll
-        for (int i = 0; i < ROWS_PER_WARP; ++i) {
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
             acc_s[i] = -FLT_MAX;
         }
 #pragma unroll
-        for (int row = row_begin; row < row_end; ++row) {
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            const int row = row_begin + i;
             float sum = 0.0f;
-            pack64 ks{FLOAT2(Ks[row][lane_id * 4])};
+            if (row < current_bn) {
+                pack128 ks{FLOAT4(Ks[row][lane_id * 8])};
 #pragma unroll
-            for (int i = 0; i < 4; i++) {
-                sum += static_cast<float>(qs.bf[i]) * static_cast<float>(ks.bf[i]);
+                for (int j = 0; j < 8; ++j) {
+                    sum += static_cast<float>(qs.bf[j]) * static_cast<float>(ks.bf[j]);
+                }
             }
-            sum = warp_reduce_sum<WARP_SIZE>(sum);
-            acc_s[row - row_begin] = sum * scale_log2;
-            m_part = fmaxf(m_part, acc_s[row - row_begin]);
+            sum = warp_reduce_sum<THREADS_PER_ROW>(sum);
+            if (row < current_bn) {
+                acc_s[i] = sum * scale_log2;
+                m_part = fmaxf(m_part, acc_s[i]);
+            }
         }
 
-        // 5.3 merge row max across warps
-        const float m_curr = block_reduce_max<NUM_WARPS>(lane_id == 0 ? m_part : -FLT_MAX);
+        // 5.3 merge row max across subgroups
+        const float m_curr = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_part : -FLT_MAX);
 
-        // 5.4 accumulate O = P * V, then merge across warps
+        // 5.4 accumulate O = P * V, then merge across subgroups
         mbarrier_wait(mbar_v, phase_v);
         phase_v ^= 1;
         float part_d = 0.0f;
-        float part_o[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-#pragma unroll 4
-        for (int row = row_begin; row < row_end; ++row) {
-            float p = exp2f(acc_s[row - row_begin] - m_curr);
-            part_d += p;
-
-            pack64 vs{FLOAT2(Vs[row][lane_id * 4])};
-
+        float part_o[8] = {0.0f};
 #pragma unroll
-            for (int i = 0; i < 4; ++i) {
-                part_o[i] += p * static_cast<float>(vs.bf[i]);
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            const int row = row_begin + i;
+            if (row < current_bn) {
+                float p = exp2f(acc_s[i] - m_curr);
+                part_d += p;
+
+                pack128 vs{FLOAT4(Vs[row][lane_id * 8])};
+#pragma unroll
+                for (int j = 0; j < 8; ++j) {
+                    part_o[j] += p * static_cast<float>(vs.bf[j]);
+                }
             }
         }
         const float alpha = exp2f(m_i - m_curr);
 #pragma unroll
-        for (int i = 0; i < 4; ++i) {
-            acc_o[i] = acc_o[i] * alpha + block_reduce_sum_by_lane<NUM_WARPS>(part_o[i]);
+        for (int i = 0; i < 8; ++i) {
+            acc_o[i] = acc_o[i] * alpha + block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(part_o[i]);
         }
-        d_i = d_i * alpha + block_reduce_sum<NUM_WARPS>(lane_id == 0 ? part_d : 0.0f);
+        d_i = d_i * alpha + block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? part_d : 0.0f);
         m_i = m_curr;
     }
 
     // 6. write split results to workspace
-    if (warp_id == 0) {
-        int out_base_idx = (q_head_id * num_chunks + chunk_id) * HEAD_DIM + lane_id * 4;
+    if (group_id == 0) {
+        int out_base_idx = (q_head_id * num_chunks + chunk_id) * HEAD_DIM + lane_id * 8;
         float inv_d = __frcp_rn(d_i);
 #pragma unroll
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 8; i++) {
             acc_o[i] *= inv_d;
         }
-        FLOAT4(ws_o[out_base_idx + 0]) = FLOAT4(acc_o[0]);
+        pack128 out_pack0, out_pack1;
+#pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            out_pack0.f[i] = acc_o[i];
+            out_pack1.f[i] = acc_o[i + 4];
+        }
+        FLOAT4(ws_o[out_base_idx + 0]) = out_pack0.f4;
+        FLOAT4(ws_o[out_base_idx + 4]) = out_pack1.f4;
 
         if (lane_id == 0) {
             int scalar_idx = q_head_id * num_chunks + chunk_id;
@@ -292,10 +306,11 @@ __global__ void flash_decode_tma_kernel(T *q,
     }
 }
 
-template <const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 32, typename T>
-__global__ void flash_decode_reduce_kernel(const float *ws_o, const float *ws_lse, T *o, int num_chunks) {
+template <const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 128, typename T>
+__global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int num_chunks) {
     const int q_head_id = blockIdx.x;
     const int tid = threadIdx.x;
+    constexpr int NUM_WARPS = THREADS_PER_BLOCK / WARP_SIZE;
 
     __shared__ float s_lse;
 
@@ -303,38 +318,43 @@ __global__ void flash_decode_reduce_kernel(const float *ws_o, const float *ws_ls
     for (int chunk = tid; chunk < num_chunks; chunk += THREADS_PER_BLOCK) {
         lse_max = fmaxf(lse_max, ws_lse[q_head_id * num_chunks + chunk]);
     }
-    lse_max = warp_reduce_max<THREADS_PER_BLOCK>(lse_max);
+    lse_max = block_reduce_max<NUM_WARPS, WARP_SIZE>(lse_max);
 
     float lse_sum = 0.0f;
     for (int chunk = tid; chunk < num_chunks; chunk += THREADS_PER_BLOCK) {
         lse_sum += expf(ws_lse[q_head_id * num_chunks + chunk] - lse_max);
     }
-    lse_sum = warp_reduce_sum<THREADS_PER_BLOCK>(lse_sum);
+    lse_sum = block_reduce_sum<NUM_WARPS, WARP_SIZE>(lse_sum);
     if (tid == 0) {
         s_lse = logf(lse_sum) + lse_max;
     }
     __syncthreads();
 
-    const int col = tid * 4;
+    const int col = tid * 8;
     if (col >= HEAD_DIM) {
         return;
     }
 
-    float out[4] = {0.0f};
+    float out[8] = {0.0f};
     for (int chunk = 0; chunk < num_chunks; ++chunk) {
         const int scalar_idx = q_head_id * num_chunks + chunk;
         const float weight = expf(ws_lse[scalar_idx] - s_lse);
         const int base_idx = scalar_idx * HEAD_DIM + col;
-        out[0] += ws_o[base_idx + 0] * weight;
-        out[1] += ws_o[base_idx + 1] * weight;
-        out[2] += ws_o[base_idx + 2] * weight;
-        out[3] += ws_o[base_idx + 3] * weight;
+        pack128 partial0{FLOAT4(ws_o[base_idx + 0])};
+        pack128 partial1{FLOAT4(ws_o[base_idx + 4])};
+#pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            out[i] += partial0.f[i] * weight;
+            out[i + 4] += partial1.f[i] * weight;
+        }
     }
 
-    pack64 out_pack;
-    out_pack.bf2[0] = __float22bfloat162_rn(make_float2(out[0], out[1]));
-    out_pack.bf2[1] = __float22bfloat162_rn(make_float2(out[2], out[3]));
-    FLOAT2(o[q_head_id * HEAD_DIM + col]) = out_pack.f2;
+    pack128 out_pack;
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        out_pack.bf[i] = __float2bfloat16_rn(out[i]);
+    }
+    FLOAT4(o[q_head_id * HEAD_DIM + col]) = out_pack.f4;
 }
 
 inline int round_chunk_size(int chunk) {
@@ -407,13 +427,6 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
                                                        q_head,                                                         \
                                                        kv_head,                                                        \
                                                        scale);
-
-#define DISPATCH_REDUCE_KERNEL(HEAD_DIM)                                                                               \
-    flash_decode_reduce_kernel<HEAD_DIM, 32, __nv_bfloat16>                                                            \
-        <<<dim3(q_head), 32, 0, stream>>>(reinterpret_cast<float *>(ws_o.data_ptr()),                                  \
-                                          reinterpret_cast<float *>(ws_lse.data_ptr()),                                \
-                                          reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                             \
-                                          blocks_per_grid.x);
 
 #define binding_tiled_tma_func_gen(name, HEAD_DIM)                                                                     \
     void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {          \
@@ -493,9 +506,11 @@ inline CUtensorMap create_4d_tensor_map(T *global_address,
             case 2048: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 2048); break;                                               \
             default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                                       \
         }                                                                                                              \
-        C10_CUDA_KERNEL_LAUNCH_CHECK();                                                                                \
-        DISPATCH_REDUCE_KERNEL(HEAD_DIM);                                                                              \
-        C10_CUDA_KERNEL_LAUNCH_CHECK();                                                                                \
+        flash_decode_reduce_kernel<HEAD_DIM, 128, __nv_bfloat16>                                                       \
+            <<<q_head, 128, 0, stream>>>(reinterpret_cast<float *>(ws_o.data_ptr()),                                   \
+                                         reinterpret_cast<float *>(ws_lse.data_ptr()),                                 \
+                                         reinterpret_cast<__nv_bfloat16 *>(o.data_ptr()),                              \
+                                         blocks_per_grid.x);                                                           \
     }
 
 binding_tiled_tma_func_gen(flash_decode_tma, 128);
