@@ -552,7 +552,7 @@ ncu report：
 
 ## 4. TODO
 
-之前列的 TODO，已经完成了 decode attention，当然这个 kernel 我还在考虑进一步优化 （还有相对冗余的 smem；换单 block 二/三级流水线效果会更好）。
+之前列的 TODO，已经完成了 decode attention，当然这个 kernel 我还在考虑进一步优化 （还有相对冗余的 smem；换单 block 二/三级流水线效果会更好;支持GQA/MQA）。
 
 此外，剩下 attention with kv cache，感觉手搓有点恶心，就是为了对齐数据边界而写代码，还是算了。量化 attention 还是要结合模型和具体 case 进行考虑，也放弃了。
 
