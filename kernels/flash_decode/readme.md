@@ -19,22 +19,26 @@ python test.py
 ```yaml
 ####################################################################################################
 prefill, kv seq: 8192, head: 32, dim: 128
-torch.compile                            mean time: 0.458729 ms, 292.62 GB/s
-flash_decode_tma_128                     mean time: 0.409808 ms, speedup: 1.12, GB/s: 327.55
+torch.compile                            mean time: 0.458745 ms, 292.61 GB/s
+flash_decode_tma_128                     mean time: 0.446513 ms, speedup: 1.03, GB/s: 300.63
 ####################################################################################################
 prefill, kv seq: 16384, head: 32, dim: 128
-torch.compile                            mean time: 0.858288 ms, 312.78 GB/s
-flash_decode_tma_128                     mean time: 0.736965 ms, speedup: 1.16, GB/s: 364.27
+torch.compile                            mean time: 0.878726 ms, 305.50 GB/s
+flash_decode_tma_128                     mean time: 0.778402 ms, speedup: 1.13, GB/s: 344.88
 ####################################################################################################
 prefill, kv seq: 10240, head: 32, dim: 128
-torch.compile                            mean time: 0.556543 ms, 301.48 GB/s
-flash_decode_tma_128                     mean time: 0.522694 ms, speedup: 1.06, GB/s: 321.01
+torch.compile                            mean time: 0.611377 ms, 274.44 GB/s
+flash_decode_tma_128                     mean time: 0.520998 ms, speedup: 1.17, GB/s: 322.05
 ####################################################################################################
 prefill, kv seq: 65536, head: 32, dim: 128
-torch.compile                            mean time: 2.962036 ms, 362.51 GB/s
-flash_decode_tma_128                     mean time: 2.896064 ms, speedup: 1.02, GB/s: 370.76
+torch.compile                            mean time: 2.937899 ms, 365.49 GB/s
+flash_decode_tma_128                     mean time: 2.920613 ms, speedup: 1.01, GB/s: 367.65
 ####################################################################################################
 prefill, kv seq: 131072, head: 32, dim: 128
-torch.compile                            mean time: 5.868828 ms, 365.92 GB/s
-flash_decode_tma_128                     mean time: 5.731302 ms, speedup: 1.02, GB/s: 374.70
+torch.compile                            mean time: 5.873622 ms, 365.62 GB/s
+flash_decode_tma_128                     mean time: 5.720886 ms, speedup: 1.03, GB/s: 375.38
+####################################################################################################
+prefill, kv seq: 131073, head: 32, dim: 128
+torch.compile                            mean time: 5.959847 ms, 360.33 GB/s
+flash_decode_tma_128                     mean time: 5.718791 ms, speedup: 1.04, GB/s: 375.52
 ```
