@@ -6,7 +6,7 @@
 >
 > *A hands-on CUDA learning path from novice to expert.*
 
-Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 140+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts(**GEMM**, **flash attention/decoing**). Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
+Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 160+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts(**SGEMM**, **HGEMM** **Flash Attention/Decoding**). Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
 
 **No over-engineered abstractions. No black boxes. Just pure hardware saturation.**
 
@@ -23,10 +23,10 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 - [News](#news)
 - [Contents](#contents)
 - [Prerequisites](#prerequisites)
-- [Kernels (140+)](#kernels-140)
+- [Kernels (160+)](#kernels-160)
   - [Easy ⭐️ ~ ⭐️⭐️](#easy-️--️️)
   - [Medium ⭐️⭐️ ~ ⭐️⭐️⭐️](#medium-️️--️️️)
-  - [Hard ⭐️⭐️⭐️~](#hard-️️️)
+  - [Hard ⭐️⭐️⭐️~⭐️⭐️⭐️⭐️](#hard-️️️️️️️)
 - [Samples](#samples)
 - [Blogs (10+)](#blogs-10)
   - [blogs](#blogs)
@@ -43,7 +43,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 
 > **Quick Start** — We recommend using the [NVIDIA PyTorch NGC Docker image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) for a ready-to-go environment.
 
-## Kernels (140+)
+## Kernels (160+)
 
 All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and benchmarked against PyTorch 2.9.
 
@@ -163,7 +163,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 <div id="hard"></div>
 
-### Hard ⭐️⭐️⭐️~
+### Hard ⭐️⭐️⭐️~⭐️⭐️⭐️⭐️
 
 - [sgemv](./kernels/sgemv/) — Single-precision GEMV
   - [x] `gemv_fp32` — baseline
