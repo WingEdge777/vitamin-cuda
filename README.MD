@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="posts/static/vw-logo.jpg" alt="Vitamin-CUDA" width="800">
+  <img src="https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/vw-logo.jpg" alt="Vitamin-CUDA" width="800">
 </p>
 
 > 🍎 **One Kernel a Day, Keeps High Latency Away.**
