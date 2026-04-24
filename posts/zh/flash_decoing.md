@@ -249,14 +249,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       - float4 向量化读取 Ks 一行内的 8 个元素
       - Qs[8] 和 reg_k[8] 进行点积计算
       - Warp Reduce 求和得到单行的 Attention Score，并统计当前小块的 m_part
-    - 循环结束得到 acc_s[8], 循环中统计 m_i
     - wait Vs 加载完毕
     - [计算 O] 循环 8 次：
       - 根据 m_part 计算当前行的 Softmax 权重标量 p
-      - P 乘以 reg_v[8] 向量，累加得到当前小块的 part_o[8]，并统计当前小块的 d_part
-    - [Group 内部状态更新] 使用安全的 online softmax 逻辑计算 alpha，将当前的 part_o、d_part、m_part 融合进 group 维护的历史 acc_o、d_i、m_i 中
-  - Block 内各 group 进行 block_reduce，合并各自的 acc_o、d_i、m_i
-  - 将最终合并的寄存器结果转化为 ws_o 和 ws_lse，写回 Global Memory
+      - p 乘以 reg_v[8] 向量，累加得到当前小块的 part_o[8]，并统计当前小块的 d_part
+    - [group 内部状态更新] 使用安全的 online softmax 逻辑计算 alpha，将当前的 part_o、d_part、m_part 融合进 group 维护的历史 acc_o、d_i、m_i 中
+  - block 内各 group 进行 block_reduce，合并各自的 acc_o、d_i、m_i
+  - 将最终合并的寄存器结果转化为 ws_o 和 d_i/m_i，写回 gmem
 - kernel pass 2
   - 读取上面 gmem 的 ws_o，和 m_i/d_i，online softmax 继续规约得到最终输出 o
 - 结束
@@ -398,13 +397,15 @@ __global__ void flash_decode_tma_kernel(T *q,
             }
         }
         if (m_part != -FLT_MAX) {
-            const float alpha = exp2f(m_i - m_part);
+            const float m_new = fmaxf(m_i, m_part);
+            const float alpha_old = exp2f(m_i - m_new);
+            const float alpha_new = exp2f(m_part - m_new);
 #pragma unroll
             for (int i = 0; i < 8; ++i) {
-                acc_o[i] = acc_o[i] * alpha + part_o[i];
+                acc_o[i] = acc_o[i] * alpha_old + part_o[i] * alpha_new;
             }
-            d_i = d_i * alpha + part_d;
-            m_i = m_part;
+            d_i = d_i * alpha_old + part_d * alpha_new;
+            m_i = m_new;
         }
     }
 
