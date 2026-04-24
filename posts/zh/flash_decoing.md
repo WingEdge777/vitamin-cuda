@@ -541,7 +541,7 @@ flash_decode_tma_128                     mean time: 5.718791 ms, speedup: 1.04, 
 
 可以看到，性能上超过了 torch.compile 的 native 实现，但强的有限（pytorch+compile 真的不弱）。
 
-另外 flashinfer 我没有跑通，所以无从比较，flashinfer 可能会比我这个 kernel 强的。因为虽然大 seq 下我的算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 375.52⁄384 = 97.8%（巨高了），但短序列情况下，离峰值还差一些的。
+另外 flashinfer 我没有跑通，所以无从比较，flashinfer 可能会比我这个 kernel 强的。因为虽然大 seq 下我的算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 375.52 ⁄ 384 = 97.8%（巨高了），但短序列情况下，离峰值还差一些的。
 
 ncu report：
 

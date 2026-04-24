@@ -33,6 +33,7 @@ lib = load(
 
 baseline = None
 
+
 @torch.compile
 def torch_native_decode(q, k, v, scale=None):
     # q: [head, dim] -> [32, 128]
@@ -115,7 +116,7 @@ def diff_check(a, b, prefix="torch", eps=0.016):
 
 
 def test_all():
-    for seq in [8192, 8192 * 2, 1024 * 10, 1024 * 64, 1024 * 128, 1024 * 128 + 1]:
+    for seq in [8192, 1024 * 10, 1024 * 32, 1024 * 64, 1024 * 128, 1024 * 128 + 1]:
         dim = 128
         head = 32
         kv_head = 32
@@ -132,7 +133,9 @@ def test_all():
         # )
 
         o_my = torch.zeros_like(o)
-        o_my = benchmark(lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128")
+        o_my = benchmark(
+            lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128"
+        )
         diff_check(o, o_my, prefix="flash_decode_tma_128")
 
 

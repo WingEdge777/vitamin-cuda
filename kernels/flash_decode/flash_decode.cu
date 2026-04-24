@@ -368,10 +368,14 @@ __global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int
 inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
     int target_blocks = num_sms * 2;
 
-    // Total_Blocks = q_head * (kv_len / chunk_size)
+    // total_blocks = q_head * (kv_len / chunk_size)
     // chunk_size = (q_head * kv_len) / target_blocks
     int chunk = (q_head * kv_len) / target_blocks;
 
+    if (chunk <= 64)
+        return 64;
+    if (chunk <= 128)
+        return 128;
     if (chunk <= 256)
         return 256;
     if (chunk <= 512)
@@ -489,6 +493,8 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         auto ws_o = torch::empty({q_head, blocks_per_grid.x, head_dim}, options);                                      \
         /* launch kernel */                                                                                            \
         switch (chunk_size) {                                                                                          \
+            case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64); break;                                                   \
+            case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128); break;                                                 \
             case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256); break;                                                 \
             case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512); break;                                                 \
             case 1024: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 1024); break;                                               \
