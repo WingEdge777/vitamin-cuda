@@ -94,7 +94,7 @@ inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
-template <typename T, const int rowBytes = 128>
+template <typename T>
 inline CUtensorMap create_3d_tensor_map(T *global_address,
                                         uint64_t dim_d,
                                         uint64_t dim_h,
@@ -200,8 +200,6 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         auto ws_o = torch::empty({q_head, blocks_per_grid.x, head_dim}, options);                                      \
         /* launch kernel */                                                                                            \
         switch (chunk_size) {                                                                                          \
-            case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64); break;                                                   \
-            case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128); break;                                                 \
             case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256); break;                                                 \
             case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512); break;                                                 \
             case 1024: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 1024); break;                                               \
@@ -243,21 +241,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
 - kernel pass 1：
   - 初始化 Ks、Vs 2 块 smem 和 2 个 tma mbarrier
-  - 初始化 acc_o[8]
-  - 加载 Qs[8], 这里直接用 float4 加载进来
+  - 初始化 acc_o[8],每个 group（16 线程）私有化初始化历史状态 acc_o[8], m_i, d_i
+  - 加载 Qs[8]（使用 float4 向量化加载到寄存器）
   - 一个 block 负责一个 chunk，kv chunk 内 loop：
     - tma 发起加载 Ks、Vs，并等待 Ks 加载完成
-    - 循环 8 次：
-      - 每个线程一次读取 Ks 一行内的 8 个元素（依然是 float4 向量化访问）
+    - [计算 S] 循环 8 次（Group 内每线程负责 8 行）：
+      - float4 向量化读取 Ks 一行内的 8 个元素
       - Qs[8] 和 reg_k[8] 进行点积计算
-      - warp reduce 求和两行的点积结果
+      - Warp Reduce 求和得到单行的 Attention Score，并统计当前小块的 m_part
     - 循环结束得到 acc_s[8], 循环中统计 m_i
     - wait Vs 加载完毕
-    - 循环 8 次
-      - 计算 Ps[8] 个 reg_v[8] 的点积
-      - 累加 exp 和
-    - 循环结束得到 acc_o[8], 循环统计 d_i
-  - 此时 acc_o 寄存器再经过处理一下， 就是当前 chunk 的 attention 输出 ws_o 了，然后还要输出 m_i/d_i，都写回 gmem
+    - [计算 O] 循环 8 次：
+      - 根据 m_part 计算当前行的 Softmax 权重标量 p
+      - P 乘以 reg_v[8] 向量，累加得到当前小块的 part_o[8]，并统计当前小块的 d_part
+    - [Group 内部状态更新] 使用安全的 online softmax 逻辑计算 alpha，将当前的 part_o、d_part、m_part 融合进 group 维护的历史 acc_o、d_i、m_i 中
+  - Block 内各 group 进行 block_reduce，合并各自的 acc_o、d_i、m_i
+  - 将最终合并的寄存器结果转化为 ws_o 和 ws_lse，写回 Global Memory
 - kernel pass 2
   - 读取上面 gmem 的 ws_o，和 m_i/d_i，online softmax 继续规约得到最终输出 o
 - 结束
@@ -323,10 +322,10 @@ __global__ void flash_decode_tma_kernel(T *q,
     }
     __syncthreads();
 
-    // 3. load q
+    // 3. load q fragment
     pack128 qs{FLOAT4(q[q_head_id * HEAD_DIM + lane_id * 8])};
 
-    // 4. init online softmax state
+    // 4. init subgroup-local online softmax state
     __align__(16) float acc_o[8] = {0.0f};
     float m_i = -FLT_MAX;
     float d_i = 0.0f;
@@ -379,10 +378,7 @@ __global__ void flash_decode_tma_kernel(T *q,
             }
         }
 
-        // 5.3 merge row max across subgroups
-        const float m_curr = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_part : -FLT_MAX);
-
-        // 5.4 accumulate O = P * V, then merge across subgroups
+        // 5.3 accumulate subgroup-local O = P * V
         mbarrier_wait(mbar_v, phase_v);
         phase_v ^= 1;
         float part_d = 0.0f;
@@ -391,7 +387,7 @@ __global__ void flash_decode_tma_kernel(T *q,
         for (int i = 0; i < ROWS_PER_GROUP; ++i) {
             const int row = row_begin + i;
             if (row < current_bn) {
-                float p = exp2f(acc_s[i] - m_curr);
+                float p = exp2f(acc_s[i] - m_part);
                 part_d += p;
 
                 pack128 vs{FLOAT4(Vs[row][lane_id * 8])};
@@ -401,19 +397,29 @@ __global__ void flash_decode_tma_kernel(T *q,
                 }
             }
         }
-        const float alpha = exp2f(m_i - m_curr);
+        if (m_part != -FLT_MAX) {
+            const float alpha = exp2f(m_i - m_part);
 #pragma unroll
-        for (int i = 0; i < 8; ++i) {
-            acc_o[i] = acc_o[i] * alpha + block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(part_o[i]);
+            for (int i = 0; i < 8; ++i) {
+                acc_o[i] = acc_o[i] * alpha + part_o[i];
+            }
+            d_i = d_i * alpha + part_d;
+            m_i = m_part;
         }
-        d_i = d_i * alpha + block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? part_d : 0.0f);
-        m_i = m_curr;
     }
 
-    // 6. write split results to workspace
+    // 6. merge subgroup states once per chunk, then write split results
+    const float m_chunk = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_i : -FLT_MAX);
+    const float alpha = d_i > 0.0f ? exp2f(m_i - m_chunk) : 0.0f;
+    const float d_chunk = block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? d_i * alpha : 0.0f);
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        acc_o[i] = block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(acc_o[i] * alpha);
+    }
+
     if (group_id == 0) {
         int out_base_idx = (q_head_id * num_chunks + chunk_id) * HEAD_DIM + lane_id * 8;
-        float inv_d = __frcp_rn(d_i);
+        float inv_d = __frcp_rn(d_chunk);
 #pragma unroll
         for (int i = 0; i < 8; i++) {
             acc_o[i] *= inv_d;
@@ -429,7 +435,7 @@ __global__ void flash_decode_tma_kernel(T *q,
 
         if (lane_id == 0) {
             int scalar_idx = q_head_id * num_chunks + chunk_id;
-            ws_lse[scalar_idx] = m_i * 0.6931471805599453f + logf(d_i);
+            ws_lse[scalar_idx] = m_chunk * 0.6931471805599453f + logf(d_chunk);
         }
     }
 }
@@ -508,24 +514,28 @@ __global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int
 ```yaml
 ####################################################################################################
 prefill, kv seq: 8192, head: 32, dim: 128
-torch.compile                            mean time: 0.458729 ms, 292.62 GB/s
-flash_decode_tma_128                     mean time: 0.409808 ms, speedup: 1.12, GB/s: 327.55
+torch.compile                            mean time: 0.458745 ms, 292.61 GB/s
+flash_decode_tma_128                     mean time: 0.446513 ms, speedup: 1.03, GB/s: 300.63
 ####################################################################################################
 prefill, kv seq: 16384, head: 32, dim: 128
-torch.compile                            mean time: 0.858288 ms, 312.78 GB/s
-flash_decode_tma_128                     mean time: 0.736965 ms, speedup: 1.16, GB/s: 364.27
+torch.compile                            mean time: 0.878726 ms, 305.50 GB/s
+flash_decode_tma_128                     mean time: 0.778402 ms, speedup: 1.13, GB/s: 344.88
 ####################################################################################################
 prefill, kv seq: 10240, head: 32, dim: 128
-torch.compile                            mean time: 0.556543 ms, 301.48 GB/s
-flash_decode_tma_128                     mean time: 0.522694 ms, speedup: 1.06, GB/s: 321.01
+torch.compile                            mean time: 0.611377 ms, 274.44 GB/s
+flash_decode_tma_128                     mean time: 0.520998 ms, speedup: 1.17, GB/s: 322.05
 ####################################################################################################
 prefill, kv seq: 65536, head: 32, dim: 128
-torch.compile                            mean time: 2.962036 ms, 362.51 GB/s
-flash_decode_tma_128                     mean time: 2.896064 ms, speedup: 1.02, GB/s: 370.76
+torch.compile                            mean time: 2.937899 ms, 365.49 GB/s
+flash_decode_tma_128                     mean time: 2.920613 ms, speedup: 1.01, GB/s: 367.65
 ####################################################################################################
 prefill, kv seq: 131072, head: 32, dim: 128
-torch.compile                            mean time: 5.868828 ms, 365.92 GB/s
-flash_decode_tma_128                     mean time: 5.731302 ms, speedup: 1.02, GB/s: 374.70
+torch.compile                            mean time: 5.873622 ms, 365.62 GB/s
+flash_decode_tma_128                     mean time: 5.720886 ms, speedup: 1.03, GB/s: 375.38
+####################################################################################################
+prefill, kv seq: 131073, head: 32, dim: 128
+torch.compile                            mean time: 5.959847 ms, 360.33 GB/s
+flash_decode_tma_128                     mean time: 5.718791 ms, speedup: 1.04, GB/s: 375.52
 ```
 
 可以看到，性能上超过了 torch.compile 的 native 实现（pytorch+compile 真的不弱），但是并不多。

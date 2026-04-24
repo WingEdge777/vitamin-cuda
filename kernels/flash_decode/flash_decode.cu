@@ -270,13 +270,15 @@ __global__ void flash_decode_tma_kernel(T *q,
             }
         }
         if (m_part != -FLT_MAX) {
-            const float alpha = exp2f(m_i - m_part);
+            const float m_new = fmaxf(m_i, m_part);
+            const float alpha_old = exp2f(m_i - m_new);
+            const float alpha_new = exp2f(m_part - m_new);
 #pragma unroll
             for (int i = 0; i < 8; ++i) {
-                acc_o[i] = acc_o[i] * alpha + part_o[i];
+                acc_o[i] = acc_o[i] * alpha_old + part_o[i] * alpha_new;
             }
-            d_i = d_i * alpha + part_d;
-            m_i = m_part;
+            d_i = d_i * alpha_old + part_d * alpha_new;
+            m_i = m_new;
         }
     }
 
