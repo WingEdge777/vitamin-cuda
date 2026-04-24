@@ -276,11 +276,11 @@ Here's a beautifully convenient coincidence: the shared memory occupied by As an
 
 Before we start, we need to thoroughly understand the register state of fragment C. After the mma.sync.m16n8k16 instruction computes, it outputs a 16x8 sub-matrix. We need to understand exactly which values in this matrix each thread holds. The official NVIDIA documentation has a diagram — for the m16n8k16 compute shape, fragment C is:
 
-![](../static/fragment_c.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/fragment_c.png)
 
 For a more intuitive view, I drew my own diagram:
 
-![](../static/my_fragment_c.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/my_fragment_c.svg)
 
 The pattern is quite clear: within a warp, every 4 threads are responsible for 8 elements (fp16/bf16) in the same row. After skipping 8 rows, this arrangement repeats. At the per-thread level, each thread holds 4 values. For example:
 
@@ -303,7 +303,7 @@ row: 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 
 col: 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6
 ```
 
-![](../static/swizzle_c.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/swizzle_c.svg)
 
 Looking at the binary closely: row is 0–7, i.e., 00xxx — the effective variable bits are bit0–2. Since we also need to maintain 16-byte alignment, we take the low 3 bits and left-shift by 3 positions, which perfectly stagger against col's low 3 bits. After XOR, this covers all 32 banks.
 
@@ -396,7 +396,7 @@ hgemm_bcf_dbf                            mean time: 4.096174 ms, speedup: 1.00, 
 hgemm_bcf_dbf_rw                         mean time: 4.075860 ms, speedup: 1.01, tflops: 33.72
 ```
 
-![](../static/hgemm_final.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/hgemm_final.png)
 
 ### Discussion
 

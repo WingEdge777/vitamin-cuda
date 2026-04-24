@@ -772,14 +772,14 @@ hgemm_tma_r_k_stages_32                  mean time: 4.005909 ms, speedup: 1.00, 
 I'll admit — I picked a run where the final kernel won. After all the effort invested, posting a result where it lost to `hgemm_bcf_dbf_rw` (the actual win rate is roughly 6:4) would be quite anticlimactic. But in my heart, `hgemm_tma_r_k_stages_32` and `hgemm_bcf_dbf_rw` are on the same level — both have squeezed the Tensor Cores to their absolute limit (though the former is far more complex).
 
 NCU report:
-![p](../static/hgemm_sm120_0.png)
+![p](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/hgemm_sm120_0.png)
 
 This is the NCU report I'm most satisfied with. Although the final kernel can't consistently outperform `hgemm_bcf_dbf_rw`, the NCU summary is clean — no annoying `Uncoalesced Shared Accesses`. The only warnings are insufficient Tensor Core throughput and occupancy limitations from register/smem constraints.
 
 - `hgemm_tma_r_k_stages_64`: 0 bank conflicts
-![p](../static/hgemm_sm120_1.png)
+![p](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/hgemm_sm120_1.png)
 - `hgemm_tma_r_k_stages_32`: also 0 bank conflicts (NCU still reports a tiny amount of bank conflicts — with two active blocks, there are some inter-warp conflicts, but the swizzle isn't to blame)
-![p](../static/hgemm_sm120_2.png)
+![p](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/hgemm_sm120_2.png)
 
 ### Discussion
 

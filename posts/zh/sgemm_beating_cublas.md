@@ -60,7 +60,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 
 过了这么多年，就不从太基础的版本开始，这里先给一个相对强的 2d data tiling + 2d block/thread tiling + shared memory 的 baseline 实现，然后开始演进。首先，我根据我的显卡性能（5060 移动版）和共享内存/寄存器资源大小（smem size 最大 100KB，每个 block 最多 48KB；每个 block 寄存器最多 65536 个），初步划定了 data tiling size 和线程 block size
 
-![ab_tiling](../static/tiling.svg)
+![ab_tiling](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/tiling.svg)
 
 - 以 c 矩阵为视角基础， data tiling BMxBN 为 128x128，thread block size 为 256
   - 一个 block 计算 c[128][128] 的子矩阵，256 个线程分为 8 个 warp(2x4)
@@ -264,7 +264,7 @@ row : 0, 4, 8, 12, 0, 4, 8, 12...
 
 好，我们现在开始推导新的 swizzle 公式。首先牢记一个物理限制：Bank ID 只由坐标的低 5 bits 决定（因为 % 32）。
 
-![swizzling](../static/swizzle.svg)
+![swizzling](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/swizzle.svg)
 
 通过仔细观察，一个 warp 内，以 warp 0 为例：
 
@@ -342,7 +342,7 @@ This kernel has uncoalesced global accesses resulting in a total of 2097152 exce
 
 两个异常提示是同一个问题在 L1 和 L2 两个层面的体现，为了解决这个问题。我们可以重新设计一下每个线程负责的 8 列，只要把这 8 列分成两个连续的 4 列，依然可以用 float4 读写，同时把相邻线程划到连续的 float4 地址上，比如 T0 读取 0~3，T1 读取 4~7..., 读完一次 float4 后， T0 再读 64~67，T1 读取 68~71... 这样就能保证写回 c 时相邻线程地址是合并的了。
 
-![col_shuffle](../static/col_shuffle.svg)
+![col_shuffle](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/col_shuffle.svg)
 
 核心修改如下，把 2d warp tiling 去掉，一个 warp 负责 16 行 c，然后直接用线程 id 去映射成我们想要的 c_col。
 
@@ -546,7 +546,7 @@ sgemm_cublas_tf32              mean time:  8.798057 ms, speedup: 1.70
 
 ### ncu 报告
 
-![ncu report](../static/sgemm_ncu.png)
+![ncu report](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/sgemm_ncu.png)
 
 从报告可以看到，ncu 已经被 `sgemm_at_bcf_swizzling_dbf_rw kernel` 完全打服了，`estimated speedup = 0%`，说明 ncu 认为该 kernel 已经达到了理论性能上限。反而第一个 cuBLAS 的 kernel 还有“提高空间”（笑：）
 

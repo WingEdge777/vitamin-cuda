@@ -64,7 +64,7 @@ __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, i
 
 No point starting from scratch in 2026. Here's a reasonably strong baseline with 2D data tiling + 2D block/thread tiling + shared memory, which we'll iteratively improve. First, based on my GPU specs (RTX 5060 Laptop) and resource limits (max SMEM 100 KB, 48 KB per block; max 65,536 registers per block), I determined the data tile size and thread block size.
 
-![ab_tiling](../static/tiling.svg)
+![ab_tiling](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/tiling.svg)
 
 - From C's perspective: data tile BM×BN = 128×128, block size = 256 threads.
   - Each block computes a 128×128 sub-matrix of C. 256 threads form 8 warps in a 2×4 layout.
@@ -264,7 +264,7 @@ We need a mapping f(row, col) → (row, new_col) that distributes new_col across
 
 Let's derive a proper swizzle formula. First, remember the physical constraint: Bank ID is determined by the **lower 5 bits** of the address (since % 32).
 
-![swizzling](../static/swizzle.svg)
+![swizzling](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/swizzle.svg)
 
 Observing carefully within a warp (warp 0 as an example):
 
@@ -341,7 +341,7 @@ Why does NCU flag this? Each thread computes 8 rows × 8 contiguous columns. Whe
 
 Both warnings reflect the same issue at L1 and L2 levels. The fix: redesign each thread's 8-column assignment. Split the 8 columns into two groups of 4 contiguous columns (still `float4`-compatible), and map adjacent threads to contiguous `float4` addresses. For example: T0 reads columns 0–3, T1 reads 4–7, ... After one pass, T0 reads 64–67, T1 reads 68–71, ... This ensures adjacent threads write to contiguous addresses.
 
-![col_shuffle](../static/col_shuffle.svg)
+![col_shuffle](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/col_shuffle.svg)
 
 Core changes — remove the 2D warp tiling, have each warp cover 16 rows of C, and map thread IDs directly to the desired c_col:
 
@@ -542,7 +542,7 @@ From 18.76 ms to 14.19 ms — a purely hand-crafted optimization journey, going 
 
 ### NCU Report
 
-![ncu report](../static/sgemm_ncu.png)
+![ncu report](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/sgemm_ncu.png)
 
 The report shows that NCU is completely satisfied with `sgemm_at_bcf_swizzling_dbf_rw`: **`estimated speedup = 0%`** — meaning NCU considers the kernel at its theoretical performance ceiling. Meanwhile, the cuBLAS kernel is the one with "room for improvement." :)
 

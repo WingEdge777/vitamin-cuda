@@ -545,8 +545,8 @@ flash_decode_tma_128                     mean time: 5.718791 ms, speedup: 1.04, 
 
 ncu report：
 
-![](../static/flash_decoding_summary.png)
-![](../static/flash_decoding_detail.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/flash_decoding_summary.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/flash_decoding_detail.png)
 
 有一些 uncoalesced global accesses (ws_o 和 ws_lse 读写没做优化，但这已不在热点循环内，对整体性能影响微乎其微。)，此外 DRAM 带宽使用率硬件统计也拉到 90%+了。
 

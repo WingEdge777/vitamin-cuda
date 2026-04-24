@@ -275,11 +275,11 @@ uint32_t smem_addr = static_cast<uint32_t>(__cvta_generic_to_shared(&Bs[b_row][S
 
 在动手之前，我们要重点理解一下 fragment C 的寄存器状态。mma.sync.m16n8k16 指令计算后，输出的是一个 16x8 的小矩阵，我们需要搞清楚每个线程究竟 hold 住了这个矩阵里的哪些值。NV 官方文档有个图，mma m16n8k16 的计算 shape 下，fragment c 为：
 
-![](../static/fragment_c.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/fragment_c.png)
 
 为了更直观，我也画了一张图：
 
-![](../static/my_fragment_c.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/my_fragment_c.svg)
 
 总结下来规律很清晰：在一个 warp 内，每 4 个线程负责同一行的 8 个元素（fp16/bf16），跨过 8 行之后，这个排布再重复一次。
 具体到线程级别，每个线程手里攥着 4 个值。比如：
@@ -304,7 +304,7 @@ row: 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 
 col: 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6
 ```
 
-![](../static/swizzle_c.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/swizzle_c.svg)
 
 仔细观察二进制，row 是 0~7，即 00xxx，有效变量位是 bit0~2，然后我们还要保障 16 字节对齐，所以直接取了低 3bits，左移三位正好和 col 的低 3bit 错开，异或后即可遍历所有 32 个 bank。
 
@@ -397,7 +397,7 @@ hgemm_bcf_dbf                            mean time: 4.096174 ms, speedup: 1.00, 
 hgemm_bcf_dbf_rw                         mean time: 4.075860 ms, speedup: 1.01, tflops: 33.72
 ```
 
-![](../static/hgemm_final.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/hgemm_final.png)
 
 ### 一些讨论
 

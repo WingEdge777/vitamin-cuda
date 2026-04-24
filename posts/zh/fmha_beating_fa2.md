@@ -508,11 +508,11 @@ fmha_tma_128                             mean time: 17.612578 ms, speedup: 1.04,
 我们在所有 seq_len case 下都超越了 FA2 的性能，当然这主要归功于 TMA 解放了大量寄存器（主要是寻址变量），使得指令并行度更高，copy 和计算重叠也更充分
 
 NCU report:
-![summary](../static/fmha_summary.png)
+![summary](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/fmha_summary.png)
 
 我的算子寄存器还有充足的余量（FA2 已经拉满了）
 
-![shared memory](../static/fmha_shared_table.png)
+![shared memory](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/fmha_shared_table.png)
 
 我的算子 L2 利用率拉爆了（90%+）
 

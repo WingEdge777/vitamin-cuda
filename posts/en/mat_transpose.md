@@ -526,7 +526,7 @@ Curious readers may want to calculate the theoretical peak bandwidth. For the RT
 
 Our final optimized kernel (`transpose_Smem_swizzled_packed`) achieves **323.6 GB/s** effective bandwidth — **84.2% of theoretical peak**. For a laptop with background noise, this is excellent. In practice, DRAM refresh, page table translation, and bus protocol overhead mean that 80–85% of theoretical bandwidth is textbook-level saturation. NCU's measured compute-memory throughput reached **92%**, and L1-level throughput is also near the limit.
 
-![ncu report](../static/mat_transpose.png)
+![ncu report](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/mat_transpose.png)
 
 **Conclusion:** Through SMEM + swizzle + vectorization, we achieved perfect coalesced access, completely eliminating the write amplification caused by strided stores. Every byte flowing through the 128-bit bus carries useful payload, pushing throughput to the hardware's physical limit.
 

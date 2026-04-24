@@ -107,9 +107,9 @@ ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2]; // cooperatively load 2
 
 ### cuBLAS Kernel NCU Report
 
-![](../static/cublas_tf32_ncu_0.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/cublas_tf32_ncu_0.png)
 
-![](../static/cublas_tf32_ncu_1.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/cublas_tf32_ncu_1.png)
 
 Honestly, when I first saw the cuBLAS NCU report, I was intimidated. Non-trivial compute/memory throughput, a flawless shared memory statistics table, use of `cp.async` and `ldmatrix` with shared loads, and **zero bank conflicts**. On top of that: fully coalesced global memory access, a 4-stage pipeline, and registers pushed hard to 228 per thread. It looked like there was no room left to optimize. How could I possibly match this? Initially, I figured reaching 95% of cuBLAS would be a good outcome.
 
@@ -121,7 +121,7 @@ OK — initial recon on the opponent complete. Time to write our own kernel.
 
 For this first kernel, the plan was simple: get `cp.async` working, fire up `ldmatrix` + `mma`, and call it a day. Bank conflicts, coalesced access — worry about those later. While I could roughly guess CUTLASS's implementation, I didn't want to copy it. Copying won't beat the master, and the reverse-engineered strategy might not even be complete. The 4-stage pipeline was also out — I'd need to resize SMEM and manage 4-stage scheduling. Pass.
 
-![](../static/tiling.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/tiling.svg)
 
 That said, it wasn't entirely rough. I followed the same approach as my previous SGEMM kernel:
 
@@ -271,7 +271,7 @@ sgemm_tf32_bt                            mean time: 15.925327 ms, speedup: 0.95,
 
 Ouch — even slower than PyTorch's FP32 matmul. Let's profile with NCU:
 
-![](../static/bt.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/bt.png)
 
 The glaring bank conflict ratio (average 32.6-way — I'm not even sure how the hardware counted that) was expected. Time to optimize SMEM access.
 
@@ -314,7 +314,7 @@ Time to derive our XOR swizzle formula. We need a mapping f(row, col) → (row, 
 - Row values in binary: `00000`–`01111` (`0xxxx`); the first 8 threads are `00000`–`00111`.
 - Column values are identical: `00000` (looking at the first 8 threads only).
 
-![](../static/swizzle_a.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/swizzle_a.svg)
 
 Bank conflicts arise from different addresses hitting the same bank ID. Specifically here, rows with the same column value map to conflicting banks (somewhat harder to reason about since the SMEM width spans 16 banks). Since rows differ, we can use row bits to perturb the column.
 
@@ -395,7 +395,7 @@ But does this swizzle work for the LDG write? Let's look. The row values in bina
 
 We're extracting row bits 1–2 and shifting them to bits 2–3. For row values 0, 4, 8, 12, the XOR offset has only two distinct states: `0000` and `1000`. All 32 threads land on just two banks — a brutal 16-way conflict.
 
-![](../static/swizzle_b.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/swizzle_b.svg)
 
 So what do we do? Looking more carefully, row is always a multiple of 4; its effective variable bits are at positions 2–4. If we use bits 2–4 directly: `((row >> 2) & 0x7) << 2`. Still no good — this would go out of array bounds (as discussed for As, the perturbation range must stay within bits 2–3). Constraining: `((row >> 2) & 0x3) << 2`.
 
@@ -460,9 +460,9 @@ sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, 
 sgemm_tf32_bt_swizzle_dbf                mean time: 9.025055 ms, speedup: 1.68, tflops: 15.23
 ```
 
-![](../static/cublas_l2.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/cublas_l2.png)
 
-![](../static/L2.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/L2.png)
 
 Closer, but still ~0.x ms short. Comparing NCU reports, I noticed cuBLAS had exceptionally high L2 cache hit rates (85%+) while mine was only 30%+. Could this be the gap?
 
@@ -470,7 +470,7 @@ Closer, but still ~0.x ms short. Comparing NCU reports, I noticed cuBLAS had exc
 
 Whether L2 matters — let's find out. Enter: **grid swizzle**. Grid swizzling reorders the sequence in which blocks access global memory tiles. By default, CUDA launches blocks in X-dimension (N) first, then Y-dimension (M).
 
-![](../static/grid_swizzle.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/grid_swizzle.svg)
 
 We manually remap each block's actual tile assignment, folding the traversal into a vertical strip of width 8. After processing 8 tiles along the X dimension, the traversal immediately drops to the next row. A full A-row / B-column tile is 128 × 4096 × 4 bytes = 2 MB. Without the width constraint, the GPU executes all 32 blocks in row 0. These 32 blocks share 1 A tile (2 MB) but each needs a different B tile.
 
@@ -498,7 +498,7 @@ sgemm_cublas_tf32                        mean time: 8.535476 ms, speedup: 1.77, 
 sgemm_tf32_bt_swizzle_dbf                mean time: 8.723189 ms, speedup: 1.83, tflops: 15.76
 ```
 
-![](../static/l2_opt.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/l2_opt.png)
 
 It works. Latency improved further, and NCU shows our L2 hit rate jumped to 90%! Unfortunately, still a hair behind cuBLAS.
 
@@ -508,8 +508,8 @@ So close. SMEM swizzle, double buffer, grid swizzle — all deployed. What's lef
 
 I stared at the profiles, thinking hard. Opened the cuBLAS NCU report side by side to find the biggest remaining gap.
 
-![](../static/cublas_sh.png)
-![](../static/sh.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/cublas_sh.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/sh.png)
 
 cuBLAS: **0 bank conflicts**. Me: **150M+ conflicts**. That's the gap. There's no reason cuBLAS can do it and we can't. How does cuBLAS achieve it? Comparing the shared memory statistics tables, I noticed:
 
@@ -522,13 +522,13 @@ Having reverse-engineered cuBLAS's Bs read strategy, let's adopt it. The allure 
 
 This step isn't trivial — we need to understand the exact B fragment layout after `ldmatrix` to replicate it via direct SMEM reads, or `mma` won't work. From the official docs:
 
-![](../static/b_fragment.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/b_fragment.png)
 
 Let's carefully understand the B fragment register layout for `m16n8k8` TF32. In the diagram, b0 and b1 denote each thread's two 32-bit registers. After loading an 8×8 matrix, every 4 threads hold one column: T0 holds b[0][0] and b[4][0]; T1 holds b[1][0] and b[5][0]; ... T4 holds b[0][1] and b[4][1]; etc.
 
 Here's my diagram for clarity:
 
-![](../static/thread_b_reg.svg)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/thread_b_reg.svg)
 
 Not that complicated when you see it laid out (key insight: row/col refer to the logical indices of the B sub-matrix, independent of whether the memory layout is row-major or column-major). We can simply load data from GMEM into Bs as-is, then manually compute the coordinate mapping when reading.
 
@@ -586,7 +586,7 @@ sgemm_tf32_swizzle_bcf                   mean time: 8.650843 ms, speedup: 1.83, 
 
 Liftoff — the single-buffer version is even faster than the previous double-buffered one.
 
-![](../static/sh_opt.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/sh_opt.png)
 
 Bank conflicts: effectively zero (NCU shows 48,618 / 100,715,659 ≈ 0.04% — caused by inter-warp conflicts, as discussed in my previous article; negligible).
 
@@ -605,7 +605,7 @@ sgemm_tf32_swizzle_bcf                   mean time: 8.650843 ms, speedup: 1.83, 
 sgemm_tf32_swizzle_bcf_dbf               mean time: 8.275736 ms, speedup: 1.92, tflops: 16.61
 ```
 
-![](../static/final.png)
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/final.png)
 
 From 15.925 ms to 8.276 ms — another hand-crafted performance optimization journey, going head-to-head with cuBLAS and coming out on top. Throughout this process, we used precise resource allocation, intricate coordinate mappings tailored to `ldmatrix`/`mma` (each different for A, B, and C fragments), grid swizzling to maximize L2 utilization, double buffer pipelining, and even reverse-engineered cuBLAS's own strategy to ultimately surpass it. Quite satisfying, isn't it?
 
