@@ -4,7 +4,7 @@
 
 > 本文适用于有一定 CUDA 编程基础，熟悉 GEMM/multi-head-attention 优化，对进阶嵌入 PTX 指令性能调优感兴趣的读者阅读
 >
-> 完整 kernel 和测试代码可以点击 [flash_decode](/kernels/flash_decode) 查看，欢迎大家关注我的 vitamin-cuda 项目：
+> 完整 kernel 和测试代码可以点击 [flash_decode](/kernels/flash_decode) 查看
 
 章接上文，上篇 fmha 文章中我们实现了 flash attention (fmha sm120)，并实现了超越 FA2 的性能，当然这主要归功于 TMA 的外挂加持。本文延续之前的内容，接下来给出 flash decoding 的实现。
 
@@ -548,7 +548,7 @@ ncu report：
 ![](../static/flash_decoding_summary.png)
 ![](../static/flash_decoding_detail.png)
 
-有一些 uncoalesced global accesses (ws_o 和 ws_lse 读写没做优化，但这已不在热点循环内，对对整体性能影响微乎其微。)，此外 DRAM 带宽使用率硬件统计也拉到 90%+了。
+有一些 uncoalesced global accesses (ws_o 和 ws_lse 读写没做优化，但这已不在热点循环内，对整体性能影响微乎其微。)，此外 DRAM 带宽使用率硬件统计也拉到 90%+了。
 
 ## 4. TODO
 
@@ -562,8 +562,6 @@ ncu report：
 
 以上就是我目前对 flash decoding 的所有理解啦（but stay tuned！）
 
-如有错误，欢迎指正。如有建议，也欢迎讨论（真心求教，因为感觉写的还有问题）
-
-完整代码和测试脚本，还请从 github 获取：
+如有错误，欢迎指正。如有建议，也欢迎讨论
 
 以上
