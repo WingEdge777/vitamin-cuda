@@ -1,6 +1,6 @@
 # [CUDA 优化实战] 纯手搓 flash decoding sm120 : 拉爆显存带宽的 cuda c++实现
 
-## 0. 序 - flash decode 和 prefill attention : 完全不同的优化哲学
+## 0. 序 - decode 和 prefill attention : 完全不同的优化哲学
 
 > 本文适用于有一定 CUDA 编程基础，熟悉 GEMM/multi-head-attention 优化，对进阶嵌入 PTX 指令性能调优感兴趣的读者阅读
 >
