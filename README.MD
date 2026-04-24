@@ -6,7 +6,7 @@
 >
 > *A hands-on CUDA learning path from novice to expert.*
 
-Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 140+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts. Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
+Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 140+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts(**GEMM**, **flash attention/decoing**). Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
 
 **No over-engineered abstractions. No black boxes. Just pure hardware saturation.**
 
