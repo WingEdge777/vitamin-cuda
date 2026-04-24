@@ -197,7 +197,7 @@ __global__ void flash_decode_tma_kernel(T *q,
     // 3. load q fragment
     pack128 qs{FLOAT4(q[q_head_id * HEAD_DIM + lane_id * 8])};
 
-    // 4. init online softmax state
+    // 4. init subgroup-local online softmax state
     __align__(16) float acc_o[8] = {0.0f};
     float m_i = -FLT_MAX;
     float d_i = 0.0f;
@@ -250,10 +250,7 @@ __global__ void flash_decode_tma_kernel(T *q,
             }
         }
 
-        // 5.3 merge row max across subgroups
-        const float m_curr = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_part : -FLT_MAX);
-
-        // 5.4 accumulate O = P * V, then merge across subgroups
+        // 5.3 accumulate subgroup-local O = P * V
         mbarrier_wait(mbar_v, phase_v);
         phase_v ^= 1;
         float part_d = 0.0f;
@@ -262,7 +259,7 @@ __global__ void flash_decode_tma_kernel(T *q,
         for (int i = 0; i < ROWS_PER_GROUP; ++i) {
             const int row = row_begin + i;
             if (row < current_bn) {
-                float p = exp2f(acc_s[i] - m_curr);
+                float p = exp2f(acc_s[i] - m_part);
                 part_d += p;
 
                 pack128 vs{FLOAT4(Vs[row][lane_id * 8])};
@@ -272,19 +269,29 @@ __global__ void flash_decode_tma_kernel(T *q,
                 }
             }
         }
-        const float alpha = exp2f(m_i - m_curr);
+        if (m_part != -FLT_MAX) {
+            const float alpha = exp2f(m_i - m_part);
 #pragma unroll
-        for (int i = 0; i < 8; ++i) {
-            acc_o[i] = acc_o[i] * alpha + block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(part_o[i]);
+            for (int i = 0; i < 8; ++i) {
+                acc_o[i] = acc_o[i] * alpha + part_o[i];
+            }
+            d_i = d_i * alpha + part_d;
+            m_i = m_part;
         }
-        d_i = d_i * alpha + block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? part_d : 0.0f);
-        m_i = m_curr;
     }
 
-    // 6. write split results to workspace
+    // 6. merge subgroup states once per chunk, then write split results
+    const float m_chunk = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_i : -FLT_MAX);
+    const float alpha = d_i > 0.0f ? exp2f(m_i - m_chunk) : 0.0f;
+    const float d_chunk = block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? d_i * alpha : 0.0f);
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        acc_o[i] = block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(acc_o[i] * alpha);
+    }
+
     if (group_id == 0) {
         int out_base_idx = (q_head_id * num_chunks + chunk_id) * HEAD_DIM + lane_id * 8;
-        float inv_d = __frcp_rn(d_i);
+        float inv_d = __frcp_rn(d_chunk);
 #pragma unroll
         for (int i = 0; i < 8; i++) {
             acc_o[i] *= inv_d;
@@ -300,7 +307,7 @@ __global__ void flash_decode_tma_kernel(T *q,
 
         if (lane_id == 0) {
             int scalar_idx = q_head_id * num_chunks + chunk_id;
-            ws_lse[scalar_idx] = m_i * 0.6931471805599453f + logf(d_i);
+            ws_lse[scalar_idx] = m_chunk * 0.6931471805599453f + logf(d_chunk);
         }
     }
 }
@@ -374,7 +381,7 @@ inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
-template <typename T, const int rowBytes = 128>
+template <typename T>
 inline CUtensorMap create_3d_tensor_map(T *global_address,
                                         uint64_t dim_d,
                                         uint64_t dim_h,
@@ -480,8 +487,6 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         auto ws_o = torch::empty({q_head, blocks_per_grid.x, head_dim}, options);                                      \
         /* launch kernel */                                                                                            \
         switch (chunk_size) {                                                                                          \
-            case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64); break;                                                   \
-            case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128); break;                                                 \
             case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256); break;                                                 \
             case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512); break;                                                 \
             case 1024: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 1024); break;                                               \
