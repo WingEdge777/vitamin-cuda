@@ -1,4 +1,4 @@
-# [CUDA 优化实战] 纯手搓 flash decoding sm120: decode attention cuda c++实现
+# [CUDA 优化实战] 纯手搓 flash decoding sm120 : 拉爆显存带宽的 cuda c++实现
 
 ## 0. 序 - flash decode 和 prefill attention : 完全不同的优化哲学
 
@@ -241,8 +241,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
 - kernel pass 1：
   - 初始化 Ks、Vs 2 块 smem 和 2 个 tma mbarrier
-  - 初始化 acc_o[8],每个 group（16 线程）私有化初始化历史状态 acc_o[8], m_i, d_i
-  - 加载 Qs[8]（使用 float4 向量化加载到寄存器）
+  - 初始化 acc_o[8], 每个 group（16 线程）私有化初始化历史状态 acc_o[8], m_i, d_i
+  - 加载 Qs[8](使用 float4 向量化加载到寄存器)
   - 一个 block 负责一个 chunk，kv chunk 内 loop：
     - tma 发起加载 Ks、Vs，并等待 Ks 加载完成
     - [计算 S] 循环 8 次（Group 内每线程负责 8 行）：
@@ -539,15 +539,20 @@ torch.compile                            mean time: 5.959847 ms, 360.33 GB/s
 flash_decode_tma_128                     mean time: 5.718791 ms, speedup: 1.04, GB/s: 375.52
 ```
 
-可以看到，性能上超过了 torch.compile 的 native 实现（pytorch+compile 真的不弱），但是并不多。
+可以看到，性能上超过了 torch.compile 的 native 实现，但强的有限（pytorch+compile 真的不弱）。
 
-这里 flashinfer 我没有跑通，所以无从比较，flashinfer 大概率是比我这个 kernel 强的。因为虽然大 seq 下我的算子逻辑带宽使用率（卡理论峰值带宽 384GB/s）上来看，已经达到了 374.7/384 = 97.5%（基本相当于 memory copy 了），但短序列情况下，离峰值还差蛮多的。
+另外 flashinfer 我没有跑通，所以无从比较，flashinfer 可能会比我这个 kernel 强的。因为虽然大 seq 下我的算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 375.52⁄384 = 97.8%（巨高了），但短序列情况下，离峰值还差一些的。
 
-这次 ncu report 就不放了，不是很好看，都是各种 `Uncoalesced Accesses` + bank 冲突，我还在思考如何优化。
+ncu report：
+
+![](../static/flash_decoding_summary.png)
+![](../static/flash_decoding_detail.png)
+
+有一些 uncoalesced global accesses (ws_o 和 ws_lse 写回没做优化，但这已不在热点循环内，对对整体性能影响微乎其微。)，此外 DRAM 带宽使用率硬件统计也拉到 90%+了。
 
 ## 4. TODO
 
-之前列的 TODO，已经完成了 decode attention，当然这个 kernel 我还在考虑进一步优化 （还有相对冗余的 smem；block 同步感觉也还有改善空间，block 同步次数太多了；换单 block 二/三级流水线效果会更好）。
+之前列的 TODO，已经完成了 decode attention，当然这个 kernel 我还在考虑进一步优化 （还有相对冗余的 smem；换单 block 二/三级流水线效果会更好）。
 
 此外，剩下 attention with kv cache，感觉手搓有点恶心，就是为了对齐数据边界而写代码，还是算了。量化 attention 还是要结合模型和具体 case 进行考虑，也放弃了。
 
