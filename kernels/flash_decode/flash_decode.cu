@@ -605,10 +605,6 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
 }
 
 #define DISPATCH_TMA_KERNEL(NAME, HEAD_DIM, CHUNK_SIZE)                                                                \
-    C10_CUDA_CHECK(cudaFuncSetAttribute(                                                                               \
-        NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, 128, __nv_bfloat16>,                                                   \
-        cudaFuncAttributeMaxDynamicSharedMemorySize,                                                                   \
-        static_cast<int>(smem_bytes)));                                                                                \
     NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, 128, __nv_bfloat16>                                                        \
         <<<blocks_per_grid, 128, smem_bytes, stream>>>(reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),                \
                                                        tma_k,                                                          \
@@ -620,8 +616,23 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                                        kv_head,                                                        \
                                                        scale);
 
-#define binding_tiled_tma_func_gen(name, HEAD_DIM, kstages)                                                            \
-    void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {    \
+#define DISPATCH_TMA_DBF_K_KERNEL(NAME, HEAD_DIM, CHUNK_SIZE)                                                          \
+    cudaFuncSetAttribute(NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, 128, __nv_bfloat16>,                                 \
+                         cudaFuncAttributeMaxDynamicSharedMemorySize,                                                   \
+                         static_cast<int>(smem_bytes));                                                                \
+    NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, 128, __nv_bfloat16>                                                        \
+        <<<blocks_per_grid, 128, smem_bytes, stream>>>(reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),                \
+                                                       tma_k,                                                          \
+                                                       tma_v,                                                          \
+                                                       reinterpret_cast<float *>(ws_o.data_ptr()),                     \
+                                                       reinterpret_cast<float *>(ws_lse.data_ptr()),                   \
+                                                       kv_len,                                                         \
+                                                       q_head,                                                         \
+                                                       kv_head,                                                        \
+                                                       scale);
+
+#define binding_tiled_tma_func_gen(NAME, HEAD_DIM, SMEM_TILE_COUNT, DISPATCH_MACRO)                                    \
+    void NAME##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {          \
                                                                                                                        \
         CHECK_T(q);                                                                                                    \
         CHECK_T(k);                                                                                                    \
@@ -646,7 +657,7 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         const int BN = 64;                                                                                             \
         const int num_sms = 26;                                                                                        \
         const size_t smem_bytes =                                                                                      \
-            BN * head_dim * sizeof(__nv_bfloat16) * (kstages + 1) + sizeof(mbarrier_t) * (kstages + 1);                \
+            BN * head_dim * sizeof(__nv_bfloat16) * (SMEM_TILE_COUNT) + sizeof(mbarrier_t) * (SMEM_TILE_COUNT);        \
         const int chunk_size = get_chunk_size(q_head, kv_len, num_sms);                                                \
         CUtensorMap tma_k = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k.data_ptr()),       \
                                                                 head_dim,                                              \
@@ -674,12 +685,12 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
         auto ws_o = torch::empty({q_head, blocks_per_grid.x, head_dim}, options);                                      \
         /* launch kernel */                                                                                            \
         switch (chunk_size) {                                                                                          \
-            case 64: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 64); break;                                                   \
-            case 128: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 128); break;                                                 \
-            case 256: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 256); break;                                                 \
-            case 512: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 512); break;                                                 \
-            case 1024: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 1024); break;                                               \
-            case 2048: DISPATCH_TMA_KERNEL(name, HEAD_DIM, 2048); break;                                               \
+            case 64: DISPATCH_MACRO(NAME, HEAD_DIM, 64); break;                                                        \
+            case 128: DISPATCH_MACRO(NAME, HEAD_DIM, 128); break;                                                      \
+            case 256: DISPATCH_MACRO(NAME, HEAD_DIM, 256); break;                                                      \
+            case 512: DISPATCH_MACRO(NAME, HEAD_DIM, 512); break;                                                      \
+            case 1024: DISPATCH_MACRO(NAME, HEAD_DIM, 1024); break;                                                    \
+            case 2048: DISPATCH_MACRO(NAME, HEAD_DIM, 2048); break;                                                    \
             default: TORCH_CHECK(false, "Unsupported chunk size: ", chunk_size);                                       \
         }                                                                                                              \
         flash_decode_reduce_kernel<HEAD_DIM, 128, __nv_bfloat16>                                                       \
@@ -689,8 +700,8 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                          blocks_per_grid.x);                                                           \
     }
 
-binding_tiled_tma_func_gen(flash_decode_tma, 128, 1);
-binding_tiled_tma_func_gen(flash_decode_tma_dbf_k, 128, 2);
+binding_tiled_tma_func_gen(flash_decode_tma, 128, 2, DISPATCH_TMA_KERNEL);
+binding_tiled_tma_func_gen(flash_decode_tma_dbf_k, 128, 3, DISPATCH_TMA_DBF_K_KERNEL);
 
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
