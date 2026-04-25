@@ -314,6 +314,182 @@ __global__ void flash_decode_tma_kernel(T *q,
     }
 }
 
+// flash decoding softmax(q @k.T *scale) @v
+template <const int BN = 64,
+          const int CHUNK_SIZE = 256,
+          const int HEAD_DIM = 128,
+          const int THREADS_PER_BLOCK = 128,
+          typename T>
+__global__ void flash_decode_tma_dbf_k_kernel(T *q,
+                                              const __grid_constant__ CUtensorMap tma_k,
+                                              const __grid_constant__ CUtensorMap tma_v,
+                                              float *ws_o,   // [q_head, num_chunks, HEAD_DIM]
+                                              float *ws_lse, // [q_head, num_chunks]
+                                              int kv_len,
+                                              int q_head,
+                                              int kv_head,
+                                              float scale) {
+    static_assert(THREADS_PER_BLOCK == 128);
+    static_assert(BN == 64);
+
+    // 1. shared memory: K tile, V tile, mbarriers
+    extern __shared__ __align__(128) uint8_t smem_buf[];
+    T(*Ks)[BN][HEAD_DIM] = reinterpret_cast<T(*)[BN][HEAD_DIM]>(smem_buf);
+    T(*Vs)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf + BN * HEAD_DIM * sizeof(T) * 2);
+    mbarrier_t *mbar_k = reinterpret_cast<mbarrier_t *>(smem_buf + BN * HEAD_DIM * sizeof(T) * 3);
+    mbarrier_t *mbar_v = mbar_k + 2;
+
+    // 2. coordinates
+    const int tid = threadIdx.x;
+    const int chunk_id = blockIdx.x;
+    const int q_head_id = blockIdx.y;
+    const int kv_group_size = q_head / kv_head;
+    const int kv_head_id = q_head_id / kv_group_size;
+
+    constexpr int THREADS_PER_ROW = 16;
+    constexpr int NUM_GROUPS = THREADS_PER_BLOCK / THREADS_PER_ROW;
+    constexpr int ROWS_PER_GROUP = BN / NUM_GROUPS;
+    const int group_id = tid / THREADS_PER_ROW;
+    const int lane_id = tid % THREADS_PER_ROW;
+
+    // 3. load q fragment
+    pack128 qs{FLOAT4(q[q_head_id * HEAD_DIM + lane_id * 8])};
+
+    // 4. init subgroup-local online softmax state
+    __align__(16) float acc_o[8] = {0.0f};
+    float m_i = -FLT_MAX;
+    float d_i = 0.0f;
+
+    int phase_k[2] = {0};
+    int phase_v = 0;
+
+    const float scale_log2 = scale * 1.44269504f; // scale*log2(e)
+    const int num_chunks = gridDim.x;
+    const int chunk_start = chunk_id * CHUNK_SIZE;
+    const int chunk_end = min(chunk_start + CHUNK_SIZE, kv_len);
+    // preload Ks
+    if (tid == 0) {
+        mbarrier_init(mbar_k, 1);
+        mbarrier_init(mbar_k + 1, 1);
+        mbarrier_init(mbar_v, 1);
+
+        mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
+        cp_async_bulk_tensor_3d(mbar_k, &tma_k, Ks[0], 0, kv_head_id, chunk_start);
+    }
+    __syncthreads();
+    int read_idx = 0, write_idx = 1;
+
+    // 5. loop over KV tiles inside this chunk
+    for (int n = chunk_start; n < chunk_end; n += BN) {
+        int current_bn = min(BN, chunk_end - n);
+
+        // 5.1 TMA async load K/V
+        if (tid == 0) {
+            if (n + BN < chunk_end) {
+                mbarrier_expect_tx(mbar_k + write_idx, BN * HEAD_DIM * sizeof(T));
+                cp_async_bulk_tensor_3d(mbar_k + write_idx, &tma_k, Ks[write_idx], 0, kv_head_id, n + BN);
+            }
+            mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
+            cp_async_bulk_tensor_3d(mbar_v, &tma_v, Vs, 0, kv_head_id, n);
+        }
+        mbarrier_wait(mbar_k + read_idx, phase_k[read_idx]);
+        phase_k[read_idx] ^= 1; // flip phase
+
+        // 5.2 compute S = Q * K^T, keep rows per subgroup in registers
+        const int row_begin = group_id * ROWS_PER_GROUP;
+        float acc_s[ROWS_PER_GROUP];
+        float m_part = -FLT_MAX;
+#pragma unroll
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            acc_s[i] = -FLT_MAX;
+        }
+#pragma unroll
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            const int row = row_begin + i;
+            float sum = 0.0f;
+            if (row < current_bn) {
+                pack128 ks{FLOAT4(Ks[read_idx][row][lane_id * 8])};
+#pragma unroll
+                for (int j = 0; j < 8; ++j) {
+                    sum += static_cast<float>(qs.bf[j]) * static_cast<float>(ks.bf[j]);
+                }
+            }
+            sum = warp_reduce_sum<THREADS_PER_ROW>(sum);
+            if (row < current_bn) {
+                acc_s[i] = sum * scale_log2;
+                m_part = fmaxf(m_part, acc_s[i]);
+            }
+        }
+
+        // 5.3 accumulate subgroup-local O = P * V
+        mbarrier_wait(mbar_v, phase_v);
+        phase_v ^= 1;
+        float part_d = 0.0f;
+        float part_o[8] = {0.0f};
+#pragma unroll
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            const int row = row_begin + i;
+            if (row < current_bn) {
+                float p = exp2f(acc_s[i] - m_part);
+                part_d += p;
+
+                pack128 vs{FLOAT4(Vs[row][lane_id * 8])};
+#pragma unroll
+                for (int j = 0; j < 8; ++j) {
+                    part_o[j] += p * static_cast<float>(vs.bf[j]);
+                }
+            }
+        }
+        if (m_part != -FLT_MAX) {
+            const float m_new = fmaxf(m_i, m_part);
+            const float alpha_old = exp2f(m_i - m_new);
+            const float alpha_new = exp2f(m_part - m_new);
+#pragma unroll
+            for (int i = 0; i < 8; ++i) {
+                acc_o[i] = acc_o[i] * alpha_old + part_o[i] * alpha_new;
+            }
+            d_i = d_i * alpha_old + part_d * alpha_new;
+            m_i = m_new;
+        }
+
+        // next round
+        __syncthreads();
+        read_idx ^= 1;
+        write_idx ^= 1;
+    }
+
+    // 6. merge subgroup states once per chunk, then write split results
+    const float m_chunk = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_i : -FLT_MAX);
+    const float alpha = d_i > 0.0f ? exp2f(m_i - m_chunk) : 0.0f;
+    const float d_chunk = block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? d_i * alpha : 0.0f);
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        acc_o[i] = block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(acc_o[i] * alpha);
+    }
+
+    if (group_id == 0) {
+        int out_base_idx = (q_head_id * num_chunks + chunk_id) * HEAD_DIM + lane_id * 8;
+        float inv_d = __frcp_rn(d_chunk);
+#pragma unroll
+        for (int i = 0; i < 8; i++) {
+            acc_o[i] *= inv_d;
+        }
+        pack128 out_pack0, out_pack1;
+#pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            out_pack0.f[i] = acc_o[i];
+            out_pack1.f[i] = acc_o[i + 4];
+        }
+        FLOAT4(ws_o[out_base_idx + 0]) = out_pack0.f4;
+        FLOAT4(ws_o[out_base_idx + 4]) = out_pack1.f4;
+
+        if (lane_id == 0) {
+            int scalar_idx = q_head_id * num_chunks + chunk_id;
+            ws_lse[scalar_idx] = m_chunk * 0.6931471805599453f + logf(d_chunk);
+        }
+    }
+}
+
 template <const int HEAD_DIM = 128, const int THREADS_PER_BLOCK = 128, typename T>
 __global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int num_chunks) {
     const int q_head_id = blockIdx.x;
@@ -429,6 +605,10 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
 }
 
 #define DISPATCH_TMA_KERNEL(NAME, HEAD_DIM, CHUNK_SIZE)                                                                \
+    C10_CUDA_CHECK(cudaFuncSetAttribute(                                                                               \
+        NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, 128, __nv_bfloat16>,                                                   \
+        cudaFuncAttributeMaxDynamicSharedMemorySize,                                                                   \
+        static_cast<int>(smem_bytes)));                                                                                \
     NAME##_kernel<BN, CHUNK_SIZE, HEAD_DIM, 128, __nv_bfloat16>                                                        \
         <<<blocks_per_grid, 128, smem_bytes, stream>>>(reinterpret_cast<__nv_bfloat16 *>(q.data_ptr()),                \
                                                        tma_k,                                                          \
@@ -440,8 +620,8 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                                        kv_head,                                                        \
                                                        scale);
 
-#define binding_tiled_tma_func_gen(name, HEAD_DIM)                                                                     \
-    void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {          \
+#define binding_tiled_tma_func_gen(name, HEAD_DIM, kstages)                                                            \
+    void name##_##HEAD_DIM(torch::Tensor q, torch::Tensor k, torch::Tensor v, torch::Tensor o, float scale) {    \
                                                                                                                        \
         CHECK_T(q);                                                                                                    \
         CHECK_T(k);                                                                                                    \
@@ -465,7 +645,8 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                                                                                                        \
         const int BN = 64;                                                                                             \
         const int num_sms = 26;                                                                                        \
-        const size_t smem_bytes = BN * head_dim * sizeof(__nv_bfloat16) * 2 + sizeof(mbarrier_t) * 2;                  \
+        const size_t smem_bytes =                                                                                      \
+            BN * head_dim * sizeof(__nv_bfloat16) * (kstages + 1) + sizeof(mbarrier_t) * (kstages + 1);                \
         const int chunk_size = get_chunk_size(q_head, kv_len, num_sms);                                                \
         CUtensorMap tma_k = create_3d_tensor_map<__nv_bfloat16>(reinterpret_cast<__nv_bfloat16 *>(k.data_ptr()),       \
                                                                 head_dim,                                              \
@@ -508,11 +689,13 @@ inline CUtensorMap create_3d_tensor_map(T *global_address,
                                          blocks_per_grid.x);                                                           \
     }
 
-binding_tiled_tma_func_gen(flash_decode_tma, 128);
+binding_tiled_tma_func_gen(flash_decode_tma, 128, 1);
+binding_tiled_tma_func_gen(flash_decode_tma_dbf_k, 128, 2);
 
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     // flash_decode_tma_128
     torch_pybinding_func(flash_decode_tma_128);
+    torch_pybinding_func(flash_decode_tma_dbf_k_128);
 }

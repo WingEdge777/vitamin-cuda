@@ -5,6 +5,7 @@
 flash decoing on SM120 (Blackwell-class) targets.
 
 - [x] flash_decode_tma_128
+- [ ] flash_decode_tma_dbf_k
 - [x] pytorch.compile op bindings && diff check
 
 ## Run tests

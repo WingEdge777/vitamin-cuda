@@ -137,6 +137,10 @@ def test_all():
             lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128"
         )
         diff_check(o, o_my, prefix="flash_decode_tma_128")
+        o_my = benchmark(
+            lib.flash_decode_tma_dbf_k_128, q, k, v, o_my, prefix="flash_decode_tma_dbf_k_128"
+        )
+        diff_check(o, o_my, prefix="flash_decode_tma_dbf_k_128")
 
 
 if __name__ == "__main__":
