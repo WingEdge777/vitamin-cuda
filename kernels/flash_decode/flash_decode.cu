@@ -458,13 +458,28 @@ __global__ void flash_decode_tma_dbf_k_kernel(T *q,
         write_idx ^= 1;
     }
 
-    // 6. merge subgroup states once per chunk, then write split results
+    // 6. epilogue： merge subgroup states once per chunk, then write split results
     const float m_chunk = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_i : -FLT_MAX);
     const float alpha = d_i > 0.0f ? exp2f(m_i - m_chunk) : 0.0f;
     const float d_chunk = block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? d_i * alpha : 0.0f);
+    // reuse buffer
+    float *sdata_o = reinterpret_cast<float *>(smem_buf);
 #pragma unroll
     for (int i = 0; i < 8; ++i) {
-        acc_o[i] = block_reduce_sum_by_lane<NUM_GROUPS, THREADS_PER_ROW>(acc_o[i] * alpha);
+        sdata_o[group_id * (8 * THREADS_PER_ROW) + i * THREADS_PER_ROW + lane_id] = acc_o[i] * alpha;
+    }
+    __syncthreads();
+
+    if (group_id == 0) {
+#pragma unroll
+        for (int i = 0; i < 8; ++i) {
+            float val = 0.0f;
+#pragma unroll
+            for (int group = 0; group < NUM_GROUPS; ++group) {
+                val += sdata_o[group * (8 * THREADS_PER_ROW) + i * THREADS_PER_ROW + lane_id];
+            }
+            acc_o[i] = val;
+        }
     }
 
     if (group_id == 0) {
