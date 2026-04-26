@@ -26,7 +26,7 @@ lib = load(
         "-Xptxas -v",
     ],
     extra_cflags=common_flags,
-    extra_ldflags=["-L/usr/local/cuda-12.9/lib64/stubs", "-lcuda"],
+    extra_ldflags=["-L/usr/local/cuda/lib64/stubs", "-lcuda"],
     verbose=True,
 )
 

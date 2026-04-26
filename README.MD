@@ -45,7 +45,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 
 ## Kernels (160+)
 
-All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and benchmarked against PyTorch 2.9.
+All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and benchmarked against PyTorch 2.9+.
 
 <div id="easy"></div>
 

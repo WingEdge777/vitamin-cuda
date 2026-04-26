@@ -27,7 +27,7 @@ lib = load(
         "-Xptxas -v",
     ],
     extra_cflags=common_flags,
-    extra_ldflags=["-L/usr/local/cuda-12.9/lib64/stubs", "-lcuda"],
+    extra_ldflags=["-L/usr/local/cuda/lib64/stubs", "-lcuda"],
     verbose=True,
 )
 
@@ -62,11 +62,11 @@ def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="torch"):
     if prefix == "flash-infer":
         # warm up
         for i in range(warmup):
-            op(q, k, v)
+            o = op(q, k, v)
         torch.cuda.synchronize()
         start = time.perf_counter()
         for i in range(rep):
-            op(q, k, v)
+            o = op(q, k, v)
         torch.cuda.synchronize()
     elif o is not None:
         # warm up
@@ -127,10 +127,10 @@ def test_all():
         v = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
 
         o = benchmark(torch_native_decode, q, k, v, prefix="torch")
-        # # flashinfer throw exception!
-        # o = benchmark(
-        #     flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
-        # )
+        # flashinfer throw exception!
+        o = benchmark(
+            flashinfer.single_decode_with_kv_cache, q, k, v, prefix="flash-infer"
+        )
 
         o_my = torch.zeros_like(o)
         o_my = benchmark(

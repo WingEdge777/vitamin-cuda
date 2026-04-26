@@ -27,13 +27,14 @@ lib = load(
         "-Xptxas -v",
     ],
     extra_cflags=common_flags,
-    extra_ldflags=["-L/usr/local/cuda-12.9/lib64/stubs", "-lcuda"],
+    extra_ldflags=["-L/usr/local/cuda/lib64/stubs", "-lcuda"],
     verbose=True,
 )
 
 baseline = None
 
-# @torch.compile
+
+@torch.compile
 def torch_native_decode(q, k, v, scale=None):
     # q: [head, dim] -> [32, 128]
     # k: [seq, head, dim] -> [4096, 32, 128]
@@ -93,6 +94,7 @@ def benchmark(op, q, k, v, o=None, warmup=0, rep=1, prefix="torch"):
     if prefix == "torch":
         global baseline
         baseline = duration
+        prefix = "torch.compile"
         print(
             f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s"
         )
@@ -131,7 +133,12 @@ def test_all():
         # )
 
         o_my = torch.zeros_like(o)
-        o_my = benchmark(lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128")
+        o_my = benchmark(
+            lib.flash_decode_tma_128, q, k, v, o_my, prefix="flash_decode_tma_128"
+        )
+        o_my = benchmark(
+            lib.flash_decode_tma_dbf_k_128, q, k, v, o_my, prefix="flash_decode_tma_dbf_k_128"
+        )
 
 
 if __name__ == "__main__":
