@@ -783,7 +783,7 @@ flash_decode_tma_dbf_k_128               mean time: 5.695415 ms, speedup: 1.14, 
 可以看到，性能上超过了 torch.compile 的 native 实现和flashinfer，（pytorch+compile 真的不弱）。
 
 可以看到double Ksbuffer的加入让我们的算子在较短的序列上，带宽利用率也提上来了，说明流水线的作用还是很明显的。
-大 seq 下各算子实际带宽已经接近打满了，所以体现不出效果。算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 377.06 ⁄ 384 = 98.2%（巨高了）。
+大 seq 下各算子实际带宽已经接近打满了，所以体现不出显著效果。算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 377.06 ⁄ 384 = 98.2%（巨高了）。
 
 flashinfer默认实现是单block（Occupancy）+double Ks/Vs buffer，实际表现要弱于我们2block+2Ks+1Vs的配置。再一次证明Occupancy的重要性（Occupancy极低的情况）。
 
