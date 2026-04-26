@@ -1,4 +1,4 @@
-# [CUDA 优化实战] 纯手搓 flash decoding sm120 : 拉爆显存带宽的 cuda c++实现
+# [CUDA 优化实战] 纯手搓 flash decoding sm120 : 超越 flashinfer.single_decode_with_kv_cache
 
 ## 0. 序 - decode 和 prefill attention : 完全不同的优化哲学
 
@@ -508,40 +508,284 @@ __global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int
 
 其实本版代码的实现还是很粗糙的，比如对于 ws_o/ws_lse 的写回还没有做优化，后续再看吧~（stay tuned，我也可能去学习一下 flashinfer 里如何实现等等）
 
-## 3. benchmark
+## 3. flash_decode_tma_dbf_k
+
+ok, 完成上述kernel后，我们总结一下。目前使用了smem 32KB + 几个barrier + block 同步占用的中间变量num_group*group_size。这里在保住Occupancy（经验表明，在1个block或2个block的选择下，保两个block，让硬件调度总是会更优）的前提下，我们唯一的办法就是再增加buffer进行流水线操作，进一步用计算隐藏时延。
+因此我做了如下两点优化：
+
+### double Ks buffer
+
+Ks使用双buffer，Vs依然是单buffer。为什么可以这么做呢，因为attention里Ks和Vs本来就是异步的，Vs要等Ks的计算完才会用到，所以Vs本来就是被隐藏的，只要我们再增加一重buffer把Ks也隐藏掉理论上就很好。
+
+具体流水线操作也很简单：
+
+- 初始化2份Kstile
+- prologue：在kvhunk loop之前先发起加载Ks[0],read/write_idx
+- kv chunk loop:
+  - 如果还有next Ks tile，就发起 TMA Ks[write_idx]请求
+  - 发起 Vs TMA请求
+  - wait Ks[read_idx] 加载完毕
+  - online sofmatx(Qs*Ks)
+  - wait Vs
+  - 计算...
+  - 同步，并反转 read/write_idx
+- epilogue
+
+### epilogue优化
+
+原来的epilogue有8次循环的block reduce，有点重。现在改成复用Ks/Vs的smem buffer进行中转，然后再用一个单独的group（16线程）读取统计ws_o，最后写回。
+这个优化其实影响也不大，改动前后级别没什么提升。不过写都写了，就留着吧
+
+上代码：
+
+```cpp
+// flash decoding softmax(q @k.T *scale) @v
+template <const int BN = 64,
+          const int CHUNK_SIZE = 256,
+          const int HEAD_DIM = 128,
+          const int THREADS_PER_BLOCK = 128,
+          typename T>
+__global__ void flash_decode_tma_dbf_k_kernel(T *q,
+                                              const __grid_constant__ CUtensorMap tma_k,
+                                              const __grid_constant__ CUtensorMap tma_v,
+                                              float *ws_o,   // [q_head, num_chunks, HEAD_DIM]
+                                              float *ws_lse, // [q_head, num_chunks]
+                                              int kv_len,
+                                              int q_head,
+                                              int kv_head,
+                                              float scale) {
+    static_assert(THREADS_PER_BLOCK == 128);
+    static_assert(BN == 64);
+
+    // 1. shared memory: K tile, V tile, mbarriers
+    extern __shared__ __align__(128) uint8_t smem_buf[];
+    T(*Ks)[BN][HEAD_DIM] = reinterpret_cast<T(*)[BN][HEAD_DIM]>(smem_buf);
+    T(*Vs)[HEAD_DIM] = reinterpret_cast<T(*)[HEAD_DIM]>(smem_buf + BN * HEAD_DIM * sizeof(T) * 2);
+    mbarrier_t *mbar_k = reinterpret_cast<mbarrier_t *>(smem_buf + BN * HEAD_DIM * sizeof(T) * 3);
+    mbarrier_t *mbar_v = mbar_k + 2;
+
+    // 2. coordinates
+    const int tid = threadIdx.x;
+    const int chunk_id = blockIdx.x;
+    const int q_head_id = blockIdx.y;
+    const int kv_group_size = q_head / kv_head;
+    const int kv_head_id = q_head_id / kv_group_size;
+
+    constexpr int THREADS_PER_ROW = 16;
+    constexpr int NUM_GROUPS = THREADS_PER_BLOCK / THREADS_PER_ROW;
+    constexpr int ROWS_PER_GROUP = BN / NUM_GROUPS;
+    const int group_id = tid / THREADS_PER_ROW;
+    const int lane_id = tid % THREADS_PER_ROW;
+
+    // 3. load q fragment
+    pack128 qs{FLOAT4(q[q_head_id * HEAD_DIM + lane_id * 8])};
+
+    // 4. init subgroup-local online softmax state
+    __align__(16) float acc_o[8] = {0.0f};
+    float m_i = -FLT_MAX;
+    float d_i = 0.0f;
+
+    int phase_k[2] = {0};
+    int phase_v = 0;
+
+    const float scale_log2 = scale * 1.44269504f; // scale*log2(e)
+    const int num_chunks = gridDim.x;
+    const int chunk_start = chunk_id * CHUNK_SIZE;
+    const int chunk_end = min(chunk_start + CHUNK_SIZE, kv_len);
+    // preload Ks
+    if (tid == 0) {
+        mbarrier_init(mbar_k, 1);
+        mbarrier_init(mbar_k + 1, 1);
+        mbarrier_init(mbar_v, 1);
+
+        mbarrier_expect_tx(mbar_k, BN * HEAD_DIM * sizeof(T));
+        cp_async_bulk_tensor_3d(mbar_k, &tma_k, Ks[0], 0, kv_head_id, chunk_start);
+    }
+    __syncthreads();
+    int read_idx = 0, write_idx = 1;
+
+    // 5. loop over KV tiles inside this chunk
+    for (int n = chunk_start; n < chunk_end; n += BN) {
+        int current_bn = min(BN, chunk_end - n);
+
+        // 5.1 TMA async load K/V
+        if (tid == 0) {
+            if (n + BN < chunk_end) {
+                mbarrier_expect_tx(mbar_k + write_idx, BN * HEAD_DIM * sizeof(T));
+                cp_async_bulk_tensor_3d(mbar_k + write_idx, &tma_k, Ks[write_idx], 0, kv_head_id, n + BN);
+            }
+            mbarrier_expect_tx(mbar_v, BN * HEAD_DIM * sizeof(T));
+            cp_async_bulk_tensor_3d(mbar_v, &tma_v, Vs, 0, kv_head_id, n);
+        }
+        mbarrier_wait(mbar_k + read_idx, phase_k[read_idx]);
+        phase_k[read_idx] ^= 1; // flip phase
+
+        // 5.2 compute S = Q * K^T, keep rows per subgroup in registers
+        const int row_begin = group_id * ROWS_PER_GROUP;
+        float acc_s[ROWS_PER_GROUP];
+        float m_part = -FLT_MAX;
+#pragma unroll
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            acc_s[i] = -FLT_MAX;
+        }
+#pragma unroll
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            const int row = row_begin + i;
+            float sum = 0.0f;
+            if (row < current_bn) {
+                pack128 ks{FLOAT4(Ks[read_idx][row][lane_id * 8])};
+#pragma unroll
+                for (int j = 0; j < 8; ++j) {
+                    sum += static_cast<float>(qs.bf[j]) * static_cast<float>(ks.bf[j]);
+                }
+            }
+            sum = warp_reduce_sum<THREADS_PER_ROW>(sum);
+            if (row < current_bn) {
+                acc_s[i] = sum * scale_log2;
+                m_part = fmaxf(m_part, acc_s[i]);
+            }
+        }
+
+        // 5.3 accumulate subgroup-local O = P * V
+        mbarrier_wait(mbar_v, phase_v);
+        phase_v ^= 1;
+        float part_d = 0.0f;
+        float part_o[8] = {0.0f};
+#pragma unroll
+        for (int i = 0; i < ROWS_PER_GROUP; ++i) {
+            const int row = row_begin + i;
+            if (row < current_bn) {
+                float p = exp2f(acc_s[i] - m_part);
+                part_d += p;
+
+                pack128 vs{FLOAT4(Vs[row][lane_id * 8])};
+#pragma unroll
+                for (int j = 0; j < 8; ++j) {
+                    part_o[j] += p * static_cast<float>(vs.bf[j]);
+                }
+            }
+        }
+        if (m_part != -FLT_MAX) {
+            const float m_new = fmaxf(m_i, m_part);
+            const float alpha_old = exp2f(m_i - m_new);
+            const float alpha_new = exp2f(m_part - m_new);
+#pragma unroll
+            for (int i = 0; i < 8; ++i) {
+                acc_o[i] = acc_o[i] * alpha_old + part_o[i] * alpha_new;
+            }
+            d_i = d_i * alpha_old + part_d * alpha_new;
+            m_i = m_new;
+        }
+
+        // next round
+        __syncthreads();
+        read_idx ^= 1;
+        write_idx ^= 1;
+    }
+
+    // 6. epilogue： merge subgroup states once per chunk, then write split results
+    const float m_chunk = block_reduce_max<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? m_i : -FLT_MAX);
+    const float alpha = d_i > 0.0f ? exp2f(m_i - m_chunk) : 0.0f;
+    const float d_chunk = block_reduce_sum<NUM_GROUPS, THREADS_PER_ROW>(lane_id == 0 ? d_i * alpha : 0.0f);
+    // reuse buffer
+    constexpr int O_PER_GROUP = 8 * THREADS_PER_ROW;
+    constexpr int O_GROUP_STRIDE = O_PER_GROUP + THREADS_PER_ROW;
+    float *sdata_o = reinterpret_cast<float *>(smem_buf);
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        sdata_o[group_id * O_GROUP_STRIDE + i * THREADS_PER_ROW + lane_id] = acc_o[i] * alpha;
+    }
+    __syncthreads();
+
+    if (group_id == 0) {
+#pragma unroll
+        for (int i = 0; i < 8; ++i) {
+            float val = 0.0f;
+#pragma unroll
+            for (int group = 0; group < NUM_GROUPS; ++group) {
+                val += sdata_o[group * O_GROUP_STRIDE + i * THREADS_PER_ROW + lane_id];
+            }
+            acc_o[i] = val;
+        }
+    }
+
+    if (group_id == 0) {
+        int out_base_idx = (q_head_id * num_chunks + chunk_id) * HEAD_DIM + lane_id * 8;
+        float inv_d = __frcp_rn(d_chunk);
+#pragma unroll
+        for (int i = 0; i < 8; i++) {
+            acc_o[i] *= inv_d;
+        }
+        pack128 out_pack0, out_pack1;
+#pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            out_pack0.f[i] = acc_o[i];
+            out_pack1.f[i] = acc_o[i + 4];
+        }
+        FLOAT4(ws_o[out_base_idx + 0]) = out_pack0.f4;
+        FLOAT4(ws_o[out_base_idx + 4]) = out_pack1.f4;
+
+        if (lane_id == 0) {
+            int scalar_idx = q_head_id * num_chunks + chunk_id;
+            ws_lse[scalar_idx] = m_chunk * 0.6931471805599453f + logf(d_chunk);
+        }
+    }
+}
+```
+
+## 4. benchmark
+
+### flashinfer的除0 bug
+这里我解决了flashinfer的一个除0bug，其在0active block数量不知道为什么返回了0，导致计算chunk_size直接挂了。我为了对齐并跑通其实现，强制设置了active block为1（flash infer用了双Ks/Vsbuffer，无论如何也只能一个block）
+解决了这个问题后，然后加入进来作为baseline
 
 不多说，直接上 benchmark 结果：
 
 ```yaml
 ####################################################################################################
 prefill, kv seq: 8192, head: 32, dim: 128
-torch.compile                            mean time: 0.458745 ms, 292.61 GB/s
-flash_decode_tma_128                     mean time: 0.446513 ms, speedup: 1.03, GB/s: 300.63
+torch.compile                            mean time: 0.454655 ms, 295.24 GB/s
+flash-infer                              mean time: 0.403291 ms, speedup: 1.13, GB/s: 332.85
+flash_decode_tma_128                     mean time: 0.408378 ms, speedup: 1.11, GB/s: 328.70
+flash_decode_tma_dbf_k_128               mean time: 0.366698 ms, speedup: 1.24, GB/s: 366.06
 ####################################################################################################
 prefill, kv seq: 16384, head: 32, dim: 128
-torch.compile                            mean time: 0.878726 ms, 305.50 GB/s
-flash_decode_tma_128                     mean time: 0.778402 ms, speedup: 1.13, GB/s: 344.88
+torch.compile                            mean time: 0.872882 ms, 307.55 GB/s
+flash-infer                              mean time: 0.784423 ms, speedup: 1.11, GB/s: 342.23
+flash_decode_tma_128                     mean time: 0.735274 ms, speedup: 1.19, GB/s: 365.10
+flash_decode_tma_dbf_k_128               mean time: 0.733273 ms, speedup: 1.19, GB/s: 366.10
 ####################################################################################################
-prefill, kv seq: 10240, head: 32, dim: 128
-torch.compile                            mean time: 0.611377 ms, 274.44 GB/s
-flash_decode_tma_128                     mean time: 0.520998 ms, speedup: 1.17, GB/s: 322.05
+prefill, kv seq: 32768, head: 32, dim: 128
+torch.compile                            mean time: 1.507921 ms, 356.04 GB/s
+flash-infer                              mean time: 1.499479 ms, speedup: 1.01, GB/s: 358.05
+flash_decode_tma_128                     mean time: 1.495797 ms, speedup: 1.01, GB/s: 358.93
+flash_decode_tma_dbf_k_128               mean time: 1.455790 ms, speedup: 1.04, GB/s: 368.79
 ####################################################################################################
 prefill, kv seq: 65536, head: 32, dim: 128
-torch.compile                            mean time: 2.937899 ms, 365.49 GB/s
-flash_decode_tma_128                     mean time: 2.920613 ms, speedup: 1.01, GB/s: 367.65
+torch.compile                            mean time: 2.980080 ms, 360.31 GB/s
+flash-infer                              mean time: 2.897006 ms, speedup: 1.03, GB/s: 370.64
+flash_decode_tma_128                     mean time: 2.856871 ms, speedup: 1.04, GB/s: 375.85
+flash_decode_tma_dbf_k_128               mean time: 2.849400 ms, speedup: 1.05, GB/s: 376.84
 ####################################################################################################
 prefill, kv seq: 131072, head: 32, dim: 128
-torch.compile                            mean time: 5.873622 ms, 365.62 GB/s
-flash_decode_tma_128                     mean time: 5.720886 ms, speedup: 1.03, GB/s: 375.38
+torch.compile                            mean time: 6.044398 ms, 355.29 GB/s
+flash-infer                              mean time: 5.751600 ms, speedup: 1.05, GB/s: 373.37
+flash_decode_tma_128                     mean time: 5.663495 ms, speedup: 1.07, GB/s: 379.18
+flash_decode_tma_dbf_k_128               mean time: 5.736955 ms, speedup: 1.05, GB/s: 374.33
 ####################################################################################################
 prefill, kv seq: 131073, head: 32, dim: 128
-torch.compile                            mean time: 5.959847 ms, 360.33 GB/s
-flash_decode_tma_128                     mean time: 5.718791 ms, speedup: 1.04, GB/s: 375.52
+torch.compile                            mean time: 6.466227 ms, 332.11 GB/s
+flash-infer                              mean time: 6.117131 ms, speedup: 1.06, GB/s: 351.07
+flash_decode_tma_128                     mean time: 5.701174 ms, speedup: 1.13, GB/s: 376.68
+flash_decode_tma_dbf_k_128               mean time: 5.695415 ms, speedup: 1.14, GB/s: 377.06
 ```
 
-可以看到，性能上超过了 torch.compile 的 native 实现，但强的有限（pytorch+compile 真的不弱）。
+可以看到，性能上超过了 torch.compile 的 native 实现和flashinfer，（pytorch+compile 真的不弱）。
 
-另外 flashinfer 我没有跑通，所以无从比较，flashinfer 可能会比我这个 kernel 强的。因为虽然大 seq 下我的算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 375.52 ⁄ 384 = 97.8%（巨高了），但短序列情况下，离峰值还差一些的。
+可以看到double Ksbuffer的加入让我们的算子在较短的序列上，带宽利用率也提上来了，说明流水线的作用还是很明显的。
+大 seq 下各算子实际带宽已经接近打满了，所以体现不出效果。算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 377.06 ⁄ 384 = 98.2%（巨高了）。
+
+flashinfer默认实现是单block（Occupancy）+double Ks/Vs buffer，实际表现要弱于我们2block+2Ks+1Vs的配置。再一次证明Occupancy的重要性（Occupancy极低的情况）。
 
 ncu report：
 
