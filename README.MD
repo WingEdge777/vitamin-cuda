@@ -234,12 +234,14 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 | CUDA入门 | [[CUDA 入门] 认识 CUDA “不存在的存储层级” - local memory](https://zhuanlan.zhihu.com/p/2020146042205643425) | @WingEdge777 | ⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] 矩阵转置 - 从 Padding 到 Swizzle：基础共享内存优化的艺术](https://zhuanlan.zhihu.com/p/2005711788013028455) | @WingEdge777 | ⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] RoPE - 手写算子的作用之 kernel fusion：减少访存次数、减少启动开销的优化技巧](https://zhuanlan.zhihu.com/p/2011045579652895890) | @WingEdge777 | ⭐️⭐️⭐️ |
-| CUDA实战 | [[CUDA 优化实战] sgemm - 超越 cuBLAS：带你学会极致优化的矩阵乘法 cuda c++ 实现](<https://zhuanlan.zhihu.com/p/2012477320007533911>) | @WingEdge777 | ⭐️⭐️⭐️ |
-| CUDA实战 | [[CUDA 优化实战] sgemm tf32 - 超越 cuBLAS：cp.async、ldmatrix、mma、Tensor Core加速](<https://zhuanlan.zhihu.com/p/2016117057889011177>) | @WingEdge777 | ⭐️⭐️⭐️ |
-| CUDA实战 | [[CUDA 优化实战] hgemm - 超越 cuBLAS：Tensor-core、cp.async、ldmatrix、mma](<https://zhuanlan.zhihu.com/p/2017717179840214041>) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] sgemm - 超越 cuBLAS：带你学会极致优化的矩阵乘法 cuda c++ 实现](https://zhuanlan.zhihu.com/p/2012477320007533911) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] sgemm tf32 - 超越 cuBLAS：cp.async、ldmatrix、mma、Tensor Core加速](https://zhuanlan.zhihu.com/p/2016117057889011177) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] hgemm - 超越 cuBLAS：Tensor-core、cp.async、ldmatrix、mma](https://zhuanlan.zhihu.com/p/2017717179840214041) | @WingEdge777 | ⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] safe online softmax - 面试必问：任意 hidden_size、one/two pass、trade-off、split-k](https://zhuanlan.zhihu.com/p/2021584505874434002) | @WingEdge777 | ⭐️⭐️⭐️ |
-| CUDA实战 | [[CUDA 优化实战] hgemm sm120 - 100KB SMEM 中的“微雕”战争：Tensor-core、TMA、ldmatrix、mma](https://zhuanlan.zhihu.com/p/2023845339765981480) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] hgemm sm120 - 100KB SMEM 中的“微雕”战争：Tensor-core、TMA、ldmatrix、mma](https://zhuanlan.zhihu.com/p/2023845339765981480) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] 纯手搓 flash attention (fmha) - sm120 : 超越 torch.sdpa(FA2)](https://zhuanlan.zhihu.com/p/2028452875341144849) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] 纯手搓 flash decoding sm120 (上): 拉爆显存带宽的cuda c++实现](https://zhuanlan.zhihu.com/p/2030745157620998667) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] 手搓 flash decoding sm120（下） : 超越 flashinfer的c++实现](https://zhuanlan.zhihu.com/p/2031825988871525928) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 
 ## References
 
