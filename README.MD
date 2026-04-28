@@ -246,4 +246,4 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 ## References
 
 - [LeetCUDA](https://github.com/xlite-dev/LeetCUDA)
-- [NVIDIA CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html)
+- [NVIDIA CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/)
