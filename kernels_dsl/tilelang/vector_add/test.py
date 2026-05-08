@@ -1,3 +1,4 @@
+import sys
 from functools import partial
 import time
 import torch
@@ -29,7 +30,7 @@ def add_kernel(x_ptr, y_ptr, out_ptr, n, BLOCK_SIZE: tl.constexpr):
 def add_tilelang(N: int, block: int = 256, dtype: str = "float32"):
 
     @T.prim_func
-    def add_kernel(
+    def main(
         A: T.Tensor((N,), dtype),
         B: T.Tensor((N,), dtype),
         C: T.Tensor((N,), dtype),
@@ -39,7 +40,7 @@ def add_tilelang(N: int, block: int = 256, dtype: str = "float32"):
                 out_id = bx * block + i
                 C[out_id] = A[out_id] + B[out_id]
 
-    return add_kernel
+    return main
 
 
 def diff_check(a, b, prefix="torch", eps=1e-5):
