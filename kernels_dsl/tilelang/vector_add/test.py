@@ -8,6 +8,10 @@ import tilelang.language as T
 import triton
 import triton.language as tl
 
+sys.path.append("../../../")
+from kernels.elementwise.test import lib
+
+
 # triton
 @triton.jit
 def add_kernel(x_ptr, y_ptr, out_ptr, n, BLOCK_SIZE: tl.constexpr):
@@ -25,9 +29,10 @@ def add_kernel(x_ptr, y_ptr, out_ptr, n, BLOCK_SIZE: tl.constexpr):
 
     tl.store(out_ptr + offsets, out, mask=mask)
 
-# triton
+
+# tilelang
 @tilelang.jit
-def add_tilelang(N: int, block: int = 256, dtype: str = "float32"):
+def add_tilelang(N: int, block: int = 256, dtype: str = "float16"):
 
     @T.prim_func
     def main(
@@ -43,7 +48,7 @@ def add_tilelang(N: int, block: int = 256, dtype: str = "float32"):
     return main
 
 
-def diff_check(a, b, prefix="torch", eps=1e-5):
+def diff_check(a, b, prefix="torch", eps=1e-3):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
         diff = torch.abs(a - b)
         max_diff = torch.max(diff).item()
@@ -89,7 +94,7 @@ def benchmark(op, x, y, o=None, warmup=10, rep=1000, prefix="torch"):
 if __name__ == "__main__":
     torch.manual_seed(42)
     DEVICE = torch.device("cuda")
-    for n in [1024, 4096, 1024 * 32, 1024 * 1024, 1024*4096, 4096*4096]:
+    for n in [1024, 4096, 1024 * 32, 1024 * 1024, 1024 * 4096, 4096 * 4096]:
         print("#" * 100)
         print(f"vector add, n: {n}")
         x = torch.randn(n, dtype=torch.float32, device=DEVICE)
@@ -101,12 +106,45 @@ if __name__ == "__main__":
         out_my = torch.zeros_like(out)
 
         grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
-        benchmark(partial(add_kernel[grid], n=n, BLOCK_SIZE=256), x, y, out_my, prefix="triton")
+        benchmark(
+            partial(add_kernel[grid], n=n, BLOCK_SIZE=256),
+            x,
+            y,
+            out_my,
+            prefix="triton",
+        )
         diff_check(out, out_my)
+        kernel = add_tilelang(n, dtype="float32")
+        benchmark(kernel, x, y, out_my, prefix="tilelang")
+        benchmark(
+                lib.elementwise_add_fp32x4,
+                x,
+            y,
+            out_my,
+                prefix="elementwise_add_fp32x4",
+            )
+        diff_check(out, out_my, prefix="elementwise_add_fp32x4")
 
-        kernel = add_tilelang(n)
+        x = x.half()
+        y = y.half()
+        out = out.half()
+        out_my = out_my.half()
+        benchmark(partial(torch.add, out=out), x, y)
+        benchmark(
+            partial(add_kernel[grid], n=n, BLOCK_SIZE=256),
+            x,
+            y,
+            out_my,
+            prefix="triton",
+        )
+        kernel = add_tilelang(n, dtype="float16")
         benchmark(kernel, x, y, out_my, prefix="tilelang")
         diff_check(out, out_my)
-
-# tvm_target = determine_target("cuda -arch=sm_120", return_object=True)
-# kernel = tilelang.compile(func, target=tvm_target)
+        benchmark(
+            lib.elementwise_add_fp16x8_packed,
+            x,
+            y,
+            out_my,
+            prefix="elementwise_add_fp16x8_packed",
+        )
+        diff_check(out, out_my, prefix="elementwise_add_fp16x8_packed")

@@ -1,6 +1,7 @@
 import math
 import time
 from functools import partial
+from pathlib import Path
 from typing import Optional
 
 import torch
@@ -10,10 +11,11 @@ from torch.utils.cpp_extension import load
 torch.set_grad_enabled(False)
 
 common_flags = ["-O3", "-std=c++17"]
+current_dir = Path(__file__).parent.resolve()
 # Load the CUDA kernel as a python module
 lib = load(
     name="flash_attn",
-    sources=["flash_attn.cu"],
+    sources=[str(current_dir / "flash_attn.cu")],
     extra_cuda_cflags=common_flags
     + [
         "-U__CUDA_NO_HALF_OPERATORS__",
