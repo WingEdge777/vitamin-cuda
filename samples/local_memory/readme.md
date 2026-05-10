@@ -62,6 +62,7 @@
 
 __global__ void load_fp16x8(const half* input) {
   half2 pack[4];
+  int idx = threadIdx.x * 8;
   FLOAT4(pack[0]) = FLOAT4(input[idx]);  // ❌ 取地址 → 强制分配到 local memory
   //后续操作中 计算使用的是 local memory
 }
