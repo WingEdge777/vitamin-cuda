@@ -6,9 +6,16 @@
 >
 > 完整 kernel 和测试代码可以点击 [flash_decode](/kernels/flash_decode) 查看
 
-章接上文，上篇 fmha 文章中我们实现了 flash attention (fmha sm120)，并实现了超越 FA2 的性能，当然这主要归功于 TMA 的外挂加持。本文延续之前的内容，接下来给出 flash decoding 的实现。
+承接上篇 fmha 文章。上篇主要讨论 prefill 场景下的 flash attention，这一篇换到 decode 场景，看看单 query、长 KV cache 时 kernel 该怎么写。
 
-对比的 baseline 我原本是想选择 flashinfer 的，但是 flashinfer 在我的 wsl 环境下跑不起来（报了一个除 0 异常），我也不知道怎么解决。最终 baseline 只好选了 pytorch.compile（依赖 triton） 加持的 native 实现。
+本文的对比 baseline 有两个：
+
+- `torch.compile` 后的 PyTorch native 实现，作为通用算子基线
+- flashinfer 的 `single_decode_with_kv_cache`，作为现成 decode kernel 基线
+
+说明一下：flashinfer baseline 是本文后补的。为了能在我这台 26 SM 的 5060 上正常跑通 benchmark，我对它做了一个最小修复，后面单独说明。
+
+### pytorch native
 
 ```python
 @torch.compile
@@ -34,13 +41,24 @@ def torch_native_decode(q, k, v, scale=None):
     return out.squeeze(1)  # [32, 128]
 ```
 
-但是大家不要看到说 pytorch 实现，就觉得性能很差，太低估 pytorch 了。我们之前就说过 decode attention 实质上退化为了 gemv（矩阵向量乘法），pytorch 的启发式调用 cuBLAS 的 gemv，叠加 torch.compile 优化，做一个 baseline 绰绰有余。你的 kernel 不认真写，还真不一定打得过。
+不要因为它是 PyTorch 实现就先入为主地觉得它慢。decode attention 本质上已经很接近 batched GEMV，PyTorch 会走到相当成熟的库实现，再叠加 `torch.compile` 的图优化，完全够资格做 baseline。自己的 kernel 不认真写，还真不一定打得过它。
 
-本文的 kernel 大纲如下：
+### flashinfer baseline 的一个兼容性修复
 
-- flash_decode_tma_128 （BN=64，TMA + ldmatrix + mma）
+![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/flash_infer_fix.png)
 
-依然只有一个算子（当然类似于 large scale softmax，用了 split-k 思想，实际上 launch 了两个 kernel)，支持 head_dim 为 128 情况下 mha 的 decode attention。
+flashinfer 的`SingleDecodeWithKVCacheDispatched`代码，不知为何`cudaOccupancyMaxActiveBlocksPerMultiprocessor`返回了 0，导致一步 0，步步 0.
+
+我这里做了一个简单的修复，强制设置 num_blocks_per_sm=1（其默认双 buffer Ks/Vs 实现，占用 64KB smem，也只能是 1），然后把 max_num_kv_chunks 设为了 1（按照原本代码逻辑 block_per_sm * num_sm / heads= 1*26/ 32 就是会等于 0，我只能将其改为接近原代码意图的正整数）。
+
+备注：其实看到 flashinfer 双 Ks/Vs buffer smem 的配置时，我就知道 flashinfer 输定了，Occupancy 比我低一半，这损失的性能不是它的 Vs 双 buffer 能挽回的了（我的 Ks 也是双 buffer）。
+
+### 本文的 kernel 大纲
+
+- flash_decode_tma_128 （BN=64，TMA + float4 向量化读取smem + online softmax）
+- flash_decode_tma_dbf_k (BN=64，TMA + float4 向量化读取smem + online softmax，double Ks buffers)
+
+支持 head_dim 为 128 情况下 mha 的 decode attention。
 
 ## 1. flash decoding
 
@@ -53,7 +71,7 @@ flash decoding 的思想大家肯定都学习过了。在 llm decoding 的阶段
 
 ![](https://pytorch.org/wp-content/uploads/2023/10/image.gif)
 
-为了方便理解，我们这里仅考虑 q shape 为 [head, dim]， kv shape 为 [seq, head, dim] 的 一次 decode 计算（和上面的 pytorch 代码对应）
+为了方便理解，这里只考虑 `q` shape 为 `[head, dim]`、`kv` shape 为 `[seq, head, dim]` 的一次 decode 计算，也就是和上面那段 PyTorch 代码一一对应的版本。
 
 先说 data tiling 策略：
 
@@ -64,16 +82,16 @@ flash decoding 的思想大家肯定都学习过了。在 llm decoding 的阶段
 
 再说 thread block/grid 配置：
 
-- block 直接定了 128，不要问为什么，多番测试（32，64 太小，block 数量有限，可切换的 warp 量太少，Occupancy 不足；256 太大，计算密度很低根本不需要那么多线程参与）后，这是最好的选择。
+- block 直接定为 128。这个不是拍脑袋：32、64 太小，可切换 warp 数太少；256 又太大，这个 kernel 的计算密度没高到需要那么多线程一起上。实测下来 128 最合适。
 - grid 上，显然 q 失去了 seq 维度，无法并行。head 还是放在 y 维度上，再考虑对 kv 的 seq 进行切分放到 x 维度。这里只有一个切块大小的问题：
   - 我的 5060 只有 26 个 SM，为了充分利用 SM，我们保障 block 数量为 SM 数量的整数倍，不用太多，2~4 倍即可，我这里就用了 26x2，因此先确定预期的总 chunk 数为 52 个左右
   - 然后运行时用 head*seq/52，且向上对 2 的幂取整得到 chunk_size，则 grid.x = (seq + chunk_size - 1) / chunk_size;
 
-ok，把以上思路整理一下，基本就确定了我们的 kernel launch 代码。
+把这些约束合起来，kernel launch 代码就基本定下来了。
 
-此外，我们这里考虑放弃 tensor core 的使用，为啥？因为 mma m16n8k16，要求 m16 行，我们 q 其实就是一行，强行 padding 到 16 行，除了浪费就是浪费。而且正如前边所说，decode attention 实质化退化为了 gemv，是访存瓶颈。用不用 tensor-core 都无所谓，需要的是快速大批量的发射访存请求以打满带宽。
+这里我没有继续走 Tensor Core 路线。原因很直接：`mma m16n8k16` 要求 `m=16`，而 decode 里的 `q` 本质上只有一行，硬凑出 16 行 padding 只会徒增浪费。再加上这个问题本身更偏向带宽瓶颈，与其执着于 `mma`，不如把重点放在更高效地搬运和消费 K/V 数据上。
 
-决定不使用 mma 后，那么 ldmatrix 还有 TMA 的 swizzle 都可以省了。TMA 直接原样拷贝一整块 Ks/Vs tile（64x128）到 smem 即可，后面会说如何读取 smem
+既然不走 `mma`，那 `ldmatrix` 和专门为其服务的 swizzle 也都可以先放下。TMA 这里只需要把一整块 `64x128` 的 K/V tile 原样搬进 shared memory，后面再用向量化读法把它吃满即可。
 
 ```cpp
 inline int get_chunk_size(int q_head, int kv_len, int num_sms) {
@@ -510,30 +528,30 @@ __global__ void flash_decode_reduce_kernel(float *ws_o, float *ws_lse, T *o, int
 
 ## 3. flash_decode_tma_dbf_k
 
-ok, 完成上述kernel后，我们总结一下。目前使用了smem 32KB + 几个barrier + block 同步占用的中间变量num_group*group_size。这里在保住Occupancy（经验表明，在1个block或2个block的选择下，保两个block，让硬件调度总是会更优）的前提下，我们唯一的办法就是再增加buffer进行流水线操作，进一步用计算隐藏时延。
+ok, 完成上述 kernel 后，我们总结一下。目前使用了 smem 32KB + 几个 barrier + block 同步占用的中间变量 num_group*group_size。这里在保住 Occupancy（经验表明，在 1 个 block 或 2 个 block 的选择下，保两个 block，让硬件调度总是会更优）的前提下，我们唯一的办法就是再增加 buffer 进行流水线操作，进一步用计算隐藏时延。
 因此我做了如下两点优化：
 
 ### double Ks buffer
 
-Ks使用双buffer，Vs依然是单buffer。为什么可以这么做呢，因为attention里Ks和Vs本来就是异步的，Vs要等Ks的计算完才会用到，所以Vs本来就是被隐藏的，只要我们再增加一重buffer把Ks也隐藏掉理论上就很好。
+Ks 使用双 buffer，Vs 依然是单 buffer。为什么可以这么做呢，因为 attention 里 Ks 和 Vs 本来就是异步的，Vs 要等 Ks 的计算完才会用到，所以 Vs 本来就是被隐藏的，只要我们再增加一重 buffer 把 Ks 也隐藏掉理论上就很好。
 
 具体流水线操作也很简单：
 
-- 初始化2份Kstile
-- prologue：在kvhunk loop之前先发起加载Ks[0],read/write_idx
+- 初始化 2 份 K tile
+- prologue：在 kv chunk loop 之前先发起加载 `Ks[0]`，并初始化 `read/write_idx`
 - kv chunk loop:
-  - 如果还有next Ks tile，就发起 TMA Ks[write_idx]请求
-  - 发起 Vs TMA请求
+  - 如果还有 next Ks tile，就发起 TMA Ks[write_idx] 请求
+  - 发起 Vs TMA 请求
   - wait Ks[read_idx] 加载完毕
-  - online sofmatx(Qs*Ks)
+  - online softmax(Qs * Ks)
   - wait Vs
-  - 计算...
+  - 计算输出
   - 同步，并反转 read/write_idx
 - epilogue
 
-### epilogue优化
+### epilogue 优化
 
-原来的epilogue有8次循环的block reduce，有点重。现在改成复用Ks/Vs的smem buffer进行中转，然后再用一个单独的group（16线程）读取统计ws_o，最后写回。
+原来的 epilogue 有 8 次循环的 block reduce，有点重。现在改成复用 Ks/Vs 的 smem buffer 进行中转，然后再用一个单独的 group（16 线程）读取统计 ws_o，最后写回。
 这个优化其实影响也不大，改动前后级别没什么提升。不过写都写了，就留着吧
 
 上代码：
@@ -735,68 +753,63 @@ __global__ void flash_decode_tma_dbf_k_kernel(T *q,
 
 ## 4. benchmark
 
-### flashinfer的除0 bug
-这里我解决了flashinfer的一个除0bug，其在0active block数量不知道为什么返回了0，导致计算chunk_size直接挂了。我为了对齐并跑通其实现，强制设置了active block为1（flash infer用了双Ks/Vsbuffer，无论如何也只能一个block）
-解决了这个问题后，然后加入进来作为baseline
-
 不多说，直接上 benchmark 结果：
 
 ```yaml
 ####################################################################################################
-prefill, kv seq: 8192, head: 32, dim: 128
+decode, kv seq: 8192, head: 32, dim: 128
 torch.compile                            mean time: 0.454655 ms, 295.24 GB/s
 flash-infer                              mean time: 0.403291 ms, speedup: 1.13, GB/s: 332.85
 flash_decode_tma_128                     mean time: 0.408378 ms, speedup: 1.11, GB/s: 328.70
 flash_decode_tma_dbf_k_128               mean time: 0.366698 ms, speedup: 1.24, GB/s: 366.06
 ####################################################################################################
-prefill, kv seq: 16384, head: 32, dim: 128
+decode, kv seq: 16384, head: 32, dim: 128
 torch.compile                            mean time: 0.872882 ms, 307.55 GB/s
 flash-infer                              mean time: 0.784423 ms, speedup: 1.11, GB/s: 342.23
 flash_decode_tma_128                     mean time: 0.735274 ms, speedup: 1.19, GB/s: 365.10
 flash_decode_tma_dbf_k_128               mean time: 0.733273 ms, speedup: 1.19, GB/s: 366.10
 ####################################################################################################
-prefill, kv seq: 32768, head: 32, dim: 128
+decode, kv seq: 32768, head: 32, dim: 128
 torch.compile                            mean time: 1.507921 ms, 356.04 GB/s
 flash-infer                              mean time: 1.499479 ms, speedup: 1.01, GB/s: 358.05
 flash_decode_tma_128                     mean time: 1.495797 ms, speedup: 1.01, GB/s: 358.93
 flash_decode_tma_dbf_k_128               mean time: 1.455790 ms, speedup: 1.04, GB/s: 368.79
 ####################################################################################################
-prefill, kv seq: 65536, head: 32, dim: 128
+decode, kv seq: 65536, head: 32, dim: 128
 torch.compile                            mean time: 2.980080 ms, 360.31 GB/s
 flash-infer                              mean time: 2.897006 ms, speedup: 1.03, GB/s: 370.64
 flash_decode_tma_128                     mean time: 2.856871 ms, speedup: 1.04, GB/s: 375.85
 flash_decode_tma_dbf_k_128               mean time: 2.849400 ms, speedup: 1.05, GB/s: 376.84
 ####################################################################################################
-prefill, kv seq: 131072, head: 32, dim: 128
+decode, kv seq: 131072, head: 32, dim: 128
 torch.compile                            mean time: 6.044398 ms, 355.29 GB/s
 flash-infer                              mean time: 5.751600 ms, speedup: 1.05, GB/s: 373.37
 flash_decode_tma_128                     mean time: 5.663495 ms, speedup: 1.07, GB/s: 379.18
 flash_decode_tma_dbf_k_128               mean time: 5.736955 ms, speedup: 1.05, GB/s: 374.33
 ####################################################################################################
-prefill, kv seq: 131073, head: 32, dim: 128
+decode, kv seq: 131073, head: 32, dim: 128
 torch.compile                            mean time: 6.466227 ms, 332.11 GB/s
 flash-infer                              mean time: 6.117131 ms, speedup: 1.06, GB/s: 351.07
 flash_decode_tma_128                     mean time: 5.701174 ms, speedup: 1.13, GB/s: 376.68
 flash_decode_tma_dbf_k_128               mean time: 5.695415 ms, speedup: 1.14, GB/s: 377.06
 ```
 
-可以看到，性能上超过了 torch.compile 的 native 实现和flashinfer，（pytorch+compile 真的不弱）。
-
-可以看到double Ksbuffer的加入让我们的算子在较短的序列上，带宽利用率也提上来了，说明流水线的作用还是很明显的。
-大 seq 下各算子实际带宽已经接近打满了，所以体现不出显著效果。算子逻辑带宽使用率（卡理论峰值带宽 384GB/s），已经达到了 377.06 ⁄ 384 = 98.2%（巨高了）。
-
-flashinfer默认实现是单block（Occupancy）+double Ks/Vs buffer，实际表现要弱于我们2block+2Ks+1Vs的配置。再一次证明Occupancy的重要性（Occupancy极低的情况）。
+- 从结果看，两个自己实现的 kernel 都能稳定超过 `torch.compile` 的 native baseline，而 `flash_decode_tma_dbf_k_128` 整体表现最好。
+- double K buffer 的收益主要体现在较短序列上：这时流水线更容易影响实际带宽利用率，所以提升更明显。
+- 序列继续变长后，几个实现都逐渐逼近带宽上限，彼此差距自然开始收敛，但我们的 kernel 仍然保持领先。
+- 以逻辑带宽估算，最高达到 `377.06 / 384 = 98.2%`，已经很接近这张卡的理论峰值。
+- flashinfer 默认实现是单 block（Occupancy 很低）+ double Ks/Vs buffer，实际表现要弱于我们 2block + 2Ks + 1Vs 的配置。再一次证明 Occupancy 的重要性（Occupancy 极低的情况）。
 
 ncu report：
 
 ![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/flash_decoding_summary.png)
 ![](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/flash_decoding_detail.png)
 
-有一些 uncoalesced global accesses (ws_o 和 ws_lse 读写没做优化，但这已不在热点循环内，对整体性能影响微乎其微。)，此外 DRAM 带宽使用率硬件统计也拉到 90%+了。
+还能看到一些 uncoalesced global accesses，主要来自 `ws_o` 和 `ws_lse` 的读写。这部分还没专门优化，不过它们已经不在热点循环里，DRAM 带宽的硬件统计也已经来到 90%+，所以对总耗时影响不大。
 
 ## 5. 结束
 
-以上就是我目前对 flash decoding 的所有理解啦,有一些瑕疵就留着吧，准备去写点别的~
+以上就是我目前对 flash decoding 的所有理解啦，有一些瑕疵就留着吧，准备去写点别的~
 
 如有错误，欢迎指正。如有建议，也欢迎讨论
 

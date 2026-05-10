@@ -123,7 +123,7 @@ def test_all():
         head = 32
         kv_head = 32
         print("#" * 100)
-        print(f"prefill, kv seq: {seq}, head: {head}, dim: {dim}")
+        print(f"decode, kv seq: {seq}, head: {head}, dim: {dim}")
         q = torch.randn(head, dim, device="cuda", dtype=torch.bfloat16)
         k = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
         v = torch.randn(seq, kv_head, dim, device="cuda", dtype=torch.bfloat16)
