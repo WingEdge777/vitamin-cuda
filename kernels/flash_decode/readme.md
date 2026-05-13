@@ -17,6 +17,15 @@ python test.py
 
 ## Sample output
 
+While there are many excellent Flash Decoding kernels optimized for SM8x or the enterprise-grade SM100/SM110, I found a lack of extreme, bare-metal optimizations targeting the SM120 architecture (specifically consumer cards like the RTX 50-serial).
+
+To achieve peak performance, I wrote a specialized split-K kernel. The core architectural decision is Asymmetric TMA Buffering:It leverages pure TMA async copies with a Double-Buffered K to completely hide memory latency during the $Q \times K^T$ phase. 
+
+However, it intentionally keeps a Single-Buffered V in the pipeline. This deliberate trade-off conserves precious Shared Memory (Smem), maximizing wave occupancy on consumer GPUs while still saturating the memory bandwidth.The results speak for themselves. 
+
+Against torch.compile and flash-infer, this approach hits the physical bandwidth wall (up to 377 GB/s) and maintains extreme robustness even on unaligned sequence lengths (e.g., seq=131073).
+
+Benchmarks (RTX 5060 | Head: 32 | Dim: 128):
 ```yaml
 ####################################################################################################
 prefill, kv seq: 8192, head: 32, dim: 128
