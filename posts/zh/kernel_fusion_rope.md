@@ -6,7 +6,7 @@
 
 本文直接聚焦一个核心命题：为什么“手写算子（hand-written operator）”与“内核融合（kernel fusion）”能够带来大幅度的性能提升？本文将基于大模型标配的 RoPE (Rotary Position Embedding) 算子，对比 PyTorch 朴素实现、PyTorch 查表缓存实现，以及单 CUDA Kernel 的手写实现，用底层逻辑和测试数据给出答案。
 
-完整代码可参见链接：
+完整代码可参见链接：https://github.com/WingEdge777/vitamin-cuda/tree/main/kernels/rope
 
 简短结论：
 
