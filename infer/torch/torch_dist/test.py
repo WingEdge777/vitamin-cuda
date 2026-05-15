@@ -134,20 +134,21 @@ class PPModel(nn.Module):
         if self.buf is None:
             self.buf = torch.empty_like(x)
 
-        # 1. 接收阶段
-        # 首 rank 使用传入的 x，其余 rank 忽略 x，从前一个 rank 接收激活值
+        # 1. Receive stage
+        # The first rank uses the input x directly; other ranks ignore x and
+        # receive activations from the previous rank.
         if self.is_first:
             out = x
         else:
             out = self._recv(self.rank - 1)
 
-        # 2. 计算阶段
+        # 2. Compute stage
         for i, layer in enumerate(self.layers):
             out = layer(out)
             if self.start_idx + i < self.total_layers - 1:
                 out = torch.relu(out)
 
-        # 3. 发送阶段
+        # 3. Send stage
         if self.is_first:
             self._send(out, self.rank + 1)
             return self._recv(self.world_size - 1)
@@ -194,7 +195,8 @@ if __name__ == "__main__":
     world_size = 2
     hidden_size = 8192
     batch_size = 1024
-    # 注意这里使用了较大的batch_size，为了体现DP/TP的加速作用，如果数据规模较小的话通信开销反而更大会导致DP/TP更慢，但在大模型里几乎不存在这个问题
+    # Use a relatively large batch size so DP/TP speedup is visible. With small
+    # workloads, communication overhead can dominate and make DP/TP slower.
 
     torch.manual_seed(42)
     model = TwoLayerModel(hidden_size)
