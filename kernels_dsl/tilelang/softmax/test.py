@@ -88,6 +88,7 @@ def test_small():
 
             kernel = softmax_tilelang(a.shape[0], a.shape[1], dtype=T.float32)
             benchmark(kernel, a, b_my, prefix="tl.float32")
+            diff_check(b, b_my, prefix="tl.float32")
 
             a = a.half()
             b = b.half()
@@ -97,6 +98,7 @@ def test_small():
             diff_check(b, b_my, prefix="softmax_arbitrary")
             kernel = softmax_tilelang(a.shape[0], a.shape[1], dtype=T.float16)
             benchmark(kernel, a, b_my, prefix="tl.float16")
+            diff_check(b, b_my, prefix="tl.float16")
 
 
 def test_large():
@@ -135,6 +137,7 @@ def test_large():
             diff_check(b, b_my, prefix="softmax_splitk")
             kernel = softmax_tilelang(a.shape[0], a.shape[1], dtype=T.float16)
             benchmark(kernel, a, b_my, prefix="tl.float16")
+            diff_check(b, b_my, prefix="tl.float16")
 
 
 if __name__ == "__main__":
