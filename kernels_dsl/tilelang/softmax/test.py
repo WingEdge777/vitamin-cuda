@@ -10,11 +10,12 @@ sys.path.append("../../../")
 from kernels.softmax.test import lib, benchmark
 
 
+# make sure dim are power of 2
 @tl.jit()
 def softmax_tilelang(bs, dim, dtype: T.dtype = T.float32):
     block_size = 256
     accum_dtype = T.float32
-    tiling_size = min(tl.next_power_of_2(dim), 4096)
+    tiling_size = min(tl.next_power_of_2(dim), 8192)
     tiling_num = tl.cdiv(dim, tiling_size)
 
     @T.prim_func

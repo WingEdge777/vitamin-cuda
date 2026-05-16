@@ -28,6 +28,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
   - [Easy ⭐️ ~ ⭐️⭐️](#easy-️--️️)
   - [Medium ⭐️⭐️ ~ ⭐️⭐️⭐️](#medium-️️--️️️)
   - [Hard ⭐️⭐️⭐️~⭐️⭐️⭐️⭐️](#hard-️️️️️️️)
+- [DSL kernels](#dsl-kernels)
 - [Samples](#samples)
 - [Blogs (10+)](#blogs-10)
   - [blogs](#blogs)
@@ -206,6 +207,15 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 - [flash_decoding_sm120](./kernels/flash_decode/)
   - [x] flash_decode_tma_128
   - [x] pytorch op bindings && diff check
+
+## DSL kernels
+
+- [vector_add](./kernels_dsl/tilelang/vector_add/):
+  - [x] tilelang/triton kernels
+  - [x] pytorch/cuda op compare && diff check
+- [softmax](./kernels_dsl/tilelang/softmax/)
+  - [x] tilelang online softmax
+  - [x] pytorch/cuda op compare && diff check
 
 <div id="samples"></div>
 
