@@ -11,8 +11,6 @@
 
 #include "../common/pack.cuh"
 
-const int WARP_SIZE = 32;
-
 struct __align__(8) MD {
     float m;
     float d;

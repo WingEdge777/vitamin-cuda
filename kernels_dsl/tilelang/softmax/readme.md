@@ -2,7 +2,7 @@
 
 ## Overview
 
-- [] tilelang softmax
+- [x] tilelang softmax
 
 ## Run tests
 
