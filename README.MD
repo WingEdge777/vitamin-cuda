@@ -214,7 +214,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] tilelang/triton kernels
   - [x] pytorch/cuda op compare && diff check
 - [softmax](./kernels_dsl/tilelang/softmax/)
-  - [x] tilelang online softmax
+  - [x] tilelang online softmax (naive two pass)
   - [x] pytorch/cuda op compare && diff check
 
 <div id="samples"></div>

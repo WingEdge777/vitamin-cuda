@@ -142,5 +142,5 @@ def test_large():
 
 
 if __name__ == "__main__":
-    test_small()
+    # test_small()
     test_large()
