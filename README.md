@@ -33,6 +33,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 - [Blogs (10+)](#blogs-10)
   - [blogs](#blogs)
   - [博客](#博客)
+- [Star History](#star-history)
 - [References](#references)
 
 ## Prerequisites
@@ -252,6 +253,16 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 | CUDA实战 | [[CUDA 优化实战] 纯手搓 flash attention (fmha) - sm120 : 超越 torch.sdpa(FA2)](https://zhuanlan.zhihu.com/p/2028452875341144849) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] 纯手搓 flash decoding sm120 (上): 拉爆显存带宽的cuda c++实现](https://zhuanlan.zhihu.com/p/2030745157620998667) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] 手搓 flash decoding sm120（下） : 超越 flashinfer的c++实现](https://zhuanlan.zhihu.com/p/2031825988871525928) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=WingEdge777%2Fvitamin-cuda&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WingEdge777/vitamin-cuda&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WingEdge777/vitamin-cuda&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WingEdge777/vitamin-cuda&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ## References
 
