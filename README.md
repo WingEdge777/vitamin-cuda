@@ -232,8 +232,16 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 
 | 📖type | 📖blog link | 📖author | 📖star rating |
 | ---- | --- | ---- | ---- |
-| CUDA basics | [A Deep Dive into DeviceQuery: Understanding Your GPU Hardware](https://wingedge777.hashnode.dev/a-deep-dive-into-devicequery-understanding-your-gpu-hardware) | @WingEdge777 | ⭐️⭐️ |
-| CUDA basics | [[CUDA in Practice] Matrix Transpose — From Padding to XOR Swizzle: The Art of Shared Memory Access Optimization](https://wingedge777.hashnode.dev/cuda-in-practice-matrix-transpose-from-padding-to-xor-swizzle-the-art-of-shared-memory-access-optimization) | @WingEdge777 | ⭐️⭐️ |
+| CUDA basics | [A Deep Dive into DeviceQuery: Understanding Your GPU Hardware](https://www.wingedge777.com/en/article/5860d3d6e3f62297) | @WingEdge777 | ⭐️⭐️ |
+| CUDA basics | [Numbers Every CUDA Developer Should Know](https://www.wingedge777.com/en/article/548cec5dfba296d5) | @WingEdge777 | ⭐️⭐️ |
+| CUDA basics | [Understanding CUDA's "Nonexistent" Memory Tier: Local Memory](https://www.wingedge777.com/en/article/7f4c2d9a1e6b8c30) | @WingEdge777 | ⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] Matrix Transpose — From Padding to XOR Swizzle: The Art of Shared Memory Access Optimization](https://www.wingedge777.com/en/article/49c4e15376366f8d) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] SGEMM — Beating cuBLAS: A Deep Dive into Peak-Performance Matrix Multiplication in Pure CUDA C++](https://www.wingedge777.com/en/article/ce4e1621e32a7b08) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] Safe Online Softmax — A Must-Know for Interviews: Arbitrary hidden_size, One/Two Pass, Trade-offs, Split-K](https://www.wingedge777.com/en/article/8b8f983df949c7c0) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] SGEMM TF32 — Beating cuBLAS with Tensor Cores, cp.async, ldmatrix & mma](https://www.wingedge777.com/en/article/ba9e9d9171004edc) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] HGEMM — Beating cuBLAS: Tensor Core, cp.async, ldmatrix, mma](https://www.wingedge777.com/en/article/5a219c62549f9573) | @WingEdge777 | ⭐️⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] HGEMM SM120 — Micro-Sculpture Warfare in 100KB SMEM: Tensor Core, TMA, ldmatrix, mma](https://www.wingedge777.com/en/article/b2ab376d19f52ff4) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
+
 
 ### 博客
 
