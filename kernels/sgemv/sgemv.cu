@@ -12,7 +12,6 @@
 
 #include "../common/pack.cuh"
 
-const int WARP_SIZE = 32;
 
 template <const int warp_size = WARP_SIZE>
 __device__ __forceinline__ float _warp_shuffle_reduce_sum(float val) {

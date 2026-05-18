@@ -125,8 +125,6 @@ __device__ __forceinline__ void cp_async_bulk_tensor_2d(
                  : "memory");
 }
 
-const int WARP_SIZE = 32;
-
 template <const int BK, typename T>
 __device__ __forceinline__ void
 ldmatrix_A(uint32_t reg_a[4][4], T (*As)[BK], int warp_id_m, int lane_id, int k_offset) {

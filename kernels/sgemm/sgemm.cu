@@ -14,7 +14,6 @@
 
 #define SWIZZLE_A(x, y) ((y) ^ ((x >> 2) << 3))
 
-const int WARP_SIZE = 32;
 
 // gemm fp32
 __global__ void sgemm_naive_kernel(float *a, float *b, float *c, int m, int n, int k) {
