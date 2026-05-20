@@ -1,7 +1,5 @@
 import time
-from functools import partial
 from pathlib import Path
-from typing import Optional
 
 import torch
 from torch.utils.cpp_extension import load
@@ -97,50 +95,56 @@ def random_sample(
     return probs.div_(q).argmax(dim=-1).view(-1)
 
 
+def torch_topk_topp_sampling(logits, top_k, top_p, seed=42):
+    k = torch.full((logits.shape[0],), top_k, dtype=torch.long, device=logits.device)
+    p = torch.full((logits.shape[0],), top_p, dtype=torch.float32, device=logits.device)
+    masked_logits = apply_top_k_top_p_pytorch(logits.clone(), k, p)
+    probs = torch.softmax(masked_logits, dim=-1)
+    generators = {0: torch.Generator(device="cuda")}
+    generators[0].manual_seed(seed)
+    return random_sample(probs, generators)
+
+
 baseline = None
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=200, prefix="torch"):
-    if c is not None:
-        # warm up
-        for i in range(warmup):
-            op(a, b, c)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            op(a, b, c)
-        torch.cuda.synchronize()
-    else:
-        # warm up
-        for i in range(warmup):
-            op(a, b)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            op(a, b)
-        torch.cuda.synchronize()
-
+def benchmark(op, *args, warmup=10, rep=100, prefix="torch"):
+    for _ in range(warmup):
+        op(*args)
+    torch.cuda.synchronize()
+    start = time.perf_counter()
+    for _ in range(rep):
+        op(*args)
+    torch.cuda.synchronize()
     duration = time.perf_counter() - start
-
-    tflops = a.shape[0]*b.shape[0]*b.shape[1]*2*rep / 1e12 / duration
+    io_bytes = args[0].numel() * args[0].element_size() * rep
+    bandwidth = io_bytes / duration / 1e9
+    global baseline
     if prefix == "torch":
-        global baseline
         baseline = duration
-        print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {tflops:.2f} tflops")
+        print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s")
     else:
-        speedup = baseline / duration
-        print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, tflops: {tflops:.2f}"
-        )
+        speedup = baseline / duration if baseline else 0.0
+        print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, {bandwidth:.2f} GB/s")
+
 
 def test():
+    global baseline
+    top_k = 32
+    top_p = 0.95
+    seed = 42
+    step = 1
     ns = [1, 8, 16, 32]
     ms = [128000, 256000, 320000]
     for bs in ns:
-        for vocab_size  in ms:
+        for vocab_size in ms:
             print("#" * 100)
-            print(f"bs: {bs}, vocab_size : {vocab_size }")
-            logits = torch.rand(bs, vocab_size, dtype=torch.bfloat16).cuda()
+            print(f"bs: {bs}, vocab_size: {vocab_size}")
+            logits = torch.randn(bs, vocab_size, dtype=torch.bfloat16).cuda()
+
+            baseline = None
+            benchmark(torch_topk_topp_sampling, logits, top_k, top_p, seed, prefix="torch")
+            benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
 
 
 if __name__ == "__main__":
