@@ -47,7 +47,7 @@ __device__ __forceinline__ bool insert_sorted(float score[TOP_K], int token_id[T
         score[i] = next_score[i];
         token_id[i] = next_token_id[i];
     }
-    return true;
+    return inserted;
 }
 
 template <const int TOP_K = 32, const int CHUNK_SIZE = 2048, typename T>
