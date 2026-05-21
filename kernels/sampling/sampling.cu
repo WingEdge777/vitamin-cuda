@@ -96,7 +96,7 @@ __global__ void sampling_topk_topp_batched_kernel(
         float u = curand_uniform(&state); // create a float from (0, 1]
         float random_val = 1.f - u;
 
-        // Block reduce
+        // block reduce
         for (int w = 1; w < num_warps; w++) {
 #pragma unroll
             for (int j = 0; j < TOP_K; ++j) {
