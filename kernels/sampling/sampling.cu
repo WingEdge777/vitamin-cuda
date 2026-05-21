@@ -15,21 +15,38 @@
 
 template <const int TOP_K>
 __device__ __forceinline__ bool insert_sorted(float score[TOP_K], int token_id[TOP_K], float new_val, int new_id) {
-    if (new_val <= score[TOP_K - 1])
-        return false;
-#pragma unroll
-    for (int i = TOP_K - 2; i >= 0; i--) {
-        if (new_val > score[i]) {
-            score[i + 1] = score[i];
-            token_id[i + 1] = token_id[i];
+    float next_score[TOP_K];
+    int next_token_id[TOP_K];
+    bool inserted = false;
+    bool insert_at_0 = (new_val > score[0]);
+    next_score[0] = insert_at_0 ? new_val : score[0];
+    next_token_id[0] = insert_at_0 ? new_id : token_id[0];
+
+    #pragma unroll
+    for (int i = 1; i < TOP_K; i++) {
+        bool bigger_than_curr = (new_val > score[i]);
+        bool bigger_than_prev = (new_val > score[i - 1]);
+
+        if (bigger_than_curr) {
+            if (bigger_than_prev) {
+                next_score[i] = score[i - 1];
+                next_token_id[i] = token_id[i - 1];
+            } else {
+                inserted = true;
+                next_score[i] = new_val;
+                next_token_id[i] = new_id;
+            }
         } else {
-            score[i + 1] = new_val;
-            token_id[i + 1] = new_id;
-            return true;
+            next_score[i] = score[i];
+            next_token_id[i] = token_id[i];
         }
     }
-    score[0] = new_val;
-    token_id[0] = new_id;
+
+    #pragma unroll
+    for (int i = 0; i < TOP_K; i++) {
+        score[i] = next_score[i];
+        token_id[i] = next_token_id[i];
+    }
     return true;
 }
 
@@ -190,7 +207,7 @@ __global__ void sampling_topk_topp_split_k_kernel(
         auto options = torch::TensorOptions().dtype(torch::kInt32).device(logits.device());                            \
         auto res = torch::empty({bs}, options);                                                                        \
         cudaStream_t stream = at::cuda::getCurrentCUDAStream();                                                        \
-                                                                                                                        \
+                                                                                                                       \
         switch (top_k) {                                                                                               \
             case 1: DISPATCH_TOPK_KERNEL(name##_kernel, 1); break;                                                     \
             case 2: DISPATCH_TOPK_KERNEL(name##_kernel, 2); break;                                                     \
@@ -204,12 +221,12 @@ __global__ void sampling_topk_topp_split_k_kernel(
     }
 
 binding_tiled_func_gen(sampling_topk_topp_batched);
-binding_tiled_func_gen(sampling_topk_topp_split_k);
+// binding_tiled_func_gen(sampling_topk_topp_split_k);
 
 // binding
 #define torch_pybinding_func(f) m.def(#f, &f, #f)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     torch_pybinding_func(sampling_topk_topp_batched);
-    torch_pybinding_func(sampling_topk_topp_split_k);
+    // torch_pybinding_func(sampling_topk_topp_split_k);
 }

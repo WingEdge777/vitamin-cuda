@@ -1,6 +1,8 @@
 import time
+from functools import partial
 from pathlib import Path
 
+import flashinfer
 import torch
 from torch.utils.cpp_extension import load
 
@@ -119,8 +121,8 @@ def benchmark(op, *args, warmup=10, rep=100, prefix="torch"):
     duration = time.perf_counter() - start
     io_bytes = args[0].numel() * args[0].element_size() * rep
     bandwidth = io_bytes / duration / 1e9
-    global baseline
     if prefix == "torch":
+        global baseline
         baseline = duration
         print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s")
     else:
@@ -129,8 +131,7 @@ def benchmark(op, *args, warmup=10, rep=100, prefix="torch"):
 
 
 def test():
-    global baseline
-    top_k = 32
+    top_k = 16
     top_p = 0.95
     seed = 42
     step = 1
@@ -142,9 +143,9 @@ def test():
             print(f"bs: {bs}, vocab_size: {vocab_size}")
             logits = torch.randn(bs, vocab_size, dtype=torch.bfloat16).cuda()
 
-            baseline = None
             benchmark(torch_topk_topp_sampling, logits, top_k, top_p, seed, prefix="torch")
             benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
+            benchmark(partial(flashinfer.sampling.top_k_top_p_sampling_from_logits, seed=seed, offset=step), logits, top_k, top_p, prefix="flashinfer")
 
 
 if __name__ == "__main__":
