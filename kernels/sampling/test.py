@@ -131,7 +131,7 @@ def benchmark(op, *args, warmup=10, rep=100, prefix="torch"):
 
 
 def test():
-    top_k = 16
+    top_k = 20
     top_p = 0.95
     seed = 42
     step = 1
@@ -144,8 +144,8 @@ def test():
             logits = torch.randn(bs, vocab_size, dtype=torch.bfloat16).cuda()
 
             benchmark(torch_topk_topp_sampling, logits, top_k, top_p, seed, prefix="torch")
-            benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
             benchmark(partial(flashinfer.sampling.top_k_top_p_sampling_from_logits, seed=seed, offset=step), logits, top_k, top_p, prefix="flashinfer")
+            benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
 
 
 if __name__ == "__main__":

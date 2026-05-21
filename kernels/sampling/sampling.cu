@@ -15,39 +15,21 @@
 
 template <const int TOP_K>
 __device__ __forceinline__ bool insert_sorted(float score[TOP_K], int token_id[TOP_K], float new_val, int new_id) {
-    float next_score[TOP_K];
-    int next_token_id[TOP_K];
-    bool inserted = false;
-    bool insert_at_0 = (new_val > score[0]);
-    next_score[0] = insert_at_0 ? new_val : score[0];
-    next_token_id[0] = insert_at_0 ? new_id : token_id[0];
-
+    if (new_val <= score[TOP_K - 1]) return false;
+    
     #pragma unroll
-    for (int i = 1; i < TOP_K; i++) {
+    for (int i = TOP_K - 1; i > 0; i--) {
         bool bigger_than_curr = (new_val > score[i]);
         bool bigger_than_prev = (new_val > score[i - 1]);
 
-        if (bigger_than_curr) {
-            if (bigger_than_prev) {
-                next_score[i] = score[i - 1];
-                next_token_id[i] = token_id[i - 1];
-            } else {
-                inserted = true;
-                next_score[i] = new_val;
-                next_token_id[i] = new_id;
-            }
-        } else {
-            next_score[i] = score[i];
-            next_token_id[i] = token_id[i];
-        }
+        score[i]    = bigger_than_curr ? (bigger_than_prev ? score[i - 1]    : new_val) : score[i];
+        token_id[i] = bigger_than_curr ? (bigger_than_prev ? token_id[i - 1] : new_id)  : token_id[i];
     }
 
-    #pragma unroll
-    for (int i = 0; i < TOP_K; i++) {
-        score[i] = next_score[i];
-        token_id[i] = next_token_id[i];
-    }
-    return inserted;
+    bool bigger_than_0 = (new_val > score[0]);
+    score[0]    = bigger_than_0 ? new_val : score[0];
+    token_id[0] = bigger_than_0 ? new_id  : token_id[0];
+    return true;
 }
 
 template <const int TOP_K = 32, const int CHUNK_SIZE = 2048, typename T>
@@ -214,7 +196,7 @@ __global__ void sampling_topk_topp_split_k_kernel(
             case 4: DISPATCH_TOPK_KERNEL(name##_kernel, 4); break;                                                     \
             case 8: DISPATCH_TOPK_KERNEL(name##_kernel, 8); break;                                                     \
             case 16: DISPATCH_TOPK_KERNEL(name##_kernel, 16); break;                                                   \
-            case 32: DISPATCH_TOPK_KERNEL(name##_kernel, 32); break;                                                   \
+            case 20: DISPATCH_TOPK_KERNEL(name##_kernel, 20); break;                                                   \
             default: TORCH_CHECK(false, "Unsupported top_k! Only powers of 2 up to 32 are supported."); break;         \
         }                                                                                                              \
         return res;                                                                                                    \
