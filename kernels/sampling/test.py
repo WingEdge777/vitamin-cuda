@@ -147,7 +147,7 @@ def test():
     top_p = 0.95
     seed = 42
     step = 1
-    ns = [1, 8, 16, 32]
+    ns = [1, 4, 8, 16, 32]
     ms = [128000, 256000, 320000]
     for bs in ns:
         for vocab_size in ms:
@@ -157,6 +157,10 @@ def test():
             res = benchmark(torch_topk_topp_sampling, logits, top_k, top_p, seed, prefix="torch")
             res = benchmark(partial(flashinfer.sampling.top_k_top_p_sampling_from_logits, seed=seed, offset=step), logits, top_k, top_p, prefix="flashinfer")
             res = benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
+            # print(res)
+            if bs <= 8:
+                res = benchmark(lib.sampling_topk_topp_split_k, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_split_k")
+                # print(res)
 
 
 if __name__ == "__main__":
