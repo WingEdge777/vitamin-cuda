@@ -129,6 +129,17 @@ def benchmark(op, *args, warmup=10, rep=100, prefix="torch"):
         speedup = baseline / duration if baseline else 0.0
         print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, {bandwidth:.2f} GB/s")
 
+def generate_realistic_logits(bs, vocab_size, num_spikes=5, device="cuda", dtype=torch.bfloat16):
+    logits = torch.randn(bs, vocab_size, dtype=dtype, device=device)
+    
+    spike_indices = torch.randint(0, vocab_size, (bs, num_spikes), device=device)
+    
+    spike_values = 10.0 + 20.0 * torch.rand((bs, num_spikes), device=device, dtype=torch.float32)
+    spike_values = spike_values.to(dtype)
+    
+    logits.scatter_(1, spike_indices, spike_values)
+    
+    return logits
 
 def test():
     top_k = 20
@@ -141,8 +152,7 @@ def test():
         for vocab_size in ms:
             print("#" * 100)
             print(f"bs: {bs}, vocab_size: {vocab_size}")
-            logits = torch.randn(bs, vocab_size, dtype=torch.bfloat16).cuda()
-
+            logits = generate_realistic_logits(bs, vocab_size, num_spikes=50)
             benchmark(torch_topk_topp_sampling, logits, top_k, top_p, seed, prefix="torch")
             benchmark(partial(flashinfer.sampling.top_k_top_p_sampling_from_logits, seed=seed, offset=step), logits, top_k, top_p, prefix="flashinfer")
             benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
