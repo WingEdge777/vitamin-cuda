@@ -93,11 +93,6 @@ __global__ void sampling_topk_topp_batched_kernel(
     __syncthreads();
 
     if (threadIdx.x == 0) {
-        // curand
-        curandStatePhilox4_32_10_t state;
-        curand_init(seed, blockIdx.x, offset, &state);
-        float u = curand_uniform(&state); // create a float from (0, 1]
-        float random_val = 1.f - u;
 
         // block reduce
         for (int w = 1; w < num_warps; w++) {
@@ -138,6 +133,12 @@ __global__ void sampling_topk_topp_batched_kernel(
         if (trunc_sum == 0.0f)
             trunc_sum = cumsum;
 
+        // curand
+        curandStatePhilox4_32_10_t state;
+        curand_init(seed, blockIdx.x, offset, &state);
+        float u = curand_uniform(&state); // create a float from (0, 1]
+        float random_val = 1.f - u;
+
         // sampling
         float r = random_val * trunc_sum;
         float cdf = 0.0f;
@@ -158,10 +159,7 @@ __global__ void sampling_topk_topp_batched_kernel(
 
 // split-k pass 1: partial topk per split
 template <const int TOP_K = 20, const int CHUNK_SIZE = 2048, const int BLOCK_SIZE = 256, typename T>
-__global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
-                                                         int vocab_size,
-                                                         float *ws_score,
-                                                         int *ws_id) {
+__global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits, int vocab_size, float *ws_score, int *ws_id) {
     const int split_id = blockIdx.x;
     const int batch_id = blockIdx.y;
     const int num_splits = gridDim.x;
@@ -240,14 +238,9 @@ __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
 }
 
 // split-k pass 2: merge partial topk and sampling
-template <const int TOP_K = 20, const int BLOCK_SIZE=256>
-__global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
-                                                         float top_p,
-                                                         int64_t seed,
-                                                         int64_t offset,
-                                                         int num_splits,
-                                                         float *ws_score,
-                                                         int *ws_id) {
+template <const int TOP_K = 20, const int BLOCK_SIZE = 256>
+__global__ void sampling_topk_topp_split_k_pass2_kernel(
+    int *output_ids, float top_p, int64_t seed, int64_t offset, int num_splits, float *ws_score, int *ws_id) {
     const int batch_id = blockIdx.x;
     const int total = num_splits * TOP_K;
     const int ws_base = batch_id * total;
@@ -306,12 +299,6 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
             }
         }
 
-        // curand
-        curandStatePhilox4_32_10_t state;
-        curand_init(seed, batch_id, offset, &state);
-        float u = curand_uniform(&state);
-        float random_val = 1.f - u;
-
         // softmax
         float max_val = score[0];
         float sum_prob = 0.0f;
@@ -337,6 +324,12 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
         }
         if (trunc_sum == 0.0f)
             trunc_sum = 1.0f;
+        
+        // curand
+        curandStatePhilox4_32_10_t state;
+        curand_init(seed, batch_id, offset, &state);
+        float u = curand_uniform(&state);
+        float random_val = 1.f - u;
 
         // sampling
         float r = random_val * trunc_sum;
@@ -402,33 +395,33 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
 
 #define DISPATCH_TOPK_SPLITK_KERNEL(kernel_name, K_VAL)                                                                \
     if (logits.dtype() == torch::kHalf) {                                                                              \
-        kernel_name<K_VAL, chunk_size><<<blocks_p1, threads_per_block, 0, stream>>>(                                   \
-            reinterpret_cast<__half *>(logits.data_ptr()),                                                             \
-            vocab_size,                                                                                                 \
-            ws_score.data_ptr<float>(),                                                                                 \
-            ws_id.data_ptr<int>());                                                                                     \
-        sampling_topk_topp_split_k_pass2_kernel<K_VAL><<<blocks_p2, threads_per_block, 0, stream>>>(                                   \
-            reinterpret_cast<int *>(res.data_ptr()),                                                                   \
-            top_p,                                                                                                      \
-            seed,                                                                                                       \
-            offset,                                                                                                     \
-            num_splits,                                                                                                 \
-            ws_score.data_ptr<float>(),                                                                                 \
-            ws_id.data_ptr<int>());                                                                                     \
+        kernel_name<K_VAL, chunk_size>                                                                                 \
+            <<<blocks_p1, threads_per_block, 0, stream>>>(reinterpret_cast<__half *>(logits.data_ptr()),               \
+                                                          vocab_size,                                                  \
+                                                          ws_score.data_ptr<float>(),                                  \
+                                                          ws_id.data_ptr<int>());                                      \
+        sampling_topk_topp_split_k_pass2_kernel<K_VAL>                                                                 \
+            <<<blocks_p2, threads_per_block, 0, stream>>>(reinterpret_cast<int *>(res.data_ptr()),                     \
+                                                          top_p,                                                       \
+                                                          seed,                                                        \
+                                                          offset,                                                      \
+                                                          num_splits,                                                  \
+                                                          ws_score.data_ptr<float>(),                                  \
+                                                          ws_id.data_ptr<int>());                                      \
     } else if (logits.dtype() == torch::kBFloat16) {                                                                   \
-        kernel_name<K_VAL, chunk_size><<<blocks_p1, threads_per_block, 0, stream>>>(                                   \
-            reinterpret_cast<__nv_bfloat16 *>(logits.data_ptr()),                                                      \
-            vocab_size,                                                                                                 \
-            ws_score.data_ptr<float>(),                                                                                 \
-            ws_id.data_ptr<int>());                                                                                     \
-        sampling_topk_topp_split_k_pass2_kernel<K_VAL><<<blocks_p2, threads_per_block, 0, stream>>>(                                   \
-            reinterpret_cast<int *>(res.data_ptr()),                                                                   \
-            top_p,                                                                                                      \
-            seed,                                                                                                       \
-            offset,                                                                                                     \
-            num_splits,                                                                                                 \
-            ws_score.data_ptr<float>(),                                                                                 \
-            ws_id.data_ptr<int>());                                                                                     \
+        kernel_name<K_VAL, chunk_size>                                                                                 \
+            <<<blocks_p1, threads_per_block, 0, stream>>>(reinterpret_cast<__nv_bfloat16 *>(logits.data_ptr()),        \
+                                                          vocab_size,                                                  \
+                                                          ws_score.data_ptr<float>(),                                  \
+                                                          ws_id.data_ptr<int>());                                      \
+        sampling_topk_topp_split_k_pass2_kernel<K_VAL>                                                                 \
+            <<<blocks_p2, threads_per_block, 0, stream>>>(reinterpret_cast<int *>(res.data_ptr()),                     \
+                                                          top_p,                                                       \
+                                                          seed,                                                        \
+                                                          offset,                                                      \
+                                                          num_splits,                                                  \
+                                                          ws_score.data_ptr<float>(),                                  \
+                                                          ws_id.data_ptr<int>());                                      \
     }
 
 torch::Tensor sampling_topk_topp_split_k(torch::Tensor logits, int top_k, float top_p, int64_t seed, int64_t offset) {
