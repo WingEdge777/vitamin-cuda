@@ -12,8 +12,8 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 
 ## News
 
-- **[2026.05.21]** [topk_topp_sampling](./kernels/sampling/) - Release (split-k) sampling kernels that outperform flashinfer with `array insertion sort && merge` surprisingly
-- **[2026.04.26]** [flash_decode_sm120](./kernels/flash_attn/) — Released a custom sm120 kernel that slightly outperforms flashinfer with `TMA + double Ks buffers + single Vs buffer`.
+- **[2026.05.21]** [topk_topp_sampling](./kernels/sampling/) - Release template-specialized (split-k) sampling kernels optimized for small-K constraints on consumer GPUs using register-level insertion sort and hierachical merge.
+- **[2026.04.26]** [flash_decode_sm120](./kernels/flash_attn/) — Released a custom sm120 decode kernel leveraging `TMA + double Ks buffers + single Vs buffer` to maximize memory bandwidth utilization.
 - **[2026.04.16]** [flash_attn_sm120](./kernels/flash_attn/) — Released a custom sm120 kernel that outperforms torch.sdpa(FA2) across all prefill sequence lengths(1.2x in best case). Leverages TMA to drastically reduce register pressure and maximize L2 cache locality.
 - **[2026.04.04]** [hgemm_120](./kernels/hgemm_sm120/) — FP16/BF16 Tensor-Core kernel pushing the absolute compute limit of the GPU. Outperforms cuBLAS via `TMA copy + 3-stage pipeline + double register buffer + swizzle + ldmatrix + mma`.
 - **[2026.03.18]** [hgemm](./kernels/hgemm/) — FP16/BF16 Tensor-Core kernel outperforming cuBLAS via `cp.async + double SMEM buffer + swizzle + ldmatrix + mma`.

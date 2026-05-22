@@ -15,7 +15,7 @@
 
 // stable insertion sort
 template <const int TOP_K>
-__device__ __forceinline__ bool insert_sorted(float score[TOP_K], int token_id[TOP_K], float new_val, int new_id) {
+__device__ __forceinline__ bool insert_sorted(float (&score)[TOP_K], int (&token_id)[TOP_K], float new_val, int new_id) {
     if (new_val <= score[TOP_K - 1])
         return false;
 
