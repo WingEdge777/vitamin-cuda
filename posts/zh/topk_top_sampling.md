@@ -6,23 +6,22 @@
 >
 ## 0. 序 - llm 推理的最后一公里 ： token sampling
 
-有一段时间没更新文章了，今天来聊聊 token sampling。做 LLM 或用过 LLM 的从业者，大概都了解，LLM 实质就是预测下一个 token。LLM 模型整个前向推理完后，最终的 lm_head 会输出一个向量 logits，这个向量决定了其在 vocab_size 维空间，和每个 token 距离。
+有一段时间没更新文章了，今天来聊聊 token sampling。做 LLM 或用过 LLM 的从业者，大概都了解，LLM 实质就是预测下一个 token。LM 模型整个前向推理完后，最终的 lm_head 会输出一个向量 logits。而为了把这个 logits 变成 token 以及最终的文本（英文/中文单词、符号等），整个文本生成（Decoding）其实整了非常多的花活：
 
-token sampling 就是对该向量做 softmax，得到其在每个 token_id 的上概率，然后按照概率以某种策略采样选出一个 token，该 token 就是当前 step 输出的 token（对应词表中某个英文/中文单词、符号等等）
+确定性解码（Deterministic Decoding）：主要有 Greedy Search（贪心搜索） 和 Beam Search（束搜索）。
 
-sampling 其实整了非常多的花活：
+- Greedy Search：直接取最大的 logits，毫无随机性。
+- Beam Search：维护 n 条当前最优的候选序列，每一步扩展时只保留整体得分最高的 n 个序列。
 
-- 采样算法主要有 greedy sampling， beam search sampling 等等
-  - greedy sampling：贪心采样，直接取概率最大的 token
-  - beam search sampling：简单说是维护 n 条当前最优的候选序列，每一步扩展时只保留整体概率最高的 n 个序列，最终输出其中得分最高的序列。
-- 但是发现上述朴素的采样效果都不好，所以有了各种对概率数值进行过滤/扰动的参数： top_k、top_p、 min_p、temperature，presence_penalty，frequency_penalty，repetition_penalty，forbidden_token_ids 等等
-  - top_k：按概率大小降序排列，只从前 k 个 token 中选取
-  - top_p: 按概率大小降序排列，只从取概率和为 top_p 以内的 token 集合中选取
-  - min_p：只保留概率 大于 min_p*P(max) 的 token，使用的话一般会设定一个较小的值，例如：min_p=0.05，假设概率最大的 toke 概率为 0.5，那么概率<0.05*0.5=0.025 的 token 就都过滤了
-  - temperature： 温度越高，概率分布越平滑，越低则越陡峭
-  - penalty： 对各种场景的对应 token 施加惩罚，降低概率或直接抹为零
-- 更别提还有 guided sampling（structure output）等等。
-  - 不过这超出了单个 kernel/算法之内的讨论范围，所以本文不加以讨论
+随机性采样解码（Sampling Decoding）：发现上述确定性生成容易陷入死循环或胡言乱语，所以引入了基于概率分布的采样，并衍生出了各种在 Logits 阶段进行扰动/过滤 的参数
+
+- temperature：温度，用来缩放 logits(logits/T)。温度越高分布越平滑，越低越陡峭。
+- top_k：按概率大小降序排列，只从前 k 个 token 中选取
+- top_p: 按概率大小降序排列，只从取概率和为 top_p 以内的 token 集合中选取
+- min_p：只保留概率 大于 min_p*P(max) 的 token，使用的话一般会设定一个较小的值，例如：min_p=0.05，假设概率最大的 token 概率为 0.5，那么概率<0.05*0.5=0.025 的 token 就都过滤了
+- penalty：各种惩罚项（重复、频率等），对相应场景的对应 token 施加惩罚，降低 logits 数值或直接抹为-inf（概率为 0）
+
+更别提还有结合语法树的 guided sampling（结构化输出）等等，不过这超出了单个 kernel 级别的讨论范围，本文暂不展开。
 
 尽管如此，个人观察现在 sampling 已经进入返璞归真的时期了，大家发现最有用的还是 topk，topp，最多加个 min_p。
 
@@ -36,7 +35,7 @@ sampling 其实整了非常多的花活：
 
 这在算法效果上完全没问题，不过从工程方面考虑，不建议在无 topk 的情况下设置 top_p=1.0。因为 top_p=1，又没有 top_k，这样就需要计算每一个 token 的概率，开销比较大（词表大），相当于做一个巨大的 softmax。当然，众所周知 deepseek 的 infra 团队非常之强，其 sampling kernel 可能有一些特殊的优化技巧，可以避免这种开销，那就不是我能了解到的了。
 
-本文聚焦于 topk_topp_sampling，实际上最初是想学习一下 flashinfer 的 top_k_top_p_sampling_from_logits，但是学不进去。而且等写完自己的初版暴力实现后，惊讶的发现暴力插入排序后 top_p 过滤采样速度并不慢。
+本文聚焦于随机采样算法 `topk_topp_sampling`，实际上最初是想学习一下 flashinfer 的 `top_k_top_p_sampling_from_logits`，但是学不进去。而等写完自己的初版暴力 kernel 实现后，惊讶的发现暴力插入排序后 top_p 过滤采样速度并不慢。
 
 因此才有了这篇文章，本文将会给出两个 kernel 实现：
 
@@ -279,7 +278,7 @@ __device__ __forceinline__ bool insert_sorted(float (&score)[TOP_K], int (&token
 
 ### softmax + curand + top_p
 
-这一部分就是对topk个数据进行softmax + topp过滤，最后采样了。依然是thread 0 承担了所有（泪目）
+这一部分就是对 topk 个数据进行 softmax + topp 过滤，最后采样了。依然是 thread 0 承担了所有（泪目）
 
 ```cpp
         // softmax
