@@ -14,6 +14,8 @@ python test.py
 
 ## Sample output
 
+### random spike data
+
 ```yaml
 ####################################################################################################
 bs: 1, vocab_size: 128000
@@ -99,4 +101,119 @@ bs: 32, vocab_size: 320000
 torch                                    mean time: 5.643508 ms, 3.63 GB/s
 flashinfer                               mean time: 0.774221 ms, speedup: 7.29, 26.45 GB/s
 sampling_topk_topp_batched               mean time: 0.137926 ms, speedup: 40.92, 148.49 GB/s
+```
+
+### real qwen3-8b logits data
+
+```yaml
+####################################################################################################
+bs: 1, vocab_size: 151936
+torch                                    mean time: 0.333807 ms, 0.91 GB/s
+flashinfer                               mean time: 0.141696 ms, speedup: 2.36, 2.14 GB/s
+sampling_topk_topp_batched               mean time: 0.075829 ms, speedup: 4.40, 4.01 GB/s
+sampling_topk_topp_split_k               mean time: 0.031688 ms, speedup: 10.53, 9.59 GB/s
+####################################################################################################
+bs: 1, vocab_size: 151936
+torch                                    mean time: 0.385421 ms, 0.79 GB/s
+flashinfer                               mean time: 0.081062 ms, speedup: 4.75, 3.75 GB/s
+sampling_topk_topp_batched               mean time: 0.077032 ms, speedup: 5.00, 3.94 GB/s
+sampling_topk_topp_split_k               mean time: 0.031270 ms, speedup: 12.33, 9.72 GB/s
+####################################################################################################
+bs: 1, vocab_size: 151936
+torch                                    mean time: 0.332377 ms, 0.91 GB/s
+flashinfer                               mean time: 0.081582 ms, speedup: 4.07, 3.72 GB/s
+sampling_topk_topp_batched               mean time: 0.055480 ms, speedup: 5.99, 5.48 GB/s
+sampling_topk_topp_split_k               mean time: 0.032620 ms, speedup: 10.19, 9.32 GB/s
+####################################################################################################
+bs: 1, vocab_size: 151936
+torch                                    mean time: 0.385464 ms, 0.79 GB/s
+flashinfer                               mean time: 0.106221 ms, speedup: 3.63, 2.86 GB/s
+sampling_topk_topp_batched               mean time: 0.048918 ms, speedup: 7.88, 6.21 GB/s
+sampling_topk_topp_split_k               mean time: 0.033564 ms, speedup: 11.48, 9.05 GB/s
+####################################################################################################
+bs: 1, vocab_size: 151936
+torch                                    mean time: 0.368339 ms, 0.82 GB/s
+flashinfer                               mean time: 0.102984 ms, speedup: 3.58, 2.95 GB/s
+sampling_topk_topp_batched               mean time: 0.049881 ms, speedup: 7.38, 6.09 GB/s
+sampling_topk_topp_split_k               mean time: 0.031515 ms, speedup: 11.69, 9.64 GB/s
+####################################################################################################
+bs: 4, vocab_size: 151936
+torch                                    mean time: 0.706000 ms, 1.72 GB/s
+flashinfer                               mean time: 0.089564 ms, speedup: 7.88, 13.57 GB/s
+sampling_topk_topp_batched               mean time: 0.052516 ms, speedup: 13.44, 23.15 GB/s
+sampling_topk_topp_split_k               mean time: 0.054109 ms, speedup: 13.05, 22.46 GB/s
+####################################################################################################
+bs: 4, vocab_size: 151936
+torch                                    mean time: 0.703697 ms, 1.73 GB/s
+flashinfer                               mean time: 0.132022 ms, speedup: 5.33, 9.21 GB/s
+sampling_topk_topp_batched               mean time: 0.051942 ms, speedup: 13.55, 23.40 GB/s
+sampling_topk_topp_split_k               mean time: 0.044773 ms, speedup: 15.72, 27.15 GB/s
+####################################################################################################
+bs: 4, vocab_size: 151936
+torch                                    mean time: 0.740746 ms, 1.64 GB/s
+flashinfer                               mean time: 0.091355 ms, speedup: 8.11, 13.31 GB/s
+sampling_topk_topp_batched               mean time: 0.054907 ms, speedup: 13.49, 22.14 GB/s
+sampling_topk_topp_split_k               mean time: 0.045861 ms, speedup: 16.15, 26.50 GB/s
+####################################################################################################
+bs: 4, vocab_size: 151936
+torch                                    mean time: 0.719965 ms, 1.69 GB/s
+flashinfer                               mean time: 0.086940 ms, speedup: 8.28, 13.98 GB/s
+sampling_topk_topp_batched               mean time: 0.049303 ms, speedup: 14.60, 24.65 GB/s
+sampling_topk_topp_split_k               mean time: 0.045837 ms, speedup: 15.71, 26.52 GB/s
+####################################################################################################
+bs: 4, vocab_size: 151936
+torch                                    mean time: 0.731304 ms, 1.66 GB/s
+flashinfer                               mean time: 0.087465 ms, speedup: 8.36, 13.90 GB/s
+sampling_topk_topp_batched               mean time: 0.050458 ms, speedup: 14.49, 24.09 GB/s
+sampling_topk_topp_split_k               mean time: 0.044984 ms, speedup: 16.26, 27.02 GB/s
+####################################################################################################
+bs: 16, vocab_size: 151936
+torch                                    mean time: 1.341189 ms, 3.63 GB/s
+flashinfer                               mean time: 0.145224 ms, speedup: 9.24, 33.48 GB/s
+sampling_topk_topp_batched               mean time: 0.058288 ms, speedup: 23.01, 83.41 GB/s
+####################################################################################################
+bs: 16, vocab_size: 151936
+torch                                    mean time: 1.320675 ms, 3.68 GB/s
+flashinfer                               mean time: 0.145425 ms, speedup: 9.08, 33.43 GB/s
+sampling_topk_topp_batched               mean time: 0.059137 ms, speedup: 22.33, 82.22 GB/s
+####################################################################################################
+bs: 16, vocab_size: 151936
+torch                                    mean time: 1.351302 ms, 3.60 GB/s
+flashinfer                               mean time: 0.163167 ms, speedup: 8.28, 29.80 GB/s
+sampling_topk_topp_batched               mean time: 0.062388 ms, speedup: 21.66, 77.93 GB/s
+####################################################################################################
+bs: 16, vocab_size: 151936
+torch                                    mean time: 1.396582 ms, 3.48 GB/s
+flashinfer                               mean time: 0.177260 ms, speedup: 7.88, 27.43 GB/s
+sampling_topk_topp_batched               mean time: 0.057654 ms, speedup: 24.22, 84.33 GB/s
+####################################################################################################
+bs: 16, vocab_size: 151936
+torch                                    mean time: 1.429869 ms, 3.40 GB/s
+flashinfer                               mean time: 0.172361 ms, speedup: 8.30, 28.21 GB/s
+sampling_topk_topp_batched               mean time: 0.062052 ms, speedup: 23.04, 78.35 GB/s
+####################################################################################################
+bs: 32, vocab_size: 151936
+torch                                    mean time: 2.702709 ms, 3.60 GB/s
+flashinfer                               mean time: 0.285007 ms, speedup: 9.48, 34.12 GB/s
+sampling_topk_topp_batched               mean time: 0.093435 ms, speedup: 28.93, 104.07 GB/s
+####################################################################################################
+bs: 32, vocab_size: 151936
+torch                                    mean time: 2.574061 ms, 3.78 GB/s
+flashinfer                               mean time: 0.301973 ms, speedup: 8.52, 32.20 GB/s
+sampling_topk_topp_batched               mean time: 0.072180 ms, speedup: 35.66, 134.72 GB/s
+####################################################################################################
+bs: 32, vocab_size: 151936
+torch                                    mean time: 2.724618 ms, 3.57 GB/s
+flashinfer                               mean time: 0.337126 ms, speedup: 8.08, 28.84 GB/s
+sampling_topk_topp_batched               mean time: 0.089834 ms, speedup: 30.33, 108.24 GB/s
+####################################################################################################
+bs: 32, vocab_size: 151936
+torch                                    mean time: 2.636955 ms, 3.69 GB/s
+flashinfer                               mean time: 0.300759 ms, speedup: 8.77, 32.33 GB/s
+sampling_topk_topp_batched               mean time: 0.065455 ms, speedup: 40.29, 148.56 GB/s
+####################################################################################################
+bs: 32, vocab_size: 151936
+torch                                    mean time: 2.872458 ms, 3.39 GB/s
+flashinfer                               mean time: 0.356981 ms, speedup: 8.05, 27.24 GB/s
+sampling_topk_topp_batched               mean time: 0.070633 ms, speedup: 40.67, 137.67 GB/s
 ```

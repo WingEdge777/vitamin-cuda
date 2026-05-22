@@ -2,6 +2,7 @@ import time
 from functools import partial
 from pathlib import Path
 
+import numpy as np
 import flashinfer
 import torch
 from torch.utils.cpp_extension import load
@@ -142,6 +143,25 @@ def generate_realistic_logits(bs, vocab_size, num_spikes=5, device="cuda", dtype
     
     return logits
 
+def test_on_real_logits():
+    top_k = 20
+    top_p = 0.95
+    seed = 42
+    step = 1
+    ns = [1, 4, 16, 32]
+    for bs in ns:
+        for i in range(5):
+            print("#" * 100)
+            logits = torch.from_numpy(np.load(f"./data/qwen3_8b_logits/logits_{i}.npy")).cuda().to(torch.bfloat16).repeat(bs, 1)
+            vocab_size = logits.shape[1]
+            print(f"bs: {bs}, vocab_size: {vocab_size}")
+            res = benchmark(torch_topk_topp_sampling, logits, top_k, top_p, seed, prefix="torch")
+            res = benchmark(partial(flashinfer.sampling.top_k_top_p_sampling_from_logits, seed=seed, offset=step), logits, top_k, top_p, prefix="flashinfer")
+            res = benchmark(lib.sampling_topk_topp_batched, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_batched")
+            # print(res)
+            if bs <= 8:
+                res = benchmark(lib.sampling_topk_topp_split_k, logits, top_k, top_p, seed, step, prefix="sampling_topk_topp_split_k")
+
 def test():
     top_k = 20
     top_p = 0.95
@@ -164,4 +184,5 @@ def test():
 
 
 if __name__ == "__main__":
-    test()
+    # test()
+    test_on_real_logits()

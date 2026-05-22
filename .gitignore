@@ -9,3 +9,4 @@ tmp
 *.ncu-rep
 test_.py
 __pycache__/
+data/
