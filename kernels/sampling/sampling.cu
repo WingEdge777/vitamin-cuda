@@ -34,7 +34,7 @@ __device__ __forceinline__ bool insert_sorted(float score[TOP_K], int token_id[T
     return true;
 }
 
-template <const int TOP_K = 20, const int CHUNK_SIZE = 2048, typename T>
+template <const int TOP_K = 20, const int CHUNK_SIZE = 2048, const int BLOCK_SIZE = 256, typename T>
 __global__ void sampling_topk_topp_batched_kernel(
     T *logits, int *output_ids, float top_p, int64_t seed, int64_t offset, int vocab_size) {
     const int batch_id = blockIdx.x;
@@ -77,10 +77,11 @@ __global__ void sampling_topk_topp_batched_kernel(
         }
     }
     // step 3: final reduce and sampling
-    __shared__ float smem_warp_score[32][TOP_K];
-    __shared__ int smem_warp_id[32][TOP_K];
+    const int num_warps = BLOCK_SIZE / WARP_SIZE;
+    __shared__ float smem_warp_score[num_warps][TOP_K];
+    __shared__ int smem_warp_id[num_warps][TOP_K];
 
-    int warp_id = threadIdx.x / 32;
+    int warp_id = threadIdx.x / WARP_SIZE;
 
     if (lane_id == 0) {
 #pragma unroll
@@ -92,8 +93,6 @@ __global__ void sampling_topk_topp_batched_kernel(
     __syncthreads();
 
     if (threadIdx.x == 0) {
-        const int num_warps = blockDim.x / WARP_SIZE;
-
         // curand
         curandStatePhilox4_32_10_t state;
         curand_init(seed, blockIdx.x, offset, &state);
@@ -158,7 +157,7 @@ __global__ void sampling_topk_topp_batched_kernel(
 }
 
 // split-k pass 1: partial topk per split
-template <const int TOP_K = 20, const int CHUNK_SIZE = 2048, typename T>
+template <const int TOP_K = 20, const int CHUNK_SIZE = 2048, const int BLOCK_SIZE = 256, typename T>
 __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
                                                          int vocab_size,
                                                          float *ws_score,
@@ -205,10 +204,11 @@ __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
             }
         }
     }
-
-    __shared__ float smem_warp_score[32][TOP_K];
-    __shared__ int smem_warp_id[32][TOP_K];
-    int warp_id = threadIdx.x / 32;
+    // step 3: block reduce merge and write to gmem
+    const int num_warps = BLOCK_SIZE / WARP_SIZE;
+    __shared__ float smem_warp_score[num_warps][TOP_K];
+    __shared__ int smem_warp_id[num_warps][TOP_K];
+    int warp_id = threadIdx.x / WARP_SIZE;
 
     if (lane_id == 0) {
 #pragma unroll
@@ -220,8 +220,6 @@ __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
     __syncthreads();
 
     if (threadIdx.x == 0) {
-        const int num_warps = blockDim.x / WARP_SIZE;
-
         // block reduce
         for (int w = 1; w < num_warps; w++) {
 #pragma unroll
@@ -233,7 +231,6 @@ __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
                 }
             }
         }
-        // step 3: write to gmem
         int ws_offset = (batch_id * num_splits + split_id) * TOP_K;
         for (int i = 0; i < TOP_K; i++) {
             ws_score[ws_offset + i] = score[i];
@@ -243,7 +240,7 @@ __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits,
 }
 
 // split-k pass 2: merge partial topk and sampling
-template <const int TOP_K = 20>
+template <const int TOP_K = 20, const int BLOCK_SIZE=256>
 __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
                                                          float top_p,
                                                          int64_t seed,
@@ -263,7 +260,7 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
         token_id[i] = -1;
     }
 
-    for (int idx = threadIdx.x; idx < total; idx += blockDim.x) {
+    for (int idx = threadIdx.x; idx < total; idx += BLOCK_SIZE) {
         insert_sorted<TOP_K>(score, token_id, ws_score[ws_base + idx], ws_id[ws_base + idx]);
     }
 
@@ -281,9 +278,10 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
         }
     }
 
-    __shared__ float smem_warp_score[32][TOP_K];
-    __shared__ int smem_warp_id[32][TOP_K];
-    int warp_id = threadIdx.x / 32;
+    const int num_warps = BLOCK_SIZE / WARP_SIZE;
+    __shared__ float smem_warp_score[num_warps][TOP_K];
+    __shared__ int smem_warp_id[num_warps][TOP_K];
+    int warp_id = threadIdx.x / WARP_SIZE;
 
     if (lane_id == 0) {
 #pragma unroll
@@ -295,7 +293,6 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(int *output_ids,
     __syncthreads();
 
     if (threadIdx.x == 0) {
-        const int num_warps = blockDim.x / WARP_SIZE;
 
         // block reduce
         for (int w = 1; w < num_warps; w++) {
