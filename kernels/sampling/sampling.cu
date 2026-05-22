@@ -64,14 +64,14 @@ __global__ void sampling_topk_topp_batched_kernel(
     // step 2: warp reduce merge local array
     int lane_id = threadIdx.x % 32;
 #pragma unroll
-    for (int src_line = 16; src_line > 0; src_line /= 2) {
+    for (int src_lane = 16; src_lane > 0; src_lane /= 2) {
 
 #pragma unroll
         for (int j = 0; j < TOP_K; ++j) {
-            float other_val = __shfl_down_sync(0xffffffff, score[j], src_line);
-            int other_id = __shfl_down_sync(0xffffffff, token_id[j], src_line);
+            float other_val = __shfl_down_sync(0xffffffff, score[j], src_lane);
+            int other_id = __shfl_down_sync(0xffffffff, token_id[j], src_lane);
 
-            if (lane_id < src_line) {
+            if (lane_id < src_lane) {
                 insert_sorted<TOP_K>(score, token_id, other_val, other_id);
             }
         }
@@ -192,12 +192,12 @@ __global__ void sampling_topk_topp_split_k_pass1_kernel(T *logits, int vocab_siz
     // step 2: warp reduce merge local array
     int lane_id = threadIdx.x % 32;
 #pragma unroll
-    for (int src_line = 16; src_line > 0; src_line /= 2) {
+    for (int src_lane = 16; src_lane > 0; src_lane /= 2) {
 #pragma unroll
         for (int j = 0; j < TOP_K; ++j) {
-            float other_val = __shfl_down_sync(0xffffffff, score[j], src_line);
-            int other_id = __shfl_down_sync(0xffffffff, token_id[j], src_line);
-            if (lane_id < src_line) {
+            float other_val = __shfl_down_sync(0xffffffff, score[j], src_lane);
+            int other_id = __shfl_down_sync(0xffffffff, token_id[j], src_lane);
+            if (lane_id < src_lane) {
                 insert_sorted<TOP_K>(score, token_id, other_val, other_id);
             }
         }
@@ -260,12 +260,12 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(
     // warp reduce merge
     int lane_id = threadIdx.x % 32;
 #pragma unroll
-    for (int src_line = 16; src_line > 0; src_line /= 2) {
+    for (int src_lane = 16; src_lane > 0; src_lane /= 2) {
 #pragma unroll
         for (int j = 0; j < TOP_K; ++j) {
-            float other_val = __shfl_down_sync(0xffffffff, score[j], src_line);
-            int other_id = __shfl_down_sync(0xffffffff, token_id[j], src_line);
-            if (lane_id < src_line) {
+            float other_val = __shfl_down_sync(0xffffffff, score[j], src_lane);
+            int other_id = __shfl_down_sync(0xffffffff, token_id[j], src_lane);
+            if (lane_id < src_lane) {
                 insert_sorted<TOP_K>(score, token_id, other_val, other_id);
             }
         }
