@@ -332,7 +332,7 @@ ok，完整代码就不贴了。请移步 github 查看：<https://github.com/Wi
 split-k，老生常谈了。我们在之前 softmax 文章和 flash decoding 文章中，都提到了 split-k。
 在这个场景下的具体逻辑就是词表太大了，每次等一个 block 扫完 logits，太慢，batchsize 小的话，sm 利用率还低。因此要想办法切 chunk，然后分发给不同的 block 处理。
 
-- pass_1——kernel：这里每个 block 处理的逻辑和上一个 kernel 的 topk 过程一模一样，处理完每个 block 把 topk 结果写入临时空间。
+- pass_1_kernel：这里每个 block 处理的逻辑和上一个 kernel 的 topk 过程一模一样，处理完每个 block 把 topk 结果写入临时空间。
 - pass_2_kernel：然后再用一个 block，读取临时空间中的数据，进行最后的 merge+softmax+topp+sampling。
 
 直接上代码：
