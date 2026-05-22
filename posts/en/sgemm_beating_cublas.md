@@ -92,7 +92,15 @@ In the end, intuition plays a non-trivial role too — I instinctively picked 12
 - **SMEM usage:** Loading 128×16 of A and 16×128 of B = 128 × 16 × 2 × 4 bytes = 16 KB per block. Well within SMEM capacity; divisible by 256 for clean thread assignment; allows 4 active blocks. Even with double buffering (32 KB), 2–3 active blocks are feasible.
 - **Register usage:** Each thread needs 8×8 = 64 registers for C accumulators; plus 8×2 = 16 for A/B staging; 64 + 16 = 80. With double buffering, add another 16 → 96. Plus temporaries, address offsets, etc. — estimate 10–20+. Total across 256 threads stays well under the 65,536 limit (65536/256 = 256 per thread). At least 2 active blocks in the ideal case. Exceeding 128 registers per thread would drop to 1 active block (in fact, my initial double-buffer code did exceed 128, causing occupancy to tank — I recovered by eliminating unnecessary variables).
 
-If BK were 8, the compute-to-memory ratio drops below the memory wall. If 32, SMEM and register usage explode, occupancy drops, and double buffering becomes impossible.
+Why did I choose BK=16 directly instead of 8 or 32? There are several reasons:
+
+- The larger, the better—provided that shared memory and register resources are sufficient. (Unfortunately, I cannot increase it any further for now.) A larger BK yields more continuous data access and better spatial locality, which aligns with my intuition.
+
+- BK directly affects the iteration count of the main loop. Choosing a smaller value like 8 would double the overhead of both loop control and __syncthreads().
+
+- Switching to a double-buffer design later allows the SM to leverage sufficient compute instructions to hide global memory load (ldg) latency. Furthermore, although the total number of floating-point operations (FLOPs) remains unchanged, increasing the number of unrolled instructions within a single thread enhances Instruction-Level Parallelism (ILP).
+
+- If increased to 32, shared memory and register usage would skyrocket. This would cause occupancy to drop and might even make double-buffering impossible to support.
 
 These are my personal considerations for block and tile sizing. Other valid configurations certainly exist, but mine satisfies all constraints, so I went with it. On different hardware or data scales, optimal parameters may differ entirely. In production, you'd typically auto-tune block sizes via empirical benchmarking.
 
