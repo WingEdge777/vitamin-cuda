@@ -8,12 +8,12 @@
 
 有一段时间没更新文章了，今天来聊聊 token sampling。做 LLM 或用过 LLM 的从业者，大概都了解，LLM 实质就是预测下一个 token。LM 模型整个前向推理完后，最终的 lm_head 会输出一个向量 logits。而为了把这个 logits 变成 token 以及最终的文本（英文/中文单词、符号等），整个文本生成（Decoding）其实整了非常多的花活：
 
-确定性解码（Deterministic Decoding）：主要有 Greedy Search（贪心搜索） 和 Beam Search（束搜索）。
+确定性解码（deterministic decoding）：主要有 greedy search（贪心搜索） 和 beam search（束搜索）。
 
-- Greedy Search：直接取最大的 logits，毫无随机性。
-- Beam Search：维护 n 条当前最优的候选序列，每一步扩展时只保留整体得分最高的 n 个序列。
+- greedy search：直接取最大的 logits，毫无随机性。
+- beam search：维护 n 条当前最优的候选序列，每一步扩展时只保留整体得分最高的 n 个序列。
 
-随机性采样解码（Sampling Decoding）：发现上述确定性生成容易陷入死循环或胡言乱语，所以引入了基于概率分布的采样，并衍生出了各种在 Logits 阶段进行扰动/过滤 的参数
+随机性采样解码（sampling decoding）：发现上述确定性生成容易陷入死循环或胡言乱语，所以引入了基于概率分布的采样，并衍生出了各种在 Logits 阶段进行扰动/过滤 的参数
 
 - temperature：温度，用来缩放 logits(logits/T)。温度越高分布越平滑，越低越陡峭。
 - top_k：按概率大小降序排列，只从前 k 个 token 中选取
@@ -23,7 +23,7 @@
 
 更别提还有结合语法树的 guided sampling（结构化输出）等等，不过这超出了单个 kernel 级别的讨论范围，本文暂不展开。
 
-尽管如此，个人观察现在 sampling 已经进入返璞归真的时期了，大家发现最有用的还是 topk，topp，最多加个 min_p。
+尽管如此，据个人观察，除了特定需要绝对确定性输出的结构化解析场景，确定性解码基本没人用了。而 sampling decoding 已经进入返璞归真的时期了，大家发现真正既有用、性价比又高的参数还是 topk，topp，最多加个 min_p。
 
 这里有个前提，当代先进模型因为要支持多语言能力，词表大小已经达到了几十万的级别。这个前提下，一方面是因为大模型能力越来越强，本身输出的概率分布可能就是最佳分布；另一方面某些算法/参数由于占用显存大、计算量高，在模型输出质量足够的情况下，还继续使用就得不偿失了（如 beamsearch，各种惩罚等）。
 
