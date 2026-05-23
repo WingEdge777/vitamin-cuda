@@ -6,7 +6,7 @@
 >
 > *A hands-on CUDA learning path from novice to expert.*
 
-Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 160+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts(**SGEMM**, **HGEMM** **Flash Attention/Decoding**). Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
+Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curated collection of 170+ hand-tuned CUDA kernels, ranging from basic grid-stride loops for beginners to cutting-edge asynchronous TMA pipelines for performance enthusiasts(**SGEMM**, **HGEMM** **Flash Attention/Decoding**). Every kernel is seamlessly wrapped as a PyTorch C++ extension, delivering raw hardware performance with zero-overhead Python integration.
 
 **No over-engineered abstractions. No black boxes. Just pure hardware saturation.**
 
@@ -25,7 +25,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 - [News](#news)
 - [Contents](#contents)
 - [Prerequisites](#prerequisites)
-- [Kernels (160+)](#kernels-160)
+- [Kernels (170+)](#kernels-170)
   - [Easy ⭐️ ~ ⭐️⭐️](#easy-️--️️)
   - [Medium ⭐️⭐️ ~ ⭐️⭐️⭐️](#medium-️️--️️️)
   - [Hard ⭐️⭐️⭐️~⭐️⭐️⭐️⭐️](#hard-️️️️️️️)
@@ -47,7 +47,7 @@ Welcome to your daily dose of GPU performance fuel. **Vitamin-CUDA** is a curate
 
 > **Quick Start** — We recommend using the [NVIDIA PyTorch NGC Docker image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) for a ready-to-go environment.
 
-## Kernels (160+)
+## Kernels (170+)
 
 All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and benchmarked against PyTorch 2.9+.
 
