@@ -265,6 +265,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 | CUDA实战 | [[CUDA 优化实战] 纯手搓 flash attention (fmha) - sm120 : 超越 torch.sdpa(FA2)](https://zhuanlan.zhihu.com/p/2028452875341144849) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] 纯手搓 flash decoding sm120 (上): 拉爆显存带宽的cuda c++实现](https://zhuanlan.zhihu.com/p/2030745157620998667) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 | CUDA实战 | [[CUDA 优化实战] 手搓 flash decoding sm120（下） : 超越 flashinfer的c++实现](https://zhuanlan.zhihu.com/p/2031825988871525928) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
+| CUDA实战 | [[CUDA 优化实战] LLM 推理的最后一公里 - topk_topp_sampling - 乱拳打死老师傅 ：暴力插排 topK、block merge](https://zhuanlan.zhihu.com/p/2041177297861039789) | @WingEdge777 | ⭐️⭐️⭐️ |
 
 ## Star History
 
