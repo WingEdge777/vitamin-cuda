@@ -247,6 +247,7 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
 | CUDA Practice | [[CUDA in Practice] HGEMM — Beating cuBLAS: Tensor Core, cp.async, ldmatrix, mma](https://www.wingedge777.com/en/article/5a219c62549f9573) | @WingEdge777 | ⭐️⭐️⭐️ |
 | CUDA Practice | [[CUDA in Practice] HGEMM SM120 — Micro-Sculpture Warfare in 100KB SMEM: Tensor Core, TMA, ldmatrix, mma](https://www.wingedge777.com/en/article/b2ab376d19f52ff4) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 | CUDA Practice | [[CUDA in Practice] FMHA on SM120: Beating torch.sdpa (FlashAttention-2)](https://www.wingedge777.com/en/article/7d1151d07a70e2c9) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
+| CUDA Practice | [[CUDA in Practice] Hand-Rolled Flash Decoding on SM120: Beating flashinfer.single_decode_with_kv_cache](https://www.wingedge777.com/en/article/7d1151d07a70e2c9) | @WingEdge777 | ⭐️⭐️⭐️⭐️ |
 
 ### 博客
 
