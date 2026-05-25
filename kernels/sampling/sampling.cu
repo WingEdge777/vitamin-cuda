@@ -323,7 +323,7 @@ __global__ void sampling_topk_topp_split_k_pass2_kernel(
             }
         }
         if (trunc_sum == 0.0f)
-            trunc_sum = 1.0f;
+            trunc_sum = cumsum;
         
         // curand
         curandStatePhilox4_32_10_t state;
