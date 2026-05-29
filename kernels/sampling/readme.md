@@ -14,7 +14,7 @@ python test.py
 
 ## Sample output
 
-### benchmark with flush L2 cache
+### benchmark with cold L2 cache
 
 ```yaml
 GPU: NVIDIA GeForce RTX 5060 Laptop GPU  fi=0.6.9
