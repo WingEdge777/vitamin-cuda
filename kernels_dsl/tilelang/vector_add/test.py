@@ -50,24 +50,25 @@ def add_tilelang(N: int, block: int = 256, dtype: str = "float16"):
 
     return main
 
+
 @tilelang.jit
 def add_tilelang_vectorized(N: int, block: int = 256, dtype: str = "float16"):
-    # 根据 dtype 计算 128-bit 向量单元一次能处理的元素个数
-    vec = 8         # float16 → 8, float32 → 4, ...
+    vec = 8
+
     @T.prim_func
     def main(
         A: T.Tensor((N,), dtype),
         B: T.Tensor((N,), dtype),
         C: T.Tensor((N,), dtype),
     ):
-        grid = T.ceildiv(N, block*vec)
+        grid = T.ceildiv(N, block * vec)
 
         with T.Kernel(grid, threads=block) as bx:
             tid = T.get_thread_binding(0)
             tile_id = bx * block + tid
             base = tile_id * vec
 
-            if base+7 < N:
+            if base + 7 < N:
                 for i in T.vectorized(vec):
                     elem = base + i
                     C[elem] = A[elem] + B[elem]
@@ -75,7 +76,9 @@ def add_tilelang_vectorized(N: int, block: int = 256, dtype: str = "float16"):
                 for i in T.serial(N - base):
                     elem = base + i
                     C[elem] = A[elem] + B[elem]
+
     return main
+
 
 def diff_check(a, b, prefix="torch", eps=1e-3):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
@@ -119,6 +122,7 @@ def benchmark(op, x, y, o=None, warmup=10, rep=1000, prefix="torch"):
         )
     return o
 
+
 def test_all():
     torch.manual_seed(42)
     DEVICE = torch.device("cuda")
@@ -145,12 +149,12 @@ def test_all():
         kernel = add_tilelang(n, dtype="float32")
         benchmark(kernel, x, y, out_my, prefix="tilelang")
         benchmark(
-                lib.elementwise_add_fp32x4,
-                x,
+            lib.elementwise_add_fp32x4,
+            x,
             y,
             out_my,
-                prefix="elementwise_add_fp32x4",
-            )
+            prefix="elementwise_add_fp32x4",
+        )
         diff_check(out, out_my, prefix="elementwise_add_fp32x4")
 
         x = x.half()
@@ -182,7 +186,7 @@ def test_all():
 def test_sp():
     torch.manual_seed(42)
     DEVICE = torch.device("cuda")
-    for n in [4096 * 4096, 4096 * 4096+1]:
+    for n in [4096 * 4096, 4096 * 4096 + 1]:
         print("#" * 100)
         print(f"vector add, n: {n}")
         x = torch.randn(n, dtype=torch.float32, device=DEVICE)
