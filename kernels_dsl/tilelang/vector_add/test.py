@@ -20,14 +20,17 @@ def add_kernel(x_ptr, y_ptr, out_ptr, n, BLOCK_SIZE: tl.constexpr):
     st = pid * BLOCK_SIZE
     offsets = st + tl.arange(0, BLOCK_SIZE)
 
-    mask = offsets < n
-
-    x = tl.load(x_ptr + offsets, mask=mask)
-    y = tl.load(y_ptr + offsets, mask=mask)
-
-    out = x + y
-
-    tl.store(out_ptr + offsets, out, mask=mask)
+    if st + BLOCK_SIZE <= n:
+        x = tl.load(x_ptr + offsets)
+        y = tl.load(y_ptr + offsets)
+        out = x + y
+        tl.store(out_ptr + offsets, out)
+    else:
+        mask = offsets < n
+        x = tl.load(x_ptr + offsets, mask=mask)
+        y = tl.load(y_ptr + offsets, mask=mask)
+        out = x + y
+        tl.store(out_ptr + offsets, out, mask=mask)
 
 
 # tilelang
@@ -47,6 +50,32 @@ def add_tilelang(N: int, block: int = 256, dtype: str = "float16"):
 
     return main
 
+@tilelang.jit
+def add_tilelang_vectorized(N: int, block: int = 256, dtype: str = "float16"):
+    # 根据 dtype 计算 128-bit 向量单元一次能处理的元素个数
+    vec = 8         # float16 → 8, float32 → 4, ...
+    @T.prim_func
+    def main(
+        A: T.Tensor((N,), dtype),
+        B: T.Tensor((N,), dtype),
+        C: T.Tensor((N,), dtype),
+    ):
+        grid = T.ceildiv(N, block*vec)
+
+        with T.Kernel(grid, threads=block) as bx:
+            tid = T.get_thread_binding(0)
+            tile_id = bx * block + tid
+            base = tile_id * vec
+
+            if base+7 < N:
+                for i in T.vectorized(vec):
+                    elem = base + i
+                    C[elem] = A[elem] + B[elem]
+            else:
+                for i in T.serial(N - base):
+                    elem = base + i
+                    C[elem] = A[elem] + B[elem]
+    return main
 
 def diff_check(a, b, prefix="torch", eps=1e-3):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
@@ -90,8 +119,7 @@ def benchmark(op, x, y, o=None, warmup=10, rep=1000, prefix="torch"):
         )
     return o
 
-
-if __name__ == "__main__":
+def test_all():
     torch.manual_seed(42)
     DEVICE = torch.device("cuda")
     for n in [1024, 4096, 1024 * 32, 1024 * 1024, 1024 * 4096, 4096 * 4096]:
@@ -138,6 +166,7 @@ if __name__ == "__main__":
             prefix="triton",
         )
         kernel = add_tilelang(n, dtype="float16")
+        print(kernel.get_kernel_source())
         benchmark(kernel, x, y, out_my, prefix="tilelang")
         diff_check(out, out_my)
         benchmark(
@@ -148,3 +177,55 @@ if __name__ == "__main__":
             prefix="elementwise_add_fp16x8_packed",
         )
         diff_check(out, out_my, prefix="elementwise_add_fp16x8_packed")
+
+
+def test_sp():
+    torch.manual_seed(42)
+    DEVICE = torch.device("cuda")
+    for n in [4096 * 4096, 4096 * 4096+1]:
+        print("#" * 100)
+        print(f"vector add, n: {n}")
+        x = torch.randn(n, dtype=torch.float32, device=DEVICE)
+        y = torch.randn(n, dtype=torch.float32, device=DEVICE)
+        out = torch.empty_like(x)
+
+        out_my = torch.zeros_like(out)
+
+        grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
+
+        x = x.half()
+        y = y.half()
+        out = out.half()
+        out_my = out_my.half()
+        benchmark(partial(torch.add, out=out), x, y)
+        benchmark(
+            partial(add_kernel[grid], n=n, BLOCK_SIZE=1024),
+            x,
+            y,
+            out_my,
+            prefix="triton",
+        )
+        kernel = add_tilelang(n, dtype="float16")
+        # print(kernel.get_kernel_source())
+        out_my = torch.zeros_like(out_my)
+        benchmark(kernel, x, y, out_my, prefix="tilelang")
+
+        kernel = add_tilelang_vectorized(n, dtype="float16")
+        # print(kernel.get_kernel_source())
+        out_my = torch.zeros_like(out_my)
+        benchmark(kernel, x, y, out_my, prefix="tilelang_vectorized")
+        # print(out[-1], out_my[-1])
+        diff_check(out, out_my)
+        benchmark(
+            lib.elementwise_add_fp16x8_packed,
+            x,
+            y,
+            out_my,
+            prefix="elementwise_add_fp16x8_packed",
+        )
+        diff_check(out, out_my, prefix="elementwise_add_fp16x8_packed")
+
+
+if __name__ == "__main__":
+    # test_all()
+    test_sp()
