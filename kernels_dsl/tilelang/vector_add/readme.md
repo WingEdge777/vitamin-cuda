@@ -13,6 +13,29 @@ python test.py
 
 ## Sample output
 
+## special cases test
+
+```yaml
+####################################################################################################
+vector add, n: 16777216
+torch                                    mean time: 0.583702 ms
+triton                                   mean time: 0.577341 ms, speedup: 1.01
+tilelang                                 mean time: 1.370723 ms, speedup: 0.43
+tilelang_vectorized                      mean time: 0.594642 ms, speedup: 0.98
+tilelang_vectorized_eager                mean time: 0.992224 ms, speedup: 0.59
+elementwise_add_fp16x8_packed            mean time: 0.608001 ms, speedup: 0.96
+####################################################################################################
+vector add, n: 16777217
+torch                                    mean time: 0.700414 ms
+triton                                   mean time: 0.592814 ms, speedup: 1.18
+tilelang                                 mean time: 1.607643 ms, speedup: 0.44
+tilelang_vectorized                      mean time: 0.613858 ms, speedup: 1.14
+tilelang_vectorized_eager                mean time: 0.864312 ms, speedup: 0.81
+elementwise_add_fp16x8_packed            mean time: 0.614053 ms, speedup: 1.14
+```
+
+### full benchmark
+
 ```yaml
 ####################################################################################################
 vector add, n: 1024

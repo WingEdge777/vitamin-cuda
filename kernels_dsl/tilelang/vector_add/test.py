@@ -244,7 +244,7 @@ def test_sp():
         benchmark(kernel, x, y, out_my, prefix="tilelang")
 
         kernel = add_tilelang_vectorized(n, dtype="float16")
-        print(kernel.get_kernel_source())
+        # print(kernel.get_kernel_source())
         out_my = torch.zeros_like(out_my)
         benchmark(kernel, x, y, out_my, prefix="tilelang_vectorized")
         # print(out[-1], out_my[-1])
@@ -257,7 +257,7 @@ def test_sp():
             out_my,
             prefix="tilelang_vectorized_eager",
         )
-        print(add_tilelang_vectorized_eager.compile(N=n, A=x).get_kernel_source())
+        # print(add_tilelang_vectorized_eager.compile(N=n, A=x).get_kernel_source())
         # print(out[-1], out_my[-1])
         diff_check(out, out_my)
         benchmark(
