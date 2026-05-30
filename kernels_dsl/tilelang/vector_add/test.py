@@ -80,6 +80,35 @@ def add_tilelang_vectorized(N: int, block: int = 256, dtype: str = "float16"):
     return main
 
 
+@tilelang.jit
+def add_tilelang_vectorized_eager(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+):
+    N = T.const("N")
+    block = 256
+    dtype = "float16"
+    vec = 128 // (A.dtype.itemsize * 8)
+    A: T.Tensor((N,), dtype)
+    B: T.Tensor((N,), dtype)
+    C: T.Tensor((N,), dtype)
+
+    with T.Kernel(T.ceildiv(N, block * vec), threads=block) as bx:
+        tid = T.get_thread_binding(0)
+        tile_id = bx * block + tid
+        base = tile_id * vec
+
+        if base + 7 < N:
+            for i in T.vectorized(vec):
+                elem = base + i
+                C[elem] = A[elem] + B[elem]
+        else:
+            for i in T.serial(N - base):
+                elem = base + i
+                C[elem] = A[elem] + B[elem]
+
+
 def diff_check(a, b, prefix="torch", eps=1e-3):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
         diff = torch.abs(a - b)
@@ -215,9 +244,20 @@ def test_sp():
         benchmark(kernel, x, y, out_my, prefix="tilelang")
 
         kernel = add_tilelang_vectorized(n, dtype="float16")
-        # print(kernel.get_kernel_source())
+        print(kernel.get_kernel_source())
         out_my = torch.zeros_like(out_my)
         benchmark(kernel, x, y, out_my, prefix="tilelang_vectorized")
+        # print(out[-1], out_my[-1])
+        diff_check(out, out_my)
+        out_my = torch.zeros_like(out_my)
+        benchmark(
+            add_tilelang_vectorized_eager,
+            x,
+            y,
+            out_my,
+            prefix="tilelang_vectorized_eager",
+        )
+        print(add_tilelang_vectorized_eager.compile(N=n, A=x).get_kernel_source())
         # print(out[-1], out_my[-1])
         diff_check(out, out_my)
         benchmark(
