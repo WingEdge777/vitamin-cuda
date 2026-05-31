@@ -1,12 +1,13 @@
 import sys
 from functools import partial
-import time
 import torch
 import tilelang
 import tilelang.language as T
 
 import triton
 import triton.language as tl
+from flashinfer.testing.utils import bench_gpu_time
+import numpy as np
 
 sys.path.append("../../../")
 from kernels.elementwise.test import lib
@@ -118,36 +119,28 @@ def diff_check(a, b, prefix="torch", eps=1e-3):
     assert torch.allclose(a, b, atol=eps, rtol=eps), "result diff"
 
 
-def benchmark(op, x, y, o=None, warmup=10, rep=1000, prefix="torch"):
-    if o is not None:
-        # warm up
-        for i in range(warmup):
-            op(x, y, o)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            op(x, y, o)
-        torch.cuda.synchronize()
-    else:
-        # warm up
-        for i in range(warmup):
-            o = op(x, y)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            o = op(x, y)
-        torch.cuda.synchronize()
+def benchmark(op, x, y, o=None, prefix="torch"):
+    def measure(fn, x, y, o, cold):
+        times = bench_gpu_time(
+            fn=fn,
+            input_args=(x, y, o) if o is not None else (x, y),
+            dry_run_iters=10,
+            repeat_iters=100,
+            enable_cupti=False,
+            use_cuda_graph=False,  # pure CUDA-event timer
+            cold_l2_cache=cold,
+        )
+        return float(np.median(times))
 
-    duration = time.perf_counter() - start
-
+    avg_duration = measure(op, x, y, o, cold=True)
     if prefix == "torch":
         global baseline
-        baseline = duration
-        print(f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms")
+        baseline = avg_duration
+        print(f"{prefix:40s} mean time: {avg_duration:8.6f} ms")
     else:
-        speedup = baseline / duration
+        speedup = baseline / avg_duration
         print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}"
+            f"{prefix:40s} mean time: {avg_duration:8.6f} ms, speedup: {speedup:.2f}"
         )
     return o
 
@@ -289,5 +282,5 @@ def test_sp():
 
 
 if __name__ == "__main__":
-    test_all()
-    # test_sp()
+    # test_all()
+    test_sp()
