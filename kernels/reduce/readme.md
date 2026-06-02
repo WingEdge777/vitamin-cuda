@@ -23,129 +23,130 @@ python test.py
 ### Sample output
 
 ```bash
+####################################################################################################
 n: 1024, m: 1024
-torch                          mean time: 0.030733 ms
-reduce_sum                     mean time: 0.030952 ms
-reduce_sum_fp32x4              mean time: 0.031683 ms
-torch                          mean time: 0.020447 ms
-reduce_sum_half                mean time: 0.042702 ms
-reduce_sum_fp16x2              mean time: 0.043842 ms
-reduce_sum_fp16x8_packed       mean time: 0.042303 ms
-torch                          mean time: 0.083829 ms
-reduce_sum_i8                  mean time: 0.031489 ms
-reduce_sum_i8x16_packed        mean time: 0.026856 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.025051 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.031824 ms
+torch                          mean time: 0.030208 ms
+reduce_sum                     mean time: 0.050192 ms, speedup: 0.60
+reduce_sum_fp32x4              mean time: 0.024016 ms, speedup: 1.26
+torch                          mean time: 0.017328 ms
+reduce_sum_half                mean time: 0.067216 ms, speedup: 0.26
+reduce_sum_fp16x2              mean time: 0.045488 ms, speedup: 0.38
+reduce_sum_fp16x8_packed       mean time: 0.042624 ms, speedup: 0.41
+torch                          mean time: 0.142432 ms
+reduce_sum_i8                  mean time: 0.068816 ms, speedup: 2.07
+reduce_sum_i8x16_packed        mean time: 0.040192 ms, speedup: 3.54
+reduce_sum_i8x16_packed_dp4a   mean time: 0.038592 ms, speedup: 3.69
+reduce_sum_i8x64_packed_dp4a   mean time: 0.038672 ms, speedup: 3.68
 ####################################################################################################
 n: 1024, m: 2048
-torch                          mean time: 0.040677 ms
-reduce_sum                     mean time: 0.034428 ms
-reduce_sum_fp32x4              mean time: 0.031505 ms
-torch                          mean time: 0.040303 ms
-reduce_sum_half                mean time: 0.042109 ms
-reduce_sum_fp16x2              mean time: 0.041581 ms
-reduce_sum_fp16x8_packed       mean time: 0.038491 ms
-torch                          mean time: 0.105637 ms
-reduce_sum_i8                  mean time: 0.044122 ms
-reduce_sum_i8x16_packed        mean time: 0.025087 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.029272 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.034867 ms
+torch                          mean time: 0.115504 ms
+reduce_sum                     mean time: 0.082336 ms, speedup: 1.40
+reduce_sum_fp32x4              mean time: 0.054816 ms, speedup: 2.11
+torch                          mean time: 0.035056 ms
+reduce_sum_half                mean time: 0.083424 ms, speedup: 0.42
+reduce_sum_fp16x2              mean time: 0.052576 ms, speedup: 0.67
+reduce_sum_fp16x8_packed       mean time: 0.040432 ms, speedup: 0.87
+torch                          mean time: 0.191728 ms
+reduce_sum_i8                  mean time: 0.078064 ms, speedup: 2.46
+reduce_sum_i8x16_packed        mean time: 0.027616 ms, speedup: 6.94
+reduce_sum_i8x16_packed_dp4a   mean time: 0.032768 ms, speedup: 5.85
+reduce_sum_i8x64_packed_dp4a   mean time: 0.045040 ms, speedup: 4.26
 ####################################################################################################
 n: 1024, m: 4096
-torch                          mean time: 0.038996 ms
-reduce_sum                     mean time: 0.044940 ms
-reduce_sum_fp32x4              mean time: 0.049079 ms
-torch                          mean time: 0.029841 ms
-reduce_sum_half                mean time: 0.049029 ms
-reduce_sum_fp16x2              mean time: 0.038618 ms
-reduce_sum_fp16x8_packed       mean time: 0.049658 ms
-torch                          mean time: 0.488492 ms
-reduce_sum_i8                  mean time: 0.068718 ms
-reduce_sum_i8x16_packed        mean time: 0.037476 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.023413 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.057119 ms
+torch                          mean time: 0.183616 ms
+reduce_sum                     mean time: 0.244608 ms, speedup: 0.75
+reduce_sum_fp32x4              mean time: 0.171328 ms, speedup: 1.07
+torch                          mean time: 0.079296 ms
+reduce_sum_half                mean time: 0.153792 ms, speedup: 0.52
+reduce_sum_fp16x2              mean time: 0.100000 ms, speedup: 0.79
+reduce_sum_fp16x8_packed       mean time: 0.070576 ms, speedup: 1.12
+torch                          mean time: 0.733424 ms
+reduce_sum_i8                  mean time: 0.146000 ms, speedup: 5.02
+reduce_sum_i8x16_packed        mean time: 0.042784 ms, speedup: 17.14
+reduce_sum_i8x16_packed_dp4a   mean time: 0.044016 ms, speedup: 16.66
+reduce_sum_i8x64_packed_dp4a   mean time: 0.036656 ms, speedup: 20.01
 ####################################################################################################
 n: 2048, m: 1024
-torch                          mean time: 0.035642 ms
-reduce_sum                     mean time: 0.035652 ms
-reduce_sum_fp32x4              mean time: 0.059217 ms
-torch                          mean time: 0.042993 ms
-reduce_sum_half                mean time: 0.048548 ms
-reduce_sum_fp16x2              mean time: 0.054250 ms
-reduce_sum_fp16x8_packed       mean time: 0.040615 ms
-torch                          mean time: 0.114117 ms
-reduce_sum_i8                  mean time: 0.039824 ms
-reduce_sum_i8x16_packed        mean time: 0.031822 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.028980 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.025808 ms
+torch                          mean time: 0.051488 ms
+reduce_sum                     mean time: 0.090000 ms, speedup: 0.57
+reduce_sum_fp32x4              mean time: 0.064192 ms, speedup: 0.80
+torch                          mean time: 0.045008 ms
+reduce_sum_half                mean time: 0.103456 ms, speedup: 0.44
+reduce_sum_fp16x2              mean time: 0.106064 ms, speedup: 0.42
+reduce_sum_fp16x8_packed       mean time: 0.082912 ms, speedup: 0.54
+torch                          mean time: 0.538352 ms
+reduce_sum_i8                  mean time: 0.151168 ms, speedup: 3.56
+reduce_sum_i8x16_packed        mean time: 0.042368 ms, speedup: 12.71
+reduce_sum_i8x16_packed_dp4a   mean time: 0.034464 ms, speedup: 15.62
+reduce_sum_i8x64_packed_dp4a   mean time: 0.028736 ms, speedup: 18.73
 ####################################################################################################
 n: 2048, m: 2048
-torch                          mean time: 0.030043 ms
-reduce_sum                     mean time: 0.049755 ms
-reduce_sum_fp32x4              mean time: 0.041448 ms
-torch                          mean time: 0.034299 ms
-reduce_sum_half                mean time: 0.065313 ms
-reduce_sum_fp16x2              mean time: 0.085600 ms
-reduce_sum_fp16x8_packed       mean time: 0.055220 ms
-torch                          mean time: 0.462205 ms
-reduce_sum_i8                  mean time: 0.067580 ms
-reduce_sum_i8x16_packed        mean time: 0.033659 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.029025 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.026428 ms
+torch                          mean time: 0.082800 ms
+reduce_sum                     mean time: 0.144240 ms, speedup: 0.57
+reduce_sum_fp32x4              mean time: 0.094384 ms, speedup: 0.88
+torch                          mean time: 0.072288 ms
+reduce_sum_half                mean time: 0.150384 ms, speedup: 0.48
+reduce_sum_fp16x2              mean time: 0.103584 ms, speedup: 0.70
+reduce_sum_fp16x8_packed       mean time: 0.067072 ms, speedup: 1.08
+torch                          mean time: 0.606768 ms
+reduce_sum_i8                  mean time: 0.139008 ms, speedup: 4.36
+reduce_sum_i8x16_packed        mean time: 0.049360 ms, speedup: 12.29
+reduce_sum_i8x16_packed_dp4a   mean time: 0.050000 ms, speedup: 12.14
+reduce_sum_i8x64_packed_dp4a   mean time: 0.039504 ms, speedup: 15.36
 ####################################################################################################
 n: 2048, m: 4096
-torch                          mean time: 0.055541 ms
-reduce_sum                     mean time: 0.081687 ms
-reduce_sum_fp32x4              mean time: 0.060037 ms
-torch                          mean time: 0.054856 ms
-reduce_sum_half                mean time: 0.091652 ms
-reduce_sum_fp16x2              mean time: 0.053021 ms
-reduce_sum_fp16x8_packed       mean time: 0.040393 ms
-torch                          mean time: 1.505230 ms
-reduce_sum_i8                  mean time: 0.103972 ms
-reduce_sum_i8x16_packed        mean time: 0.028185 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.031069 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.037486 ms
+torch                          mean time: 0.144448 ms
+reduce_sum                     mean time: 0.446992 ms, speedup: 0.32
+reduce_sum_fp32x4              mean time: 0.303264 ms, speedup: 0.48
+torch                          mean time: 0.183744 ms
+reduce_sum_half                mean time: 0.444448 ms, speedup: 0.41
+reduce_sum_fp16x2              mean time: 0.260560 ms, speedup: 0.71
+reduce_sum_fp16x8_packed       mean time: 0.180608 ms, speedup: 1.02
+torch                          mean time: 1.414496 ms
+reduce_sum_i8                  mean time: 0.231472 ms, speedup: 6.11
+reduce_sum_i8x16_packed        mean time: 0.062160 ms, speedup: 22.76
+reduce_sum_i8x16_packed_dp4a   mean time: 0.069216 ms, speedup: 20.44
+reduce_sum_i8x64_packed_dp4a   mean time: 0.053280 ms, speedup: 26.55
 ####################################################################################################
 n: 4096, m: 1024
-torch                          mean time: 0.028938 ms
-reduce_sum                     mean time: 0.047230 ms
-reduce_sum_fp32x4              mean time: 0.034709 ms
-torch                          mean time: 0.031319 ms
-reduce_sum_half                mean time: 0.057039 ms
-reduce_sum_fp16x2              mean time: 0.049052 ms
-reduce_sum_fp16x8_packed       mean time: 0.041982 ms
-torch                          mean time: 0.550463 ms
-reduce_sum_i8                  mean time: 0.073581 ms
-reduce_sum_i8x16_packed        mean time: 0.028400 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.019505 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.023245 ms
+torch                          mean time: 0.082880 ms
+reduce_sum                     mean time: 0.181920 ms, speedup: 0.46
+reduce_sum_fp32x4              mean time: 0.157328 ms, speedup: 0.53
+torch                          mean time: 0.091312 ms
+reduce_sum_half                mean time: 0.161456 ms, speedup: 0.57
+reduce_sum_fp16x2              mean time: 0.097456 ms, speedup: 0.94
+reduce_sum_fp16x8_packed       mean time: 0.071376 ms, speedup: 1.28
+torch                          mean time: 0.549680 ms
+reduce_sum_i8                  mean time: 0.132848 ms, speedup: 4.14
+reduce_sum_i8x16_packed        mean time: 0.044288 ms, speedup: 12.41
+reduce_sum_i8x16_packed_dp4a   mean time: 0.048960 ms, speedup: 11.23
+reduce_sum_i8x64_packed_dp4a   mean time: 0.036144 ms, speedup: 15.21
 ####################################################################################################
 n: 4096, m: 2048
-torch                          mean time: 0.055313 ms
-reduce_sum                     mean time: 0.082854 ms
-reduce_sum_fp32x4              mean time: 0.054541 ms
-torch                          mean time: 0.044961 ms
-reduce_sum_half                mean time: 0.090271 ms
-reduce_sum_fp16x2              mean time: 0.052674 ms
-reduce_sum_fp16x8_packed       mean time: 0.038483 ms
-torch                          mean time: 1.545086 ms
-reduce_sum_i8                  mean time: 0.107700 ms
-reduce_sum_i8x16_packed        mean time: 0.036750 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.029261 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.024693 ms
+torch                          mean time: 0.307856 ms
+reduce_sum                     mean time: 0.419456 ms, speedup: 0.73
+reduce_sum_fp32x4              mean time: 0.204736 ms, speedup: 1.50
+torch                          mean time: 0.128000 ms
+reduce_sum_half                mean time: 0.271152 ms, speedup: 0.47
+reduce_sum_fp16x2              mean time: 0.159232 ms, speedup: 0.80
+reduce_sum_fp16x8_packed       mean time: 0.098464 ms, speedup: 1.30
+torch                          mean time: 1.302592 ms
+reduce_sum_i8                  mean time: 0.265984 ms, speedup: 4.90
+reduce_sum_i8x16_packed        mean time: 0.077712 ms, speedup: 16.76
+reduce_sum_i8x16_packed_dp4a   mean time: 0.072288 ms, speedup: 18.02
+reduce_sum_i8x64_packed_dp4a   mean time: 0.057296 ms, speedup: 22.73
 ####################################################################################################
 n: 4096, m: 4096
-torch                          mean time: 0.548919 ms
-reduce_sum                     mean time: 0.892459 ms
-reduce_sum_fp32x4              mean time: 0.627701 ms
-torch                          mean time: 0.124138 ms
-reduce_sum_half                mean time: 0.149437 ms
-reduce_sum_fp16x2              mean time: 0.086820 ms
-reduce_sum_fp16x8_packed       mean time: 0.079791 ms
-torch                          mean time: 3.517789 ms
-reduce_sum_i8                  mean time: 0.167590 ms
-reduce_sum_i8x16_packed        mean time: 0.040536 ms
-reduce_sum_i8x16_packed_dp4a   mean time: 0.046063 ms
-reduce_sum_i8x64_packed_dp4a   mean time: 0.042408 ms
+torch                          mean time: 0.411328 ms
+reduce_sum                     mean time: 0.635216 ms, speedup: 0.65
+reduce_sum_fp32x4              mean time: 0.430384 ms, speedup: 0.96
+torch                          mean time: 0.255440 ms
+reduce_sum_half                mean time: 0.547088 ms, speedup: 0.47
+reduce_sum_fp16x2              mean time: 0.332880 ms, speedup: 0.77
+reduce_sum_fp16x8_packed       mean time: 0.179840 ms, speedup: 1.42
+torch                          mean time: 3.457664 ms
+reduce_sum_i8                  mean time: 0.488592 ms, speedup: 7.08
+reduce_sum_i8x16_packed        mean time: 0.114880 ms, speedup: 30.10
+reduce_sum_i8x16_packed_dp4a   mean time: 0.127216 ms, speedup: 27.18
+reduce_sum_i8x64_packed_dp4a   mean time: 0.104192 ms, speedup: 33.19
 ```

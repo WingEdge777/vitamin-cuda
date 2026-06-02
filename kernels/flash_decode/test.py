@@ -1,11 +1,11 @@
 import math
-import time
+import numpy as np
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 import flashinfer
 import torch
+from flashinfer.testing.utils import bench_gpu_time
 from torch.nn import functional as F
 from torch.utils.cpp_extension import load
 
@@ -61,50 +61,41 @@ def torch_native_decode(q, k, v, scale=None):
 
 def benchmark(op, q, k, v, o=None, warmup=10, rep=100, prefix="torch"):
     scale = 1 / math.sqrt(q.shape[-1])
-    if prefix == "flash-infer":
-        # warm up
-        for i in range(warmup):
-            o = op(q, k, v)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            o = op(q, k, v)
-        torch.cuda.synchronize()
-    elif o is not None:
-        # warm up
-        for i in range(warmup):
-            op(q, k, v, o, scale)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            op(q, k, v, o, scale)
-        torch.cuda.synchronize()
-    else:
-        # warm up
-        for i in range(warmup):
-            o = op(q, k, v, scale)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            o = op(q, k, v, scale)
-        torch.cuda.synchronize()
 
-    duration = time.perf_counter() - start
-    io_bytes = (q.numel() + k.numel() + v.numel() + o.numel()) * q.element_size() * rep
-    bandwidth = io_bytes / duration / 1e9
+    if prefix == "flash-infer":
+        input_args = (q, k, v)
+    elif o is not None:
+        input_args = (q, k, v, o, scale)
+    else:
+        input_args = (q, k, v, scale)
+
+    times = bench_gpu_time(
+        fn=op,
+        input_args=input_args,
+        dry_run_iters=warmup,
+        repeat_iters=rep,
+        enable_cupti=False,
+        use_cuda_graph=False,
+        cold_l2_cache=True,
+    )
+    avg_duration = float(np.median(times))
+
+    if prefix == "flash-infer":
+        o = op(q, k, v)
+    elif o is None:
+        o = op(q, k, v, scale)
+
+    io_bytes = (q.numel() + k.numel() + v.numel() + o.numel()) * q.element_size()
+    bandwidth = io_bytes / (avg_duration / 1000) / 1e9
 
     if prefix == "torch":
         global baseline
-        baseline = duration
+        baseline = avg_duration
         prefix = "torch.compile"
-        print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, {bandwidth:.2f} GB/s"
-        )
+        print(f"{prefix:40s} mean time: {avg_duration:8.6f} ms, {bandwidth:.2f} GB/s")
     else:
-        speedup = baseline / duration
-        print(
-            f"{prefix:40s} mean time: {duration / rep * 1000:8.6f} ms, speedup: {speedup:.2f}, GB/s: {bandwidth:.2f}"
-        )
+        speedup = baseline / avg_duration
+        print(f"{prefix:40s} mean time: {avg_duration:8.6f} ms, speedup: {speedup:.2f}, GB/s: {bandwidth:.2f}")
     return o
 
 

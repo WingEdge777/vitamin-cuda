@@ -24,326 +24,326 @@ python test.py
 ```bash
 ####################################################################################################
 n: 256, m: 256
-torch                          mean time: 0.017915 ms
-transpose_coalesced_read       mean time: 0.008513 ms, speedup: 2.10
-transpose_coalesced_write      mean time: 0.009208 ms, speedup: 1.95
-transpose_smem                 mean time: 0.008831 ms, speedup: 2.03
-transpose_smem_bcf             mean time: 0.006912 ms, speedup: 2.59
-transpose_smem_packed_bcf      mean time: 0.007402 ms, speedup: 2.42
-transpose_smem_swizzled_packed mean time: 0.009434 ms, speedup: 1.90
+torch                          mean time: 0.016384 ms
+transpose_coalesced_read       mean time: 0.009632 ms, speedup: 1.70
+transpose_coalesced_write      mean time: 0.010848 ms, speedup: 1.51
+transpose_smem                 mean time: 0.009440 ms, speedup: 1.74
+transpose_smem_bcf             mean time: 0.008032 ms, speedup: 2.04
+transpose_smem_packed_bcf      mean time: 0.007984 ms, speedup: 2.05
+transpose_smem_swizzled_packed mean time: 0.007744 ms, speedup: 2.12
 ####################################################################################################
 n: 256, m: 512
-torch                          mean time: 0.044788 ms
-transpose_coalesced_read       mean time: 0.008430 ms, speedup: 5.31
-transpose_coalesced_write      mean time: 0.008373 ms, speedup: 5.35
-transpose_smem                 mean time: 0.009561 ms, speedup: 4.68
-transpose_smem_bcf             mean time: 0.007186 ms, speedup: 6.23
-transpose_smem_packed_bcf      mean time: 0.007719 ms, speedup: 5.80
-transpose_smem_swizzled_packed mean time: 0.013790 ms, speedup: 3.25
+torch                          mean time: 0.018240 ms
+transpose_coalesced_read       mean time: 0.011520 ms, speedup: 1.58
+transpose_coalesced_write      mean time: 0.011376 ms, speedup: 1.60
+transpose_smem                 mean time: 0.009280 ms, speedup: 1.97
+transpose_smem_bcf             mean time: 0.009056 ms, speedup: 2.01
+transpose_smem_packed_bcf      mean time: 0.009184 ms, speedup: 1.99
+transpose_smem_swizzled_packed mean time: 0.009152 ms, speedup: 1.99
 ####################################################################################################
 n: 256, m: 1024
-torch                          mean time: 0.027871 ms
-transpose_coalesced_read       mean time: 0.009415 ms, speedup: 2.96
-transpose_coalesced_write      mean time: 0.010102 ms, speedup: 2.76
-transpose_smem                 mean time: 0.011323 ms, speedup: 2.46
-transpose_smem_bcf             mean time: 0.008588 ms, speedup: 3.25
-transpose_smem_packed_bcf      mean time: 0.008558 ms, speedup: 3.26
-transpose_smem_swizzled_packed mean time: 0.007379 ms, speedup: 3.78
+torch                          mean time: 0.023776 ms
+transpose_coalesced_read       mean time: 0.017184 ms, speedup: 1.38
+transpose_coalesced_write      mean time: 0.015120 ms, speedup: 1.57
+transpose_smem                 mean time: 0.013248 ms, speedup: 1.79
+transpose_smem_bcf             mean time: 0.011328 ms, speedup: 2.10
+transpose_smem_packed_bcf      mean time: 0.010512 ms, speedup: 2.26
+transpose_smem_swizzled_packed mean time: 0.010784 ms, speedup: 2.20
 ####################################################################################################
 n: 256, m: 2048
-torch                          mean time: 0.030743 ms
-transpose_coalesced_read       mean time: 0.012547 ms, speedup: 2.45
-transpose_coalesced_write      mean time: 0.013480 ms, speedup: 2.28
-transpose_smem                 mean time: 0.015261 ms, speedup: 2.01
-transpose_smem_bcf             mean time: 0.010996 ms, speedup: 2.80
-transpose_smem_packed_bcf      mean time: 0.012218 ms, speedup: 2.52
-transpose_smem_swizzled_packed mean time: 0.009767 ms, speedup: 3.15
+torch                          mean time: 0.038640 ms
+transpose_coalesced_read       mean time: 0.025744 ms, speedup: 1.50
+transpose_coalesced_write      mean time: 0.029088 ms, speedup: 1.33
+transpose_smem                 mean time: 0.019808 ms, speedup: 1.95
+transpose_smem_bcf             mean time: 0.013888 ms, speedup: 2.78
+transpose_smem_packed_bcf      mean time: 0.014816 ms, speedup: 2.61
+transpose_smem_swizzled_packed mean time: 0.014400 ms, speedup: 2.68
 ####################################################################################################
 n: 256, m: 4096
-torch                          mean time: 0.046995 ms
-transpose_coalesced_read       mean time: 0.019267 ms, speedup: 2.44
-transpose_coalesced_write      mean time: 0.016383 ms, speedup: 2.87
-transpose_smem                 mean time: 0.025224 ms, speedup: 1.86
-transpose_smem_bcf             mean time: 0.010255 ms, speedup: 4.58
-transpose_smem_packed_bcf      mean time: 0.010378 ms, speedup: 4.53
-transpose_smem_swizzled_packed mean time: 0.011300 ms, speedup: 4.16
+torch                          mean time: 0.066672 ms
+transpose_coalesced_read       mean time: 0.041136 ms, speedup: 1.62
+transpose_coalesced_write      mean time: 0.045888 ms, speedup: 1.45
+transpose_smem                 mean time: 0.031712 ms, speedup: 2.10
+transpose_smem_bcf             mean time: 0.026592 ms, speedup: 2.51
+transpose_smem_packed_bcf      mean time: 0.026576 ms, speedup: 2.51
+transpose_smem_swizzled_packed mean time: 0.027216 ms, speedup: 2.45
 ####################################################################################################
 n: 256, m: 8192
-torch                          mean time: 0.091893 ms
-transpose_coalesced_read       mean time: 0.031320 ms, speedup: 2.93
-transpose_coalesced_write      mean time: 0.028541 ms, speedup: 3.22
-transpose_smem                 mean time: 0.043726 ms, speedup: 2.10
-transpose_smem_bcf             mean time: 0.016285 ms, speedup: 5.64
-transpose_smem_packed_bcf      mean time: 0.016313 ms, speedup: 5.63
-transpose_smem_swizzled_packed mean time: 0.015768 ms, speedup: 5.83
+torch                          mean time: 0.100176 ms
+transpose_coalesced_read       mean time: 0.072656 ms, speedup: 1.38
+transpose_coalesced_write      mean time: 0.080336 ms, speedup: 1.25
+transpose_smem                 mean time: 0.055840 ms, speedup: 1.79
+transpose_smem_bcf             mean time: 0.053824 ms, speedup: 1.86
+transpose_smem_packed_bcf      mean time: 0.054288 ms, speedup: 1.85
+transpose_smem_swizzled_packed mean time: 0.054016 ms, speedup: 1.85
 ####################################################################################################
 n: 512, m: 256
-torch                          mean time: 0.021401 ms
-transpose_coalesced_read       mean time: 0.008426 ms, speedup: 2.54
-transpose_coalesced_write      mean time: 0.009870 ms, speedup: 2.17
-transpose_smem                 mean time: 0.010725 ms, speedup: 2.00
-transpose_smem_bcf             mean time: 0.009021 ms, speedup: 2.37
-transpose_smem_packed_bcf      mean time: 0.008066 ms, speedup: 2.65
-transpose_smem_swizzled_packed mean time: 0.007183 ms, speedup: 2.98
+torch                          mean time: 0.018144 ms
+transpose_coalesced_read       mean time: 0.012400 ms, speedup: 1.46
+transpose_coalesced_write      mean time: 0.010976 ms, speedup: 1.65
+transpose_smem                 mean time: 0.009376 ms, speedup: 1.94
+transpose_smem_bcf             mean time: 0.009504 ms, speedup: 1.91
+transpose_smem_packed_bcf      mean time: 0.009648 ms, speedup: 1.88
+transpose_smem_swizzled_packed mean time: 0.009184 ms, speedup: 1.98
 ####################################################################################################
 n: 512, m: 512
-torch                          mean time: 0.021054 ms
-transpose_coalesced_read       mean time: 0.011268 ms, speedup: 1.87
-transpose_coalesced_write      mean time: 0.010086 ms, speedup: 2.09
-transpose_smem                 mean time: 0.011633 ms, speedup: 1.81
-transpose_smem_bcf             mean time: 0.008860 ms, speedup: 2.38
-transpose_smem_packed_bcf      mean time: 0.009331 ms, speedup: 2.26
-transpose_smem_swizzled_packed mean time: 0.009475 ms, speedup: 2.22
+torch                          mean time: 0.022416 ms
+transpose_coalesced_read       mean time: 0.014912 ms, speedup: 1.50
+transpose_coalesced_write      mean time: 0.015472 ms, speedup: 1.45
+transpose_smem                 mean time: 0.013472 ms, speedup: 1.66
+transpose_smem_bcf             mean time: 0.010608 ms, speedup: 2.11
+transpose_smem_packed_bcf      mean time: 0.010656 ms, speedup: 2.10
+transpose_smem_swizzled_packed mean time: 0.010816 ms, speedup: 2.07
 ####################################################################################################
 n: 512, m: 1024
-torch                          mean time: 0.030537 ms
-transpose_coalesced_read       mean time: 0.013481 ms, speedup: 2.27
-transpose_coalesced_write      mean time: 0.014104 ms, speedup: 2.17
-transpose_smem                 mean time: 0.013712 ms, speedup: 2.23
-transpose_smem_bcf             mean time: 0.008640 ms, speedup: 3.53
-transpose_smem_packed_bcf      mean time: 0.009009 ms, speedup: 3.39
-transpose_smem_swizzled_packed mean time: 0.011052 ms, speedup: 2.76
+torch                          mean time: 0.036096 ms
+transpose_coalesced_read       mean time: 0.025632 ms, speedup: 1.41
+transpose_coalesced_write      mean time: 0.025968 ms, speedup: 1.39
+transpose_smem                 mean time: 0.019360 ms, speedup: 1.86
+transpose_smem_bcf             mean time: 0.014208 ms, speedup: 2.54
+transpose_smem_packed_bcf      mean time: 0.013632 ms, speedup: 2.65
+transpose_smem_swizzled_packed mean time: 0.013712 ms, speedup: 2.63
 ####################################################################################################
 n: 512, m: 2048
-torch                          mean time: 0.042589 ms
-transpose_coalesced_read       mean time: 0.015810 ms, speedup: 2.69
-transpose_coalesced_write      mean time: 0.018034 ms, speedup: 2.36
-transpose_smem                 mean time: 0.024942 ms, speedup: 1.71
-transpose_smem_bcf             mean time: 0.011988 ms, speedup: 3.55
-transpose_smem_packed_bcf      mean time: 0.011572 ms, speedup: 3.68
-transpose_smem_swizzled_packed mean time: 0.010627 ms, speedup: 4.01
+torch                          mean time: 0.056960 ms
+transpose_coalesced_read       mean time: 0.041344 ms, speedup: 1.38
+transpose_coalesced_write      mean time: 0.042720 ms, speedup: 1.33
+transpose_smem                 mean time: 0.031376 ms, speedup: 1.82
+transpose_smem_bcf             mean time: 0.026528 ms, speedup: 2.15
+transpose_smem_packed_bcf      mean time: 0.026112 ms, speedup: 2.18
+transpose_smem_swizzled_packed mean time: 0.027088 ms, speedup: 2.10
 ####################################################################################################
 n: 512, m: 4096
-torch                          mean time: 0.079577 ms
-transpose_coalesced_read       mean time: 0.031022 ms, speedup: 2.57
-transpose_coalesced_write      mean time: 0.028634 ms, speedup: 2.78
-transpose_smem                 mean time: 0.043995 ms, speedup: 1.81
-transpose_smem_bcf             mean time: 0.016194 ms, speedup: 4.91
-transpose_smem_packed_bcf      mean time: 0.014804 ms, speedup: 5.38
-transpose_smem_swizzled_packed mean time: 0.015450 ms, speedup: 5.15
+torch                          mean time: 0.109136 ms
+transpose_coalesced_read       mean time: 0.068000 ms, speedup: 1.60
+transpose_coalesced_write      mean time: 0.082368 ms, speedup: 1.32
+transpose_smem                 mean time: 0.057920 ms, speedup: 1.88
+transpose_smem_bcf             mean time: 0.053824 ms, speedup: 2.03
+transpose_smem_packed_bcf      mean time: 0.053920 ms, speedup: 2.02
+transpose_smem_swizzled_packed mean time: 0.054416 ms, speedup: 2.01
 ####################################################################################################
 n: 512, m: 8192
-torch                          mean time: 0.199207 ms
-transpose_coalesced_read       mean time: 0.074660 ms, speedup: 2.67
-transpose_coalesced_write      mean time: 0.062594 ms, speedup: 3.18
-transpose_smem                 mean time: 0.094927 ms, speedup: 2.10
-transpose_smem_bcf             mean time: 0.028714 ms, speedup: 6.94
-transpose_smem_packed_bcf      mean time: 0.029392 ms, speedup: 6.78
-transpose_smem_swizzled_packed mean time: 0.031405 ms, speedup: 6.34
+torch                          mean time: 0.183536 ms
+transpose_coalesced_read       mean time: 0.139248 ms, speedup: 1.32
+transpose_coalesced_write      mean time: 0.139408 ms, speedup: 1.32
+transpose_smem                 mean time: 0.107328 ms, speedup: 1.71
+transpose_smem_bcf             mean time: 0.105104 ms, speedup: 1.75
+transpose_smem_packed_bcf      mean time: 0.104976 ms, speedup: 1.75
+transpose_smem_swizzled_packed mean time: 0.104960 ms, speedup: 1.75
 ####################################################################################################
 n: 1024, m: 256
-torch                          mean time: 0.029700 ms
-transpose_coalesced_read       mean time: 0.011967 ms, speedup: 2.48
-transpose_coalesced_write      mean time: 0.010772 ms, speedup: 2.76
-transpose_smem                 mean time: 0.011352 ms, speedup: 2.62
-transpose_smem_bcf             mean time: 0.008610 ms, speedup: 3.45
-transpose_smem_packed_bcf      mean time: 0.009766 ms, speedup: 3.04
-transpose_smem_swizzled_packed mean time: 0.007351 ms, speedup: 4.04
+torch                          mean time: 0.022288 ms
+transpose_coalesced_read       mean time: 0.015120 ms, speedup: 1.47
+transpose_coalesced_write      mean time: 0.015136 ms, speedup: 1.47
+transpose_smem                 mean time: 0.013296 ms, speedup: 1.68
+transpose_smem_bcf             mean time: 0.010528 ms, speedup: 2.12
+transpose_smem_packed_bcf      mean time: 0.010176 ms, speedup: 2.19
+transpose_smem_swizzled_packed mean time: 0.010928 ms, speedup: 2.04
 ####################################################################################################
 n: 1024, m: 512
-torch                          mean time: 0.026390 ms
-transpose_coalesced_read       mean time: 0.022723 ms, speedup: 1.16
-transpose_coalesced_write      mean time: 0.012622 ms, speedup: 2.09
-transpose_smem                 mean time: 0.015626 ms, speedup: 1.69
-transpose_smem_bcf             mean time: 0.012404 ms, speedup: 2.13
-transpose_smem_packed_bcf      mean time: 0.009783 ms, speedup: 2.70
-transpose_smem_swizzled_packed mean time: 0.009160 ms, speedup: 2.88
+torch                          mean time: 0.035776 ms
+transpose_coalesced_read       mean time: 0.026896 ms, speedup: 1.33
+transpose_coalesced_write      mean time: 0.027616 ms, speedup: 1.30
+transpose_smem                 mean time: 0.019904 ms, speedup: 1.80
+transpose_smem_bcf             mean time: 0.013264 ms, speedup: 2.70
+transpose_smem_packed_bcf      mean time: 0.013360 ms, speedup: 2.68
+transpose_smem_swizzled_packed mean time: 0.013376 ms, speedup: 2.67
 ####################################################################################################
 n: 1024, m: 1024
-torch                          mean time: 0.042705 ms
-transpose_coalesced_read       mean time: 0.015138 ms, speedup: 2.82
-transpose_coalesced_write      mean time: 0.014399 ms, speedup: 2.97
-transpose_smem                 mean time: 0.023274 ms, speedup: 1.83
-transpose_smem_bcf             mean time: 0.009114 ms, speedup: 4.69
-transpose_smem_packed_bcf      mean time: 0.009491 ms, speedup: 4.50
-transpose_smem_swizzled_packed mean time: 0.010085 ms, speedup: 4.23
+torch                          mean time: 0.058192 ms
+transpose_coalesced_read       mean time: 0.042400 ms, speedup: 1.37
+transpose_coalesced_write      mean time: 0.043664 ms, speedup: 1.33
+transpose_smem                 mean time: 0.032256 ms, speedup: 1.80
+transpose_smem_bcf             mean time: 0.026064 ms, speedup: 2.23
+transpose_smem_packed_bcf      mean time: 0.025696 ms, speedup: 2.26
+transpose_smem_swizzled_packed mean time: 0.025904 ms, speedup: 2.25
 ####################################################################################################
 n: 1024, m: 2048
-torch                          mean time: 0.086052 ms
-transpose_coalesced_read       mean time: 0.030865 ms, speedup: 2.79
-transpose_coalesced_write      mean time: 0.028242 ms, speedup: 3.05
-transpose_smem                 mean time: 0.046137 ms, speedup: 1.87
-transpose_smem_bcf             mean time: 0.015299 ms, speedup: 5.62
-transpose_smem_packed_bcf      mean time: 0.016494 ms, speedup: 5.22
-transpose_smem_swizzled_packed mean time: 0.014538 ms, speedup: 5.92
+torch                          mean time: 0.103824 ms
+transpose_coalesced_read       mean time: 0.069696 ms, speedup: 1.49
+transpose_coalesced_write      mean time: 0.077184 ms, speedup: 1.35
+transpose_smem                 mean time: 0.058592 ms, speedup: 1.77
+transpose_smem_bcf             mean time: 0.054048 ms, speedup: 1.92
+transpose_smem_packed_bcf      mean time: 0.053648 ms, speedup: 1.94
+transpose_smem_swizzled_packed mean time: 0.054272 ms, speedup: 1.91
 ####################################################################################################
 n: 1024, m: 4096
-torch                          mean time: 0.211869 ms
-transpose_coalesced_read       mean time: 0.074561 ms, speedup: 2.84
-transpose_coalesced_write      mean time: 0.063498 ms, speedup: 3.34
-transpose_smem                 mean time: 0.095665 ms, speedup: 2.21
-transpose_smem_bcf             mean time: 0.031635 ms, speedup: 6.70
-transpose_smem_packed_bcf      mean time: 0.031188 ms, speedup: 6.79
-transpose_smem_swizzled_packed mean time: 0.031889 ms, speedup: 6.64
+torch                          mean time: 0.197728 ms
+transpose_coalesced_read       mean time: 0.129120 ms, speedup: 1.53
+transpose_coalesced_write      mean time: 0.144320 ms, speedup: 1.37
+transpose_smem                 mean time: 0.107728 ms, speedup: 1.84
+transpose_smem_bcf             mean time: 0.103760 ms, speedup: 1.91
+transpose_smem_packed_bcf      mean time: 0.103648 ms, speedup: 1.91
+transpose_smem_swizzled_packed mean time: 0.103792 ms, speedup: 1.91
 ####################################################################################################
 n: 1024, m: 8192
-torch                          mean time: 0.530252 ms
-transpose_coalesced_read       mean time: 0.255766 ms, speedup: 2.07
-transpose_coalesced_write      mean time: 0.256969 ms, speedup: 2.06
-transpose_smem                 mean time: 0.230783 ms, speedup: 2.30
-transpose_smem_bcf             mean time: 0.225492 ms, speedup: 2.35
-transpose_smem_packed_bcf      mean time: 0.218522 ms, speedup: 2.43
-transpose_smem_swizzled_packed mean time: 0.217077 ms, speedup: 2.44
+torch                          mean time: 0.501904 ms
+transpose_coalesced_read       mean time: 0.302800 ms, speedup: 1.66
+transpose_coalesced_write      mean time: 0.315072 ms, speedup: 1.59
+transpose_smem                 mean time: 0.214624 ms, speedup: 2.34
+transpose_smem_bcf             mean time: 0.211248 ms, speedup: 2.38
+transpose_smem_packed_bcf      mean time: 0.210768 ms, speedup: 2.38
+transpose_smem_swizzled_packed mean time: 0.212144 ms, speedup: 2.37
 ####################################################################################################
 n: 2048, m: 256
-torch                          mean time: 0.032889 ms
-transpose_coalesced_read       mean time: 0.011574 ms, speedup: 2.84
-transpose_coalesced_write      mean time: 0.011745 ms, speedup: 2.80
-transpose_smem                 mean time: 0.014468 ms, speedup: 2.27
-transpose_smem_bcf             mean time: 0.011269 ms, speedup: 2.92
-transpose_smem_packed_bcf      mean time: 0.008615 ms, speedup: 3.82
-transpose_smem_swizzled_packed mean time: 0.008491 ms, speedup: 3.87
+torch                          mean time: 0.036624 ms
+transpose_coalesced_read       mean time: 0.026960 ms, speedup: 1.36
+transpose_coalesced_write      mean time: 0.025856 ms, speedup: 1.42
+transpose_smem                 mean time: 0.021328 ms, speedup: 1.72
+transpose_smem_bcf             mean time: 0.013600 ms, speedup: 2.69
+transpose_smem_packed_bcf      mean time: 0.013728 ms, speedup: 2.67
+transpose_smem_swizzled_packed mean time: 0.013456 ms, speedup: 2.72
 ####################################################################################################
 n: 2048, m: 512
-torch                          mean time: 0.044881 ms
-transpose_coalesced_read       mean time: 0.016145 ms, speedup: 2.78
-transpose_coalesced_write      mean time: 0.016990 ms, speedup: 2.64
-transpose_smem                 mean time: 0.023376 ms, speedup: 1.92
-transpose_smem_bcf             mean time: 0.011314 ms, speedup: 3.97
-transpose_smem_packed_bcf      mean time: 0.011125 ms, speedup: 4.03
-transpose_smem_swizzled_packed mean time: 0.013084 ms, speedup: 3.43
+torch                          mean time: 0.069328 ms
+transpose_coalesced_read       mean time: 0.043520 ms, speedup: 1.59
+transpose_coalesced_write      mean time: 0.044656 ms, speedup: 1.55
+transpose_smem                 mean time: 0.033920 ms, speedup: 2.04
+transpose_smem_bcf             mean time: 0.025232 ms, speedup: 2.75
+transpose_smem_packed_bcf      mean time: 0.025168 ms, speedup: 2.75
+transpose_smem_swizzled_packed mean time: 0.025952 ms, speedup: 2.67
 ####################################################################################################
 n: 2048, m: 1024
-torch                          mean time: 0.082577 ms
-transpose_coalesced_read       mean time: 0.030564 ms, speedup: 2.70
-transpose_coalesced_write      mean time: 0.030163 ms, speedup: 2.74
-transpose_smem                 mean time: 0.045783 ms, speedup: 1.80
-transpose_smem_bcf             mean time: 0.015719 ms, speedup: 5.25
-transpose_smem_packed_bcf      mean time: 0.015053 ms, speedup: 5.49
-transpose_smem_swizzled_packed mean time: 0.015570 ms, speedup: 5.30
+torch                          mean time: 0.116544 ms
+transpose_coalesced_read       mean time: 0.079824 ms, speedup: 1.46
+transpose_coalesced_write      mean time: 0.083744 ms, speedup: 1.39
+transpose_smem                 mean time: 0.065344 ms, speedup: 1.78
+transpose_smem_bcf             mean time: 0.055424 ms, speedup: 2.10
+transpose_smem_packed_bcf      mean time: 0.055424 ms, speedup: 2.10
+transpose_smem_swizzled_packed mean time: 0.054944 ms, speedup: 2.12
 ####################################################################################################
 n: 2048, m: 2048
-torch                          mean time: 0.236453 ms
-transpose_coalesced_read       mean time: 0.082497 ms, speedup: 2.87
-transpose_coalesced_write      mean time: 0.068491 ms, speedup: 3.45
-transpose_smem                 mean time: 0.101178 ms, speedup: 2.34
-transpose_smem_bcf             mean time: 0.030913 ms, speedup: 7.65
-transpose_smem_packed_bcf      mean time: 0.028839 ms, speedup: 8.20
-transpose_smem_swizzled_packed mean time: 0.033192 ms, speedup: 7.12
+torch                          mean time: 0.225440 ms
+transpose_coalesced_read       mean time: 0.138144 ms, speedup: 1.63
+transpose_coalesced_write      mean time: 0.146944 ms, speedup: 1.53
+transpose_smem                 mean time: 0.112160 ms, speedup: 2.01
+transpose_smem_bcf             mean time: 0.102928 ms, speedup: 2.19
+transpose_smem_packed_bcf      mean time: 0.104816 ms, speedup: 2.15
+transpose_smem_swizzled_packed mean time: 0.103872 ms, speedup: 2.17
 ####################################################################################################
 n: 2048, m: 4096
-torch                          mean time: 0.550178 ms
-transpose_coalesced_read       mean time: 0.247446 ms, speedup: 2.22
-transpose_coalesced_write      mean time: 0.247375 ms, speedup: 2.22
-transpose_smem                 mean time: 0.209915 ms, speedup: 2.62
-transpose_smem_bcf             mean time: 0.205901 ms, speedup: 2.67
-transpose_smem_packed_bcf      mean time: 0.217671 ms, speedup: 2.53
-transpose_smem_swizzled_packed mean time: 0.225289 ms, speedup: 2.44
+torch                          mean time: 0.572816 ms
+transpose_coalesced_read       mean time: 0.288032 ms, speedup: 1.99
+transpose_coalesced_write      mean time: 0.280480 ms, speedup: 2.04
+transpose_smem                 mean time: 0.227792 ms, speedup: 2.51
+transpose_smem_bcf             mean time: 0.208352 ms, speedup: 2.75
+transpose_smem_packed_bcf      mean time: 0.208192 ms, speedup: 2.75
+transpose_smem_swizzled_packed mean time: 0.207968 ms, speedup: 2.75
 ####################################################################################################
 n: 2048, m: 8192
-torch                          mean time: 1.112649 ms
-transpose_coalesced_read       mean time: 0.497315 ms, speedup: 2.24
-transpose_coalesced_write      mean time: 0.477799 ms, speedup: 2.33
-transpose_smem                 mean time: 0.480561 ms, speedup: 2.32
-transpose_smem_bcf             mean time: 0.424384 ms, speedup: 2.62
-transpose_smem_packed_bcf      mean time: 0.425600 ms, speedup: 2.61
-transpose_smem_swizzled_packed mean time: 0.425049 ms, speedup: 2.62
+torch                          mean time: 1.179840 ms
+transpose_coalesced_read       mean time: 0.527712 ms, speedup: 2.24
+transpose_coalesced_write      mean time: 0.494624 ms, speedup: 2.39
+transpose_smem                 mean time: 0.520048 ms, speedup: 2.27
+transpose_smem_bcf             mean time: 0.421296 ms, speedup: 2.80
+transpose_smem_packed_bcf      mean time: 0.446128 ms, speedup: 2.64
+transpose_smem_swizzled_packed mean time: 0.447296 ms, speedup: 2.64
 ####################################################################################################
 n: 4096, m: 256
-torch                          mean time: 0.043327 ms
-transpose_coalesced_read       mean time: 0.016544 ms, speedup: 2.62
-transpose_coalesced_write      mean time: 0.016335 ms, speedup: 2.65
-transpose_smem                 mean time: 0.022669 ms, speedup: 1.91
-transpose_smem_bcf             mean time: 0.011114 ms, speedup: 3.90
-transpose_smem_packed_bcf      mean time: 0.010672 ms, speedup: 4.06
-transpose_smem_swizzled_packed mean time: 0.011193 ms, speedup: 3.87
+torch                          mean time: 0.067584 ms
+transpose_coalesced_read       mean time: 0.044560 ms, speedup: 1.52
+transpose_coalesced_write      mean time: 0.043360 ms, speedup: 1.56
+transpose_smem                 mean time: 0.034352 ms, speedup: 1.97
+transpose_smem_bcf             mean time: 0.026128 ms, speedup: 2.59
+transpose_smem_packed_bcf      mean time: 0.027328 ms, speedup: 2.47
+transpose_smem_swizzled_packed mean time: 0.027408 ms, speedup: 2.47
 ####################################################################################################
 n: 4096, m: 512
-torch                          mean time: 0.084745 ms
-transpose_coalesced_read       mean time: 0.031084 ms, speedup: 2.73
-transpose_coalesced_write      mean time: 0.027665 ms, speedup: 3.06
-transpose_smem                 mean time: 0.043354 ms, speedup: 1.95
-transpose_smem_bcf             mean time: 0.015166 ms, speedup: 5.59
-transpose_smem_packed_bcf      mean time: 0.016293 ms, speedup: 5.20
-transpose_smem_swizzled_packed mean time: 0.015365 ms, speedup: 5.52
+torch                          mean time: 0.127040 ms
+transpose_coalesced_read       mean time: 0.080928 ms, speedup: 1.57
+transpose_coalesced_write      mean time: 0.083552 ms, speedup: 1.52
+transpose_smem                 mean time: 0.062848 ms, speedup: 2.02
+transpose_smem_bcf             mean time: 0.054080 ms, speedup: 2.35
+transpose_smem_packed_bcf      mean time: 0.054304 ms, speedup: 2.34
+transpose_smem_swizzled_packed mean time: 0.054208 ms, speedup: 2.34
 ####################################################################################################
 n: 4096, m: 1024
-torch                          mean time: 0.231038 ms
-transpose_coalesced_read       mean time: 0.068236 ms, speedup: 3.39
-transpose_coalesced_write      mean time: 0.060593 ms, speedup: 3.81
-transpose_smem                 mean time: 0.093159 ms, speedup: 2.48
-transpose_smem_bcf             mean time: 0.034649 ms, speedup: 6.67
-transpose_smem_packed_bcf      mean time: 0.027774 ms, speedup: 8.32
-transpose_smem_swizzled_packed mean time: 0.031783 ms, speedup: 7.27
+torch                          mean time: 0.233936 ms
+transpose_coalesced_read       mean time: 0.142672 ms, speedup: 1.64
+transpose_coalesced_write      mean time: 0.146480 ms, speedup: 1.60
+transpose_smem                 mean time: 0.116496 ms, speedup: 2.01
+transpose_smem_bcf             mean time: 0.106848 ms, speedup: 2.19
+transpose_smem_packed_bcf      mean time: 0.107232 ms, speedup: 2.18
+transpose_smem_swizzled_packed mean time: 0.106336 ms, speedup: 2.20
 ####################################################################################################
 n: 4096, m: 2048
-torch                          mean time: 0.558869 ms
-transpose_coalesced_read       mean time: 0.252101 ms, speedup: 2.22
-transpose_coalesced_write      mean time: 0.239827 ms, speedup: 2.33
-transpose_smem                 mean time: 0.227927 ms, speedup: 2.45
-transpose_smem_bcf             mean time: 0.205047 ms, speedup: 2.73
-transpose_smem_packed_bcf      mean time: 0.204430 ms, speedup: 2.73
-transpose_smem_swizzled_packed mean time: 0.204856 ms, speedup: 2.73
+torch                          mean time: 0.573520 ms
+transpose_coalesced_read       mean time: 0.273200 ms, speedup: 2.10
+transpose_coalesced_write      mean time: 0.265824 ms, speedup: 2.16
+transpose_smem                 mean time: 0.248576 ms, speedup: 2.31
+transpose_smem_bcf             mean time: 0.212000 ms, speedup: 2.71
+transpose_smem_packed_bcf      mean time: 0.212608 ms, speedup: 2.70
+transpose_smem_swizzled_packed mean time: 0.211600 ms, speedup: 2.71
 ####################################################################################################
 n: 4096, m: 4096
-torch                          mean time: 1.152674 ms
-transpose_coalesced_read       mean time: 0.477185 ms, speedup: 2.42
-transpose_coalesced_write      mean time: 0.500227 ms, speedup: 2.30
-transpose_smem                 mean time: 0.418650 ms, speedup: 2.75
-transpose_smem_bcf             mean time: 0.538088 ms, speedup: 2.14
-transpose_smem_packed_bcf      mean time: 0.491356 ms, speedup: 2.35
-transpose_smem_swizzled_packed mean time: 0.450949 ms, speedup: 2.56
+torch                          mean time: 1.175968 ms
+transpose_coalesced_read       mean time: 0.493824 ms, speedup: 2.38
+transpose_coalesced_write      mean time: 0.505440 ms, speedup: 2.33
+transpose_smem                 mean time: 0.427264 ms, speedup: 2.75
+transpose_smem_bcf             mean time: 0.414032 ms, speedup: 2.84
+transpose_smem_packed_bcf      mean time: 0.414336 ms, speedup: 2.84
+transpose_smem_swizzled_packed mean time: 0.414368 ms, speedup: 2.84
 ####################################################################################################
 n: 4096, m: 8192
-torch                          mean time: 2.860153 ms
-transpose_coalesced_read       mean time: 1.141564 ms, speedup: 2.51
-transpose_coalesced_write      mean time: 0.942130 ms, speedup: 3.04
-transpose_smem                 mean time: 0.885916 ms, speedup: 3.23
-transpose_smem_bcf             mean time: 0.921508 ms, speedup: 3.10
-transpose_smem_packed_bcf      mean time: 0.938095 ms, speedup: 3.05
-transpose_smem_swizzled_packed mean time: 0.969484 ms, speedup: 2.95
+torch                          mean time: 2.233824 ms
+transpose_coalesced_read       mean time: 0.948912 ms, speedup: 2.35
+transpose_coalesced_write      mean time: 0.929680 ms, speedup: 2.40
+transpose_smem                 mean time: 0.853856 ms, speedup: 2.62
+transpose_smem_bcf             mean time: 0.866080 ms, speedup: 2.58
+transpose_smem_packed_bcf      mean time: 0.909168 ms, speedup: 2.46
+transpose_smem_swizzled_packed mean time: 0.908720 ms, speedup: 2.46
 ####################################################################################################
 n: 8192, m: 256
-torch                          mean time: 0.095996 ms
-transpose_coalesced_read       mean time: 0.034458 ms, speedup: 2.79
-transpose_coalesced_write      mean time: 0.034082 ms, speedup: 2.82
-transpose_smem                 mean time: 0.047705 ms, speedup: 2.01
-transpose_smem_bcf             mean time: 0.025186 ms, speedup: 3.81
-transpose_smem_packed_bcf      mean time: 0.027207 ms, speedup: 3.53
-transpose_smem_swizzled_packed mean time: 0.023705 ms, speedup: 4.05
+torch                          mean time: 0.112944 ms
+transpose_coalesced_read       mean time: 0.075216 ms, speedup: 1.50
+transpose_coalesced_write      mean time: 0.073168 ms, speedup: 1.54
+transpose_smem                 mean time: 0.059600 ms, speedup: 1.90
+transpose_smem_bcf             mean time: 0.056208 ms, speedup: 2.01
+transpose_smem_packed_bcf      mean time: 0.056784 ms, speedup: 1.99
+transpose_smem_swizzled_packed mean time: 0.056336 ms, speedup: 2.00
 ####################################################################################################
 n: 8192, m: 512
-torch                          mean time: 0.257472 ms
-transpose_coalesced_read       mean time: 0.082064 ms, speedup: 3.14
-transpose_coalesced_write      mean time: 0.072457 ms, speedup: 3.55
-transpose_smem                 mean time: 0.107095 ms, speedup: 2.40
-transpose_smem_bcf             mean time: 0.032369 ms, speedup: 7.95
-transpose_smem_packed_bcf      mean time: 0.031282 ms, speedup: 8.23
-transpose_smem_swizzled_packed mean time: 0.032217 ms, speedup: 7.99
+torch                          mean time: 0.232320 ms
+transpose_coalesced_read       mean time: 0.144320 ms, speedup: 1.61
+transpose_coalesced_write      mean time: 0.153088 ms, speedup: 1.52
+transpose_smem                 mean time: 0.128656 ms, speedup: 1.81
+transpose_smem_bcf             mean time: 0.118592 ms, speedup: 1.96
+transpose_smem_packed_bcf      mean time: 0.119984 ms, speedup: 1.94
+transpose_smem_swizzled_packed mean time: 0.119680 ms, speedup: 1.94
 ####################################################################################################
 n: 8192, m: 1024
-torch                          mean time: 0.584660 ms
-transpose_coalesced_read       mean time: 0.247958 ms, speedup: 2.36
-transpose_coalesced_write      mean time: 0.239332 ms, speedup: 2.44
-transpose_smem                 mean time: 0.221266 ms, speedup: 2.64
-transpose_smem_bcf             mean time: 0.215293 ms, speedup: 2.72
-transpose_smem_packed_bcf      mean time: 0.219078 ms, speedup: 2.67
-transpose_smem_swizzled_packed mean time: 0.212451 ms, speedup: 2.75
+torch                          mean time: 0.565488 ms
+transpose_coalesced_read       mean time: 0.266144 ms, speedup: 2.12
+transpose_coalesced_write      mean time: 0.273360 ms, speedup: 2.07
+transpose_smem                 mean time: 0.243152 ms, speedup: 2.33
+transpose_smem_bcf             mean time: 0.223664 ms, speedup: 2.53
+transpose_smem_packed_bcf      mean time: 0.223968 ms, speedup: 2.52
+transpose_smem_swizzled_packed mean time: 0.224400 ms, speedup: 2.52
 ####################################################################################################
 n: 8192, m: 2048
-torch                          mean time: 1.132851 ms
-transpose_coalesced_read       mean time: 0.519010 ms, speedup: 2.18
-transpose_coalesced_write      mean time: 0.506867 ms, speedup: 2.24
-transpose_smem                 mean time: 0.480647 ms, speedup: 2.36
-transpose_smem_bcf             mean time: 0.445889 ms, speedup: 2.54
-transpose_smem_packed_bcf      mean time: 0.418792 ms, speedup: 2.71
-transpose_smem_swizzled_packed mean time: 0.414753 ms, speedup: 2.73
+torch                          mean time: 1.120304 ms
+transpose_coalesced_read       mean time: 0.488576 ms, speedup: 2.29
+transpose_coalesced_write      mean time: 0.495488 ms, speedup: 2.26
+transpose_smem                 mean time: 0.420128 ms, speedup: 2.67
+transpose_smem_bcf             mean time: 0.413152 ms, speedup: 2.71
+transpose_smem_packed_bcf      mean time: 0.412800 ms, speedup: 2.71
+transpose_smem_swizzled_packed mean time: 0.413456 ms, speedup: 2.71
 ####################################################################################################
 n: 8192, m: 4096
-torch                          mean time: 2.334238 ms
-transpose_coalesced_read       mean time: 1.149069 ms, speedup: 2.03
-transpose_coalesced_write      mean time: 1.024030 ms, speedup: 2.28
-transpose_smem                 mean time: 0.893990 ms, speedup: 2.61
-transpose_smem_bcf             mean time: 0.967593 ms, speedup: 2.41
-transpose_smem_packed_bcf      mean time: 0.959794 ms, speedup: 2.43
-transpose_smem_swizzled_packed mean time: 0.865132 ms, speedup: 2.70
+torch                          mean time: 2.207104 ms
+transpose_coalesced_read       mean time: 0.925536 ms, speedup: 2.38
+transpose_coalesced_write      mean time: 0.985120 ms, speedup: 2.24
+transpose_smem                 mean time: 0.826784 ms, speedup: 2.67
+transpose_smem_bcf             mean time: 0.833264 ms, speedup: 2.65
+transpose_smem_packed_bcf      mean time: 0.832912 ms, speedup: 2.65
+transpose_smem_swizzled_packed mean time: 0.829456 ms, speedup: 2.66
 ####################################################################################################
 n: 8192, m: 8192
-torch                          mean time: 4.671009 ms
-transpose_coalesced_read       mean time: 1.932761 ms, speedup: 2.42
-transpose_coalesced_write      mean time: 1.845628 ms, speedup: 2.53
-transpose_smem                 mean time: 1.706025 ms, speedup: 2.74
-transpose_smem_bcf             mean time: 1.709746 ms, speedup: 2.73
-transpose_smem_packed_bcf      mean time: 1.709723 ms, speedup: 2.73
-transpose_smem_swizzled_packed mean time: 1.709305 ms, speedup: 2.73
+torch                          mean time: 4.380160 ms
+transpose_coalesced_read       mean time: 1.923440 ms, speedup: 2.28
+transpose_coalesced_write      mean time: 2.037584 ms, speedup: 2.15
+transpose_smem                 mean time: 1.793504 ms, speedup: 2.44
+transpose_smem_bcf             mean time: 1.816736 ms, speedup: 2.41
+transpose_smem_packed_bcf      mean time: 1.815856 ms, speedup: 2.41
+transpose_smem_swizzled_packed mean time: 1.730048 ms, speedup: 2.53
 ```

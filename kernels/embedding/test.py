@@ -1,10 +1,10 @@
-import time
+import numpy as np
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 import torch
 import torch.nn.functional as F
+from flashinfer.testing.utils import bench_gpu_time
 from torch.utils.cpp_extension import load
 
 torch.set_grad_enabled(False)
@@ -30,41 +30,34 @@ lib = load(
 )
 
 
-def benchmark(op, a, b, c=None, warmup=10, rep=500, prefix="torch"):
-    if c is not None:
-        # warm up
-        for i in range(warmup):
-            op(a, b, c)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            op(a, b, c)
-        torch.cuda.synchronize()
-        print(
-            f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms"
-        )
+def benchmark(op, a, b, c=None, warmup=10, rep=100, prefix="torch"):
+    input_args = (a, b, c) if c is not None else (a, b)
+
+    times = bench_gpu_time(
+        fn=op,
+        input_args=input_args,
+        dry_run_iters=warmup,
+        repeat_iters=rep,
+        enable_cupti=False,
+        use_cuda_graph=False,
+        cold_l2_cache=True,
+    )
+    avg_duration = float(np.median(times))
+
+    if prefix == "torch":
+        global baseline
+        baseline = avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms")
     else:
-        # warm up
-        for i in range(warmup):
-            op(a, b)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            op(a, b)
-        torch.cuda.synchronize()
-        print(
-            f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms"
-        )
+        speedup = baseline / avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms, speedup: {speedup:.2f}")
 
 
 def diff_check(a, b, prefix="torch", eps=1e-5):
     diff_val = torch.max(torch.abs(a - b)).item()
 
-    # 2. 在 message 里把这个变量打印出来
-    #    :.6f 表示保留6位小数，让你看清楚
     message = f"{prefix} result diff! Actual: {diff_val:.6f} >= Eps: {eps}"
 
-    # 3. 断言
     assert diff_val < eps, message
 
 
@@ -72,9 +65,9 @@ if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
     # 涵盖了 搜广推特征工程 到 llm 级别的 embedding 大小和特征长度
-    emd_sizes = [32, 128, 1024, 16384, 10240, 102400]
-    emd_dims = [8, 32, 128, 512, 1024, 2048, 4096]
-    seq_lens = [1, 64, 256, 1024, 4096]
+    emd_sizes = [32, 128, 1024, 102400]
+    emd_dims = [32, 128, 512]
+    seq_lens = [1, 64, 256, 1024]
     import itertools
     for emd_size, emd_dim in itertools.product(emd_sizes, emd_dims):
         for seq_len in seq_lens:

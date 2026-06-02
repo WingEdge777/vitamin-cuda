@@ -22,92 +22,92 @@ python test.py
 ```bash
 ####################################################################################################
 n: 1024, m: 1024
-torch                          mean time: 0.016135 ms
-elu                            mean time: 0.020419 ms
-elu_fp32x4                     mean time: 0.009367 ms
-torch                          mean time: 0.018720 ms
-elu_half                       mean time: 0.023111 ms
-elu_fp16x2                     mean time: 0.014962 ms
-elu_fp16x8                     mean time: 0.018292 ms
-elu_fp16x8_packed              mean time: 0.014132 ms
+torch                          mean time: 0.028800 ms
+elu                            mean time: 0.035456 ms, speedup: 0.81
+elu_fp32x4                     mean time: 0.025216 ms, speedup: 1.14
+torch                          mean time: 0.014704 ms
+elu_half                       mean time: 0.028656 ms, speedup: 0.51
+elu_fp16x2                     mean time: 0.019488 ms, speedup: 0.75
+elu_fp16x8                     mean time: 0.016880 ms, speedup: 0.87
+elu_fp16x8_packed              mean time: 0.013120 ms, speedup: 1.12
 ####################################################################################################
 n: 1024, m: 2048
-torch                          mean time: 0.026670 ms
-elu                            mean time: 0.031063 ms
-elu_fp32x4                     mean time: 0.018426 ms
-torch                          mean time: 0.027915 ms
-elu_half                       mean time: 0.043214 ms
-elu_fp16x2                     mean time: 0.025848 ms
-elu_fp16x8                     mean time: 0.037226 ms
-elu_fp16x8_packed              mean time: 0.018488 ms
+torch                          mean time: 0.049184 ms
+elu                            mean time: 0.060048 ms, speedup: 0.82
+elu_fp32x4                     mean time: 0.051952 ms, speedup: 0.95
+torch                          mean time: 0.023264 ms
+elu_half                       mean time: 0.050608 ms, speedup: 0.46
+elu_fp16x2                     mean time: 0.033680 ms, speedup: 0.69
+elu_fp16x8                     mean time: 0.031120 ms, speedup: 0.75
+elu_fp16x8_packed              mean time: 0.023584 ms, speedup: 0.99
 ####################################################################################################
 n: 1024, m: 4096
-torch                          mean time: 0.033110 ms
-elu                            mean time: 0.212075 ms
-elu_fp32x4                     mean time: 0.196537 ms
-torch                          mean time: 0.130637 ms
-elu_half                       mean time: 0.090890 ms
-elu_fp16x2                     mean time: 0.041907 ms
-elu_fp16x8                     mean time: 0.067041 ms
-elu_fp16x8_packed              mean time: 0.025889 ms
+torch                          mean time: 0.101216 ms
+elu                            mean time: 0.114704 ms, speedup: 0.88
+elu_fp32x4                     mean time: 0.135376 ms, speedup: 0.75
+torch                          mean time: 0.060976 ms
+elu_half                       mean time: 0.091312 ms, speedup: 0.67
+elu_fp16x2                     mean time: 0.062320 ms, speedup: 0.98
+elu_fp16x8                     mean time: 0.060640 ms, speedup: 1.01
+elu_fp16x8_packed              mean time: 0.053696 ms, speedup: 1.14
 ####################################################################################################
 n: 2048, m: 1024
-torch                          mean time: 0.037810 ms
-elu                            mean time: 0.060480 ms
-elu_fp32x4                     mean time: 0.038936 ms
-torch                          mean time: 0.060284 ms
-elu_half                       mean time: 0.082076 ms
-elu_fp16x2                     mean time: 0.038596 ms
-elu_fp16x8                     mean time: 0.068374 ms
-elu_fp16x8_packed              mean time: 0.023226 ms
+torch                          mean time: 0.049936 ms
+elu                            mean time: 0.060656 ms, speedup: 0.82
+elu_fp32x4                     mean time: 0.051344 ms, speedup: 0.97
+torch                          mean time: 0.023744 ms
+elu_half                       mean time: 0.054720 ms, speedup: 0.43
+elu_fp16x2                     mean time: 0.037632 ms, speedup: 0.63
+elu_fp16x8                     mean time: 0.034416 ms, speedup: 0.69
+elu_fp16x8_packed              mean time: 0.023360 ms, speedup: 1.02
 ####################################################################################################
 n: 2048, m: 2048
-torch                          mean time: 0.187787 ms
-elu                            mean time: 0.440192 ms
-elu_fp32x4                     mean time: 0.265210 ms
-torch                          mean time: 0.098931 ms
-elu_half                       mean time: 0.091958 ms
-elu_fp16x2                     mean time: 0.042308 ms
-elu_fp16x8                     mean time: 0.069547 ms
-elu_fp16x8_packed              mean time: 0.035841 ms
+torch                          mean time: 0.102304 ms
+elu                            mean time: 0.132048 ms, speedup: 0.77
+elu_fp32x4                     mean time: 0.106192 ms, speedup: 0.96
+torch                          mean time: 0.047200 ms
+elu_half                       mean time: 0.095584 ms, speedup: 0.49
+elu_fp16x2                     mean time: 0.062480 ms, speedup: 0.76
+elu_fp16x8                     mean time: 0.059296 ms, speedup: 0.80
+elu_fp16x8_packed              mean time: 0.052192 ms, speedup: 0.90
 ####################################################################################################
 n: 2048, m: 4096
-torch                          mean time: 0.458813 ms
-elu                            mean time: 0.929212 ms
-elu_fp32x4                     mean time: 0.583942 ms
-torch                          mean time: 0.597380 ms
-elu_half                       mean time: 0.328474 ms
-elu_fp16x2                     mean time: 0.207090 ms
-elu_fp16x8                     mean time: 0.410421 ms
-elu_fp16x8_packed              mean time: 0.260892 ms
+torch                          mean time: 0.204416 ms
+elu                            mean time: 0.228704 ms, speedup: 0.89
+elu_fp32x4                     mean time: 0.204416 ms, speedup: 1.00
+torch                          mean time: 0.102416 ms
+elu_half                       mean time: 0.171552 ms, speedup: 0.60
+elu_fp16x2                     mean time: 0.116032 ms, speedup: 0.88
+elu_fp16x8                     mean time: 0.109552 ms, speedup: 0.93
+elu_fp16x8_packed              mean time: 0.103024 ms, speedup: 0.99
 ####################################################################################################
 n: 4096, m: 1024
-torch                          mean time: 0.295651 ms
-elu                            mean time: 0.439934 ms
-elu_fp32x4                     mean time: 0.290076 ms
-torch                          mean time: 0.130208 ms
-elu_half                       mean time: 0.085979 ms
-elu_fp16x2                     mean time: 0.043027 ms
-elu_fp16x8                     mean time: 0.067967 ms
-elu_fp16x8_packed              mean time: 0.024264 ms
+torch                          mean time: 0.101312 ms
+elu                            mean time: 0.116368 ms, speedup: 0.87
+elu_fp32x4                     mean time: 0.102880 ms, speedup: 0.98
+torch                          mean time: 0.046768 ms
+elu_half                       mean time: 0.093760 ms, speedup: 0.50
+elu_fp16x2                     mean time: 0.062336 ms, speedup: 0.75
+elu_fp16x8                     mean time: 0.060640 ms, speedup: 0.77
+elu_fp16x8_packed              mean time: 0.052688 ms, speedup: 0.89
 ####################################################################################################
 n: 4096, m: 2048
-torch                          mean time: 0.371306 ms
-elu                            mean time: 0.870806 ms
-elu_fp32x4                     mean time: 0.583772 ms
-torch                          mean time: 0.474186 ms
-elu_half                       mean time: 0.408232 ms
-elu_fp16x2                     mean time: 0.388984 ms
-elu_fp16x8                     mean time: 0.428567 ms
-elu_fp16x8_packed              mean time: 0.249185 ms
+torch                          mean time: 0.205088 ms
+elu                            mean time: 0.233424 ms, speedup: 0.88
+elu_fp32x4                     mean time: 0.207152 ms, speedup: 0.99
+torch                          mean time: 0.102016 ms
+elu_half                       mean time: 0.183840 ms, speedup: 0.55
+elu_fp16x2                     mean time: 0.121744 ms, speedup: 0.84
+elu_fp16x8                     mean time: 0.111776 ms, speedup: 0.91
+elu_fp16x8_packed              mean time: 0.104096 ms, speedup: 0.98
 ####################################################################################################
 n: 4096, m: 4096
-torch                          mean time: 1.321477 ms
-elu                            mean time: 1.854496 ms
-elu_fp32x4                     mean time: 1.142058 ms
-torch                          mean time: 0.949690 ms
-elu_half                       mean time: 0.959096 ms
-elu_fp16x2                     mean time: 0.958181 ms
-elu_fp16x8                     mean time: 1.103509 ms
-elu_fp16x8_packed              mean time: 0.545815 ms
+torch                          mean time: 0.403728 ms
+elu                            mean time: 0.438784 ms, speedup: 0.92
+elu_fp32x4                     mean time: 0.426912 ms, speedup: 0.95
+torch                          mean time: 0.203392 ms
+elu_half                       mean time: 0.325744 ms, speedup: 0.62
+elu_fp16x2                     mean time: 0.227152 ms, speedup: 0.90
+elu_fp16x8                     mean time: 0.207440 ms, speedup: 0.98
+elu_fp16x8_packed              mean time: 0.204368 ms, speedup: 1.00
 ```

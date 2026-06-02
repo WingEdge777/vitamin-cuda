@@ -22,127 +22,127 @@ python test.py
 ```bash
 ####################################################################################################
 n: 512, m: 512
-torch                          mean time: 0.008886 ms
-gemv                           mean time: 0.009073 ms, speedup: 0.98
-gemv_fp32x4                    mean time: 0.008982 ms, speedup: 0.99
+torch                          mean time: 0.013888 ms
+gemv                           mean time: 0.013888 ms, speedup: 1.00
+gemv_fp32x4                    mean time: 0.013344 ms, speedup: 1.04
 ####################################################################################################
 n: 512, m: 1024
-torch                          mean time: 0.020854 ms
-gemv                           mean time: 0.011524 ms, speedup: 1.81
-gemv_fp32x4                    mean time: 0.008784 ms, speedup: 2.37
+torch                          mean time: 0.015120 ms
+gemv                           mean time: 0.020160 ms, speedup: 0.75
+gemv_fp32x4                    mean time: 0.014432 ms, speedup: 1.05
 ####################################################################################################
 n: 512, m: 2048
-torch                          mean time: 0.012006 ms
-gemv                           mean time: 0.013986 ms, speedup: 0.86
-gemv_fp32x4                    mean time: 0.008806 ms, speedup: 1.36
+torch                          mean time: 0.020432 ms
+gemv                           mean time: 0.032160 ms, speedup: 0.64
+gemv_fp32x4                    mean time: 0.019648 ms, speedup: 1.04
 ####################################################################################################
 n: 512, m: 4096
-torch                          mean time: 0.030298 ms
-gemv                           mean time: 0.013613 ms, speedup: 2.23
-gemv_fp32x4                    mean time: 0.019828 ms, speedup: 1.53
+torch                          mean time: 0.033168 ms
+gemv                           mean time: 0.057776 ms, speedup: 0.57
+gemv_fp32x4                    mean time: 0.031760 ms, speedup: 1.04
 ####################################################################################################
 n: 512, m: 8192
-torch                          mean time: 0.060617 ms
-gemv                           mean time: 0.021067 ms, speedup: 2.88
-gemv_fp32x4                    mean time: 0.013917 ms, speedup: 4.36
+torch                          mean time: 0.072096 ms
+gemv                           mean time: 0.108240 ms, speedup: 0.67
+gemv_fp32x4                    mean time: 0.071728 ms, speedup: 1.01
 ####################################################################################################
 n: 1024, m: 512
-torch                          mean time: 0.038754 ms
-gemv                           mean time: 0.021818 ms, speedup: 1.78
-gemv_fp32x4                    mean time: 0.019504 ms, speedup: 1.99
+torch                          mean time: 0.017120 ms
+gemv                           mean time: 0.019520 ms, speedup: 0.88
+gemv_fp32x4                    mean time: 0.013696 ms, speedup: 1.25
 ####################################################################################################
 n: 1024, m: 1024
-torch                          mean time: 0.014897 ms
-gemv                           mean time: 0.019693 ms, speedup: 0.76
-gemv_fp32x4                    mean time: 0.009883 ms, speedup: 1.51
+torch                          mean time: 0.020976 ms
+gemv                           mean time: 0.031968 ms, speedup: 0.66
+gemv_fp32x4                    mean time: 0.019600 ms, speedup: 1.07
 ####################################################################################################
 n: 1024, m: 2048
-torch                          mean time: 0.017987 ms
-gemv                           mean time: 0.014623 ms, speedup: 1.23
-gemv_fp32x4                    mean time: 0.022460 ms, speedup: 0.80
+torch                          mean time: 0.033552 ms
+gemv                           mean time: 0.056448 ms, speedup: 0.59
+gemv_fp32x4                    mean time: 0.031536 ms, speedup: 1.06
 ####################################################################################################
 n: 1024, m: 4096
-torch                          mean time: 0.060782 ms
-gemv                           mean time: 0.021470 ms, speedup: 2.83
-gemv_fp32x4                    mean time: 0.013789 ms, speedup: 4.41
+torch                          mean time: 0.058032 ms
+gemv                           mean time: 0.086480 ms, speedup: 0.67
+gemv_fp32x4                    mean time: 0.056032 ms, speedup: 1.04
 ####################################################################################################
 n: 1024, m: 8192
-torch                          mean time: 0.033910 ms
-gemv                           mean time: 0.049395 ms, speedup: 0.69
-gemv_fp32x4                    mean time: 0.023526 ms, speedup: 1.44
+torch                          mean time: 0.106288 ms
+gemv                           mean time: 0.167968 ms, speedup: 0.63
+gemv_fp32x4                    mean time: 0.104896 ms, speedup: 1.01
 ####################################################################################################
 n: 2048, m: 512
-torch                          mean time: 0.021050 ms
-gemv                           mean time: 0.012869 ms, speedup: 1.64
-gemv_fp32x4                    mean time: 0.011093 ms, speedup: 1.90
+torch                          mean time: 0.021264 ms
+gemv                           mean time: 0.032032 ms, speedup: 0.66
+gemv_fp32x4                    mean time: 0.019648 ms, speedup: 1.08
 ####################################################################################################
 n: 2048, m: 1024
-torch                          mean time: 0.027313 ms
-gemv                           mean time: 0.020678 ms, speedup: 1.32
-gemv_fp32x4                    mean time: 0.011111 ms, speedup: 2.46
+torch                          mean time: 0.033888 ms
+gemv                           mean time: 0.054816 ms, speedup: 0.62
+gemv_fp32x4                    mean time: 0.031600 ms, speedup: 1.07
 ####################################################################################################
 n: 2048, m: 2048
-torch                          mean time: 0.015484 ms
-gemv                           mean time: 0.022956 ms, speedup: 0.67
-gemv_fp32x4                    mean time: 0.021555 ms, speedup: 0.72
+torch                          mean time: 0.059776 ms
+gemv                           mean time: 0.081984 ms, speedup: 0.73
+gemv_fp32x4                    mean time: 0.055680 ms, speedup: 1.07
 ####################################################################################################
 n: 2048, m: 4096
-torch                          mean time: 0.110697 ms
-gemv                           mean time: 0.044053 ms, speedup: 2.51
-gemv_fp32x4                    mean time: 0.037044 ms, speedup: 2.99
+torch                          mean time: 0.105280 ms
+gemv                           mean time: 0.156480 ms, speedup: 0.67
+gemv_fp32x4                    mean time: 0.105424 ms, speedup: 1.00
 ####################################################################################################
 n: 2048, m: 8192
-torch                          mean time: 0.190447 ms
-gemv                           mean time: 0.217329 ms, speedup: 0.88
-gemv_fp32x4                    mean time: 0.207049 ms, speedup: 0.92
+torch                          mean time: 0.202240 ms
+gemv                           mean time: 0.272128 ms, speedup: 0.74
+gemv_fp32x4                    mean time: 0.204928 ms, speedup: 0.99
 ####################################################################################################
 n: 4096, m: 512
-torch                          mean time: 0.021090 ms
-gemv                           mean time: 0.017069 ms, speedup: 1.24
-gemv_fp32x4                    mean time: 0.012399 ms, speedup: 1.70
+torch                          mean time: 0.033120 ms
+gemv                           mean time: 0.055696 ms, speedup: 0.59
+gemv_fp32x4                    mean time: 0.031680 ms, speedup: 1.05
 ####################################################################################################
 n: 4096, m: 1024
-torch                          mean time: 0.057493 ms
-gemv                           mean time: 0.022998 ms, speedup: 2.50
-gemv_fp32x4                    mean time: 0.022899 ms, speedup: 2.51
+torch                          mean time: 0.058848 ms
+gemv                           mean time: 0.081152 ms, speedup: 0.73
+gemv_fp32x4                    mean time: 0.056032 ms, speedup: 1.05
 ####################################################################################################
 n: 4096, m: 2048
-torch                          mean time: 0.025669 ms
-gemv                           mean time: 0.050391 ms, speedup: 0.51
-gemv_fp32x4                    mean time: 0.034293 ms, speedup: 0.75
+torch                          mean time: 0.108752 ms
+gemv                           mean time: 0.154256 ms, speedup: 0.71
+gemv_fp32x4                    mean time: 0.105184 ms, speedup: 1.03
 ####################################################################################################
 n: 4096, m: 4096
-torch                          mean time: 0.191087 ms
-gemv                           mean time: 0.221770 ms, speedup: 0.86
-gemv_fp32x4                    mean time: 0.206958 ms, speedup: 0.92
+torch                          mean time: 0.205696 ms
+gemv                           mean time: 0.269696 ms, speedup: 0.76
+gemv_fp32x4                    mean time: 0.207088 ms, speedup: 0.99
 ####################################################################################################
 n: 4096, m: 8192
-torch                          mean time: 0.375710 ms
-gemv                           mean time: 0.414233 ms, speedup: 0.91
-gemv_fp32x4                    mean time: 0.457492 ms, speedup: 0.82
+torch                          mean time: 0.394272 ms
+gemv                           mean time: 0.464528 ms, speedup: 0.85
+gemv_fp32x4                    mean time: 0.399488 ms, speedup: 0.99
 ####################################################################################################
 n: 8192, m: 512
-torch                          mean time: 0.028225 ms
-gemv                           mean time: 0.034232 ms, speedup: 0.82
-gemv_fp32x4                    mean time: 0.017243 ms, speedup: 1.64
+torch                          mean time: 0.059136 ms
+gemv                           mean time: 0.082784 ms, speedup: 0.71
+gemv_fp32x4                    mean time: 0.056128 ms, speedup: 1.05
 ####################################################################################################
 n: 8192, m: 1024
-torch                          mean time: 0.139370 ms
-gemv                           mean time: 0.048529 ms, speedup: 2.87
-gemv_fp32x4                    mean time: 0.026932 ms, speedup: 5.17
+torch                          mean time: 0.106704 ms
+gemv                           mean time: 0.153504 ms, speedup: 0.70
+gemv_fp32x4                    mean time: 0.106368 ms, speedup: 1.00
 ####################################################################################################
 n: 8192, m: 2048
-torch                          mean time: 0.192962 ms
-gemv                           mean time: 0.216880 ms, speedup: 0.89
-gemv_fp32x4                    mean time: 0.207960 ms, speedup: 0.93
+torch                          mean time: 0.214176 ms
+gemv                           mean time: 0.267824 ms, speedup: 0.80
+gemv_fp32x4                    mean time: 0.205568 ms, speedup: 1.04
 ####################################################################################################
 n: 8192, m: 4096
-torch                          mean time: 0.373298 ms
-gemv                           mean time: 0.406433 ms, speedup: 0.92
-gemv_fp32x4                    mean time: 0.388672 ms, speedup: 0.96
+torch                          mean time: 0.395120 ms
+gemv                           mean time: 0.478128 ms, speedup: 0.83
+gemv_fp32x4                    mean time: 0.407552 ms, speedup: 0.97
 ####################################################################################################
 n: 8192, m: 8192
-torch                          mean time: 0.738979 ms
-gemv                           mean time: 0.775295 ms, speedup: 0.95
-gemv_fp32x4                    mean time: 0.753339 ms, speedup: 0.98
+torch                          mean time: 0.808432 ms
+gemv                           mean time: 0.878512 ms, speedup: 0.92
+gemv_fp32x4                    mean time: 0.781808 ms, speedup: 1.03
 ```

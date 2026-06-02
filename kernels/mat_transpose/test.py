@@ -1,9 +1,9 @@
-import time
+import numpy as np
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 import torch
+from flashinfer.testing.utils import bench_gpu_time
 from torch.utils.cpp_extension import load
 
 torch.set_grad_enabled(False)
@@ -34,24 +34,26 @@ def transpose(a, b):
 
 baseline = None
 
-def benchmark(op, a, b=None, warmup=10, rep=300, prefix="torch"):
-    # warm up
-    for i in range(warmup):
-        op(a, b)
-    torch.cuda.synchronize()
-    start = time.perf_counter()
-    for i in range(rep):
-        op(a, b)
-    torch.cuda.synchronize()
+def benchmark(op, a, b=None, warmup=10, rep=100, prefix="torch"):
+    global baseline
+
+    times = bench_gpu_time(
+        fn=op,
+        input_args=(a, b),
+        dry_run_iters=warmup,
+        repeat_iters=rep,
+        enable_cupti=False,
+        use_cuda_graph=False,
+        cold_l2_cache=True,
+    )
+    avg_duration = float(np.median(times))
+
     if prefix == "torch":
-        global baseline
-        duration = time.perf_counter() - start
-        baseline = duration
-        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms")
+        baseline = avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms")
     else:
-        duration = time.perf_counter() - start
-        speedup = baseline / duration
-        print(f"{prefix:30s} mean time: {duration / rep * 1000:.6f} ms, speedup: {speedup:.2f}")
+        speedup = baseline / avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms, speedup: {speedup:.2f}")
 
 
 def diff_check(a, b, prefix="torch", eps=1e-6):

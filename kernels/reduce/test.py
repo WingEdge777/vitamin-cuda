@@ -1,9 +1,9 @@
-import time
+import numpy as np
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 import torch
+from flashinfer.testing.utils import bench_gpu_time
 from torch.utils.cpp_extension import load
 
 torch.set_grad_enabled(False)
@@ -29,19 +29,30 @@ lib = load(
 )
 
 
-def benchmark(op, a, warmup=10, rep=1000, prefix="torch"):
-    # warm up
-    for i in range(warmup):
-        res = op(a)
-    torch.cuda.synchronize()
-    start = time.perf_counter()
-    for i in range(rep):
-        res = op(a)
-    torch.cuda.synchronize()
-    print(
-        f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms"
+baseline = None
+
+def benchmark(op, a, warmup=10, rep=100, prefix="torch"):
+    global baseline
+
+    times = bench_gpu_time(
+        fn=op,
+        input_args=(a,),
+        dry_run_iters=warmup,
+        repeat_iters=rep,
+        enable_cupti=False,
+        use_cuda_graph=False,
+        cold_l2_cache=True,
     )
-    return res
+    avg_duration = float(np.median(times))
+
+    if prefix == "torch":
+        baseline = avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms")
+    else:
+        speedup = baseline / avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms, speedup: {speedup:.2f}")
+
+    return op(a)
 
 
 def diff_check(a, b, prefix="torch", rel=1e-5, abl = 1e-5):

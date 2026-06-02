@@ -1,9 +1,9 @@
-import time
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
+import numpy as np
 import torch
+from flashinfer.testing.utils import bench_gpu_time, get_l2_cache_size
 from torch.utils.cpp_extension import load
 
 torch.set_grad_enabled(False)
@@ -100,28 +100,32 @@ def rope(q):  # q shape: [bs, seqlen, head_dim]
     return apply_rotary_pos_emb(q, cos, sin)
 
 
+baseline = None
+
+
 def benchmark(op, a, b=None, warmup=10, rep=100, prefix="torch"):
-    if b is not None:
-        # warm up
-        for i in range(warmup):
-            res = op(a, b)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            res = op(a, b)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms")
+    input_args = (a, b) if b is not None else (a,)
+
+    times = bench_gpu_time(
+        fn=op,
+        input_args=input_args,
+        dry_run_iters=warmup,
+        repeat_iters=rep,
+        enable_cupti=False,
+        use_cuda_graph=False,
+        cold_l2_cache=True,
+    )
+    avg_duration = float(np.median(times))
+
+    if prefix == "torch":
+        global baseline
+        baseline = avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms")
     else:
-        # warm up
-        for i in range(warmup):
-            res = op(a)
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        for i in range(rep):
-            res = op(a)
-        torch.cuda.synchronize()
-        print(f"{prefix:30s} mean time: {(time.perf_counter() - start) / rep * 1000:.6f} ms")
-    return res
+        speedup = baseline / avg_duration
+        print(f"{prefix:30s} mean time: {avg_duration:8.6f} ms, speedup: {speedup:.2f}")
+
+    return op(*input_args)
 
 
 def diff_check(a, b, prefix="torch", eps=1e-4):
