@@ -31,7 +31,7 @@ lib = load(
 
 baseline = None
 
-def benchmark(op, a, b, warmup=10, rep=1000, prefix="torch"):
+def benchmark(op, a, b, warmup=10, rep=100, prefix="torch"):
     global baseline
 
     times = bench_gpu_time(

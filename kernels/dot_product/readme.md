@@ -22,83 +22,83 @@ python test.py
 ```bash
 ####################################################################################################
 n: 1024, m: 1024
-torch                          mean time: 0.021727 ms
-dot_product                    mean time: 0.029790 ms
-dot_product_fp32x4             mean time: 0.023043 ms
-torch                          mean time: 0.019595 ms
-dot_product                    mean time: 0.033884 ms
-dot_product_fp16x2             mean time: 0.027985 ms
-dot_product_fp16x8_packed      mean time: 0.028080 ms
+torch                          mean time: 0.037600 ms
+dot_product                    mean time: 0.045568 ms, speedup: 0.83
+dot_product_fp32x4             mean time: 0.053104 ms, speedup: 0.71
+torch                          mean time: 0.025648 ms
+dot_product                    mean time: 0.041696 ms, speedup: 0.62
+dot_product_fp16x2             mean time: 0.028704 ms, speedup: 0.89
+dot_product_fp16x8_packed      mean time: 0.029376 ms, speedup: 0.87
 ####################################################################################################
 n: 1024, m: 2048
-torch                          mean time: 0.024139 ms
-dot_product                    mean time: 0.026223 ms
-dot_product_fp32x4             mean time: 0.023965 ms
-torch                          mean time: 0.021862 ms
-dot_product                    mean time: 0.030724 ms
-dot_product_fp16x2             mean time: 0.034279 ms
-dot_product_fp16x8_packed      mean time: 0.033783 ms
+torch                          mean time: 0.059488 ms
+dot_product                    mean time: 0.071280 ms, speedup: 0.83
+dot_product_fp32x4             mean time: 0.067024 ms, speedup: 0.89
+torch                          mean time: 0.036784 ms
+dot_product                    mean time: 0.064608 ms, speedup: 0.57
+dot_product_fp16x2             mean time: 0.047360 ms, speedup: 0.78
+dot_product_fp16x8_packed      mean time: 0.053776 ms, speedup: 0.68
 ####################################################################################################
 n: 1024, m: 4096
-torch                          mean time: 0.027692 ms
-dot_product                    mean time: 0.028867 ms
-dot_product_fp32x4             mean time: 0.028988 ms
-torch                          mean time: 0.027175 ms
-dot_product                    mean time: 0.031102 ms
-dot_product_fp16x2             mean time: 0.035025 ms
-dot_product_fp16x8_packed      mean time: 0.039510 ms
+torch                          mean time: 0.108720 ms
+dot_product                    mean time: 0.120128 ms, speedup: 0.91
+dot_product_fp32x4             mean time: 0.128256 ms, speedup: 0.85
+torch                          mean time: 0.061952 ms
+dot_product                    mean time: 0.090496 ms, speedup: 0.68
+dot_product_fp16x2             mean time: 0.082512 ms, speedup: 0.75
+dot_product_fp16x8_packed      mean time: 0.073552 ms, speedup: 0.84
 ####################################################################################################
 n: 2048, m: 1024
-torch                          mean time: 0.032513 ms
-dot_product                    mean time: 0.032702 ms
-dot_product_fp32x4             mean time: 0.023970 ms
-torch                          mean time: 0.019796 ms
-dot_product                    mean time: 0.031500 ms
-dot_product_fp16x2             mean time: 0.030058 ms
-dot_product_fp16x8_packed      mean time: 0.030487 ms
+torch                          mean time: 0.060176 ms
+dot_product                    mean time: 0.077376 ms, speedup: 0.78
+dot_product_fp32x4             mean time: 0.070384 ms, speedup: 0.85
+torch                          mean time: 0.036768 ms
+dot_product                    mean time: 0.063952 ms, speedup: 0.57
+dot_product_fp16x2             mean time: 0.047280 ms, speedup: 0.78
+dot_product_fp16x8_packed      mean time: 0.052144 ms, speedup: 0.71
 ####################################################################################################
 n: 2048, m: 2048
-torch                          mean time: 0.029508 ms
-dot_product                    mean time: 0.035381 ms
-dot_product_fp32x4             mean time: 0.032802 ms
-torch                          mean time: 0.034379 ms
-dot_product                    mean time: 0.030316 ms
-dot_product_fp16x2             mean time: 0.029050 ms
-dot_product_fp16x8_packed      mean time: 0.030802 ms
+torch                          mean time: 0.108384 ms
+dot_product                    mean time: 0.121664 ms, speedup: 0.89
+dot_product_fp32x4             mean time: 0.128464 ms, speedup: 0.84
+torch                          mean time: 0.061856 ms
+dot_product                    mean time: 0.090528 ms, speedup: 0.68
+dot_product_fp16x2             mean time: 0.080992 ms, speedup: 0.76
+dot_product_fp16x8_packed      mean time: 0.072512 ms, speedup: 0.85
 ####################################################################################################
 n: 2048, m: 4096
-torch                          mean time: 0.190342 ms
-dot_product                    mean time: 0.188644 ms
-dot_product_fp32x4             mean time: 0.188322 ms
-torch                          mean time: 0.035902 ms
-dot_product                    mean time: 0.051770 ms
-dot_product_fp16x2             mean time: 0.041512 ms
-dot_product_fp16x8_packed      mean time: 0.033171 ms
+torch                          mean time: 0.209552 ms
+dot_product                    mean time: 0.223408 ms, speedup: 0.94
+dot_product_fp32x4             mean time: 0.223312 ms, speedup: 0.94
+torch                          mean time: 0.113056 ms
+dot_product                    mean time: 0.181024 ms, speedup: 0.62
+dot_product_fp16x2             mean time: 0.124512 ms, speedup: 0.91
+dot_product_fp16x8_packed      mean time: 0.123984 ms, speedup: 0.91
 ####################################################################################################
 n: 4096, m: 1024
-torch                          mean time: 0.028468 ms
-dot_product                    mean time: 0.030862 ms
-dot_product_fp32x4             mean time: 0.028530 ms
-torch                          mean time: 0.031013 ms
-dot_product                    mean time: 0.055556 ms
-dot_product_fp16x2             mean time: 0.073013 ms
-dot_product_fp16x8_packed      mean time: 0.037091 ms
+torch                          mean time: 0.107712 ms
+dot_product                    mean time: 0.123280 ms, speedup: 0.87
+dot_product_fp32x4             mean time: 0.115728 ms, speedup: 0.93
+torch                          mean time: 0.061936 ms
+dot_product                    mean time: 0.090608 ms, speedup: 0.68
+dot_product_fp16x2             mean time: 0.080512 ms, speedup: 0.77
+dot_product_fp16x8_packed      mean time: 0.071904 ms, speedup: 0.86
 ####################################################################################################
 n: 4096, m: 2048
-torch                          mean time: 0.190466 ms
-dot_product                    mean time: 0.189381 ms
-dot_product_fp32x4             mean time: 0.189973 ms
-torch                          mean time: 0.032947 ms
-dot_product                    mean time: 0.048509 ms
-dot_product_fp16x2             mean time: 0.037139 ms
-dot_product_fp16x8_packed      mean time: 0.032132 ms
+torch                          mean time: 0.209472 ms
+dot_product                    mean time: 0.226800 ms, speedup: 0.92
+dot_product_fp32x4             mean time: 0.215968 ms, speedup: 0.97
+torch                          mean time: 0.113264 ms
+dot_product                    mean time: 0.174976 ms, speedup: 0.65
+dot_product_fp16x2             mean time: 0.128368 ms, speedup: 0.88
+dot_product_fp16x8_packed      mean time: 0.128128 ms, speedup: 0.88
 ####################################################################################################
 n: 4096, m: 4096
-torch                          mean time: 0.435416 ms
-dot_product                    mean time: 0.428888 ms
-dot_product_fp32x4             mean time: 0.388114 ms
-torch                          mean time: 0.195464 ms
-dot_product                    mean time: 0.213447 ms
-dot_product_fp16x2             mean time: 0.198001 ms
-dot_product_fp16x8_packed      mean time: 0.197020 ms
+torch                          mean time: 0.403200 ms
+dot_product                    mean time: 0.418528 ms, speedup: 0.96
+dot_product_fp32x4             mean time: 0.407856 ms, speedup: 0.99
+torch                          mean time: 0.214192 ms
+dot_product                    mean time: 0.279984 ms, speedup: 0.77
+dot_product_fp16x2             mean time: 0.235008 ms, speedup: 0.91
+dot_product_fp16x8_packed      mean time: 0.220992 ms, speedup: 0.97
 ```
