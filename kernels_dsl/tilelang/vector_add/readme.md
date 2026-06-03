@@ -18,20 +18,20 @@ python test.py
 ```yaml
 ####################################################################################################
 vector add, n: 16777216
-torch                                    mean time: 0.321152 ms
-triton                                   mean time: 0.303328 ms, speedup: 1.06
-tilelang                                 mean time: 0.374384 ms, speedup: 0.86
-tilelang_vectorized                      mean time: 0.302240 ms, speedup: 1.06
-tilelang_vectorized_eager                mean time: 0.314960 ms, speedup: 1.02
-elementwise_add_fp16x8_packed            mean time: 0.304496 ms, speedup: 1.05
+torch                                    mean time: 0.322368 ms
+triton                                   mean time: 0.305424 ms, speedup: 1.06
+tilelang                                 mean time: 0.370864 ms, speedup: 0.87
+tilelang_vectorized                      mean time: 0.303072 ms, speedup: 1.06
+tilelang_vectorized_eager                mean time: 0.303872 ms, speedup: 1.06
+elementwise_add_fp16x8_packed            mean time: 0.304432 ms, speedup: 1.06
 ####################################################################################################
 vector add, n: 16777217
-torch                                    mean time: 0.302704 ms
-triton                                   mean time: 0.302864 ms, speedup: 1.00
-tilelang                                 mean time: 0.354928 ms, speedup: 0.85
-tilelang_vectorized                      mean time: 0.301792 ms, speedup: 1.00
-tilelang_vectorized_eager                mean time: 0.306816 ms, speedup: 0.99
-elementwise_add_fp16x8_packed            mean time: 0.302768 ms, speedup: 1.00
+torch                                    mean time: 0.304144 ms
+triton                                   mean time: 0.304976 ms, speedup: 1.00
+tilelang                                 mean time: 0.353232 ms, speedup: 0.86
+tilelang_vectorized                      mean time: 0.303504 ms, speedup: 1.00
+tilelang_vectorized_eager                mean time: 0.304832 ms, speedup: 1.00
+elementwise_add_fp16x8_packed            mean time: 0.305072 ms, speedup: 1.00
 ```
 
 ### full benchmark
@@ -39,74 +39,74 @@ elementwise_add_fp16x8_packed            mean time: 0.302768 ms, speedup: 1.00
 ```yaml
 ####################################################################################################
 vector add, n: 1024
-torch                                    mean time: 0.007872 ms
-triton                                   mean time: 0.008096 ms, speedup: 0.97
-tilelang                                 mean time: 0.007040 ms, speedup: 1.12
-elementwise_add_fp32x4                   mean time: 0.007136 ms, speedup: 1.10
-torch                                    mean time: 0.007008 ms
-triton                                   mean time: 0.006976 ms, speedup: 1.00
-tilelang                                 mean time: 0.007040 ms, speedup: 1.00
-tilelang_vectorized                      mean time: 0.007104 ms, speedup: 0.99
-tilelang_vectorized_eager                mean time: 0.007296 ms, speedup: 0.96
-elementwise_add_fp16x8_packed            mean time: 0.007088 ms, speedup: 0.99
+torch                                    mean time: 0.007360 ms
+triton                                   mean time: 0.007328 ms, speedup: 1.00
+tilelang                                 mean time: 0.009632 ms, speedup: 0.76
+elementwise_add_fp32x4                   mean time: 0.009568 ms, speedup: 0.77
+torch                                    mean time: 0.007072 ms
+triton                                   mean time: 0.006944 ms, speedup: 1.02
+tilelang                                 mean time: 0.006992 ms, speedup: 1.01
+tilelang_vectorized                      mean time: 0.006976 ms, speedup: 1.01
+tilelang_vectorized_eager                mean time: 0.007024 ms, speedup: 1.01
+elementwise_add_fp16x8_packed            mean time: 0.007120 ms, speedup: 0.99
 ####################################################################################################
 vector add, n: 4096
-torch                                    mean time: 0.007040 ms
-triton                                   mean time: 0.006976 ms, speedup: 1.01
-tilelang                                 mean time: 0.007168 ms, speedup: 0.98
-elementwise_add_fp32x4                   mean time: 0.007024 ms, speedup: 1.00
-torch                                    mean time: 0.007104 ms
-triton                                   mean time: 0.007232 ms, speedup: 0.98
-tilelang                                 mean time: 0.007136 ms, speedup: 1.00
-tilelang_vectorized                      mean time: 0.006976 ms, speedup: 1.02
-tilelang_vectorized_eager                mean time: 0.007376 ms, speedup: 0.96
-elementwise_add_fp16x8_packed            mean time: 0.007008 ms, speedup: 1.01
+torch                                    mean time: 0.007440 ms
+triton                                   mean time: 0.007008 ms, speedup: 1.06
+tilelang                                 mean time: 0.007040 ms, speedup: 1.06
+elementwise_add_fp32x4                   mean time: 0.006944 ms, speedup: 1.07
+torch                                    mean time: 0.006944 ms
+triton                                   mean time: 0.007040 ms, speedup: 0.99
+tilelang                                 mean time: 0.006944 ms, speedup: 1.00
+tilelang_vectorized                      mean time: 0.007248 ms, speedup: 0.96
+tilelang_vectorized_eager                mean time: 0.006944 ms, speedup: 1.00
+elementwise_add_fp16x8_packed            mean time: 0.006944 ms, speedup: 1.00
 ####################################################################################################
 vector add, n: 32768
-torch                                    mean time: 0.007856 ms
-triton                                   mean time: 0.008000 ms, speedup: 0.98
-tilelang                                 mean time: 0.007568 ms, speedup: 1.04
-elementwise_add_fp32x4                   mean time: 0.008640 ms, speedup: 0.91
-torch                                    mean time: 0.007440 ms
-triton                                   mean time: 0.007456 ms, speedup: 1.00
-tilelang                                 mean time: 0.007344 ms, speedup: 1.01
-tilelang_vectorized                      mean time: 0.007376 ms, speedup: 1.01
-tilelang_vectorized_eager                mean time: 0.007360 ms, speedup: 1.01
-elementwise_add_fp16x8_packed            mean time: 0.007344 ms, speedup: 1.01
+torch                                    mean time: 0.007584 ms
+triton                                   mean time: 0.007520 ms, speedup: 1.01
+tilelang                                 mean time: 0.007616 ms, speedup: 1.00
+elementwise_add_fp32x4                   mean time: 0.007440 ms, speedup: 1.02
+torch                                    mean time: 0.007040 ms
+triton                                   mean time: 0.007280 ms, speedup: 0.97
+tilelang                                 mean time: 0.007264 ms, speedup: 0.97
+tilelang_vectorized                      mean time: 0.007104 ms, speedup: 0.99
+tilelang_vectorized_eager                mean time: 0.007408 ms, speedup: 0.95
+elementwise_add_fp16x8_packed            mean time: 0.007136 ms, speedup: 0.99
 ####################################################################################################
 vector add, n: 1048576
-torch                                    mean time: 0.039936 ms
-triton                                   mean time: 0.038528 ms, speedup: 1.04
-tilelang                                 mean time: 0.039168 ms, speedup: 1.02
-elementwise_add_fp32x4                   mean time: 0.040272 ms, speedup: 0.99
-torch                                    mean time: 0.022176 ms
-triton                                   mean time: 0.020288 ms, speedup: 1.09
-tilelang                                 mean time: 0.033984 ms, speedup: 0.65
-tilelang_vectorized                      mean time: 0.023088 ms, speedup: 0.96
-tilelang_vectorized_eager                mean time: 0.028192 ms, speedup: 0.79
-elementwise_add_fp16x8_packed            mean time: 0.028384 ms, speedup: 0.78
+torch                                    mean time: 0.040304 ms
+triton                                   mean time: 0.045808 ms, speedup: 0.88
+tilelang                                 mean time: 0.045536 ms, speedup: 0.89
+elementwise_add_fp32x4                   mean time: 0.046864 ms, speedup: 0.86
+torch                                    mean time: 0.021648 ms
+triton                                   mean time: 0.020240 ms, speedup: 1.07
+tilelang                                 mean time: 0.034000 ms, speedup: 0.64
+tilelang_vectorized                      mean time: 0.021632 ms, speedup: 1.00
+tilelang_vectorized_eager                mean time: 0.021744 ms, speedup: 1.00
+elementwise_add_fp16x8_packed            mean time: 0.021808 ms, speedup: 0.99
 ####################################################################################################
 vector add, n: 4194304
-torch                                    mean time: 0.156192 ms
-triton                                   mean time: 0.159392 ms, speedup: 0.98
-tilelang                                 mean time: 0.166112 ms, speedup: 0.94
-elementwise_add_fp32x4                   mean time: 0.167312 ms, speedup: 0.93
-torch                                    mean time: 0.081952 ms
-triton                                   mean time: 0.085488 ms, speedup: 0.96
-tilelang                                 mean time: 0.113456 ms, speedup: 0.72
-tilelang_vectorized                      mean time: 0.083056 ms, speedup: 0.99
-tilelang_vectorized_eager                mean time: 0.081600 ms, speedup: 1.00
-elementwise_add_fp16x8_packed            mean time: 0.081344 ms, speedup: 1.01
+torch                                    mean time: 0.156368 ms
+triton                                   mean time: 0.160048 ms, speedup: 0.98
+tilelang                                 mean time: 0.160784 ms, speedup: 0.97
+elementwise_add_fp32x4                   mean time: 0.157584 ms, speedup: 0.99
+torch                                    mean time: 0.080544 ms
+triton                                   mean time: 0.080608 ms, speedup: 1.00
+tilelang                                 mean time: 0.106656 ms, speedup: 0.76
+tilelang_vectorized                      mean time: 0.077648 ms, speedup: 1.04
+tilelang_vectorized_eager                mean time: 0.079216 ms, speedup: 1.02
+elementwise_add_fp16x8_packed            mean time: 0.078336 ms, speedup: 1.03
 ####################################################################################################
 vector add, n: 16777216
-torch                                    mean time: 0.593824 ms
-triton                                   mean time: 0.589920 ms, speedup: 1.01
-tilelang                                 mean time: 0.597568 ms, speedup: 0.99
-elementwise_add_fp32x4                   mean time: 0.589872 ms, speedup: 1.01
-torch                                    mean time: 0.300944 ms
-triton                                   mean time: 0.309360 ms, speedup: 0.97
-tilelang                                 mean time: 0.353776 ms, speedup: 0.85
-tilelang_vectorized                      mean time: 0.303424 ms, speedup: 0.99
-tilelang_vectorized_eager                mean time: 0.312832 ms, speedup: 0.96
-elementwise_add_fp16x8_packed            mean time: 0.301520 ms, speedup: 1.00
+torch                                    mean time: 0.599504 ms
+triton                                   mean time: 0.595184 ms, speedup: 1.01
+tilelang                                 mean time: 0.599456 ms, speedup: 1.00
+elementwise_add_fp32x4                   mean time: 0.593072 ms, speedup: 1.01
+torch                                    mean time: 0.305136 ms
+triton                                   mean time: 0.307120 ms, speedup: 0.99
+tilelang                                 mean time: 0.358640 ms, speedup: 0.85
+tilelang_vectorized                      mean time: 0.305072 ms, speedup: 1.00
+tilelang_vectorized_eager                mean time: 0.304336 ms, speedup: 1.00
+elementwise_add_fp16x8_packed            mean time: 0.304736 ms, speedup: 1.00
 ```
