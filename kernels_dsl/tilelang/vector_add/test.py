@@ -86,10 +86,10 @@ def add_tilelang_vectorized_eager(
     A: torch.Tensor,
     B: torch.Tensor,
     C: torch.Tensor,
+    dtype = "float16"
 ):
     N = T.const("N")
     block = 256
-    dtype = "float16"
     vec = 128 // tilelang.DataType(dtype).bits
     A: T.Tensor((N,), dtype)
     B: T.Tensor((N,), dtype)
@@ -282,5 +282,5 @@ def test_sp():
 
 
 if __name__ == "__main__":
-    test_all()
-    # test_sp()
+    # test_all()
+    test_sp()
