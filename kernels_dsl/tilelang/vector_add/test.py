@@ -109,6 +109,47 @@ def add_tilelang_vectorized_eager(
                 elem = base + i
                 C[elem] = A[elem] + B[elem]
 
+@tilelang.jit
+def elementwise_add(A, B, C, block_N=2048, dtype="float16", threads=256):
+    N = T.const("N")
+
+    A: T.Tensor((N), dtype)
+    B: T.Tensor((N), dtype)
+    C: T.Tensor((N,), dtype)
+
+    with T.Kernel(T.ceildiv(N, block_N), threads=threads) as bx:
+        A_shared = T.alloc_shared((block_N), dtype)
+        B_shared = T.alloc_shared((block_N), dtype)
+        C_local = T.alloc_fragment((block_N), dtype)
+        C_shared = T.alloc_shared((block_N), dtype)
+
+        T.copy(A[bx * block_N], A_shared)
+        T.copy(B[bx * block_N], B_shared)
+        for local_x in T.Parallel(block_N):
+            C_local[local_x] = A_shared[local_x] + B_shared[local_x]
+        T.copy(C_local, C_shared)
+        T.copy(C_shared, C[bx * block_N])
+
+    # return C
+
+@tilelang.jit
+def elementwise_add_no_shared(A, B, C, block_N=2048, dtype="float16", threads=256):
+    N = T.const("N")
+
+    A: T.Tensor((N), dtype)
+    B: T.Tensor((N), dtype)
+    C: T.Tensor((N,), dtype)
+
+    with T.Kernel(T.ceildiv(N, block_N), threads=threads) as bx:
+        A_shared = T.alloc_fragment((block_N), dtype)
+        B_shared = T.alloc_fragment((block_N), dtype)
+        C_local = T.alloc_fragment((block_N), dtype)
+
+        T.copy(A[bx * block_N], A_shared)
+        T.copy(B[bx * block_N], B_shared)
+        for local_x in T.Parallel(block_N):
+            C_local[local_x] = A_shared[local_x] + B_shared[local_x]
+        T.copy(C_local, C[bx * block_N])
 
 def diff_check(a, b, prefix="torch", eps=1e-3):
     if not torch.allclose(a, b, atol=eps, rtol=eps):
@@ -270,6 +311,15 @@ def test_sp():
         )
         # print(add_tilelang_vectorized_eager.compile(N=n, A=x).get_kernel_source())
         # print(out[-1], out_my[-1])
+        out_my = torch.zeros_like(out_my)
+        benchmark(
+            elementwise_add,
+            x,
+            y,
+            out_my,
+            prefix="elementwise_add",
+        )
+        print(elementwise_add.compile(N=n).get_kernel_source())
         diff_check(out, out_my)
         benchmark(
             lib.elementwise_add_fp16x8_packed,
