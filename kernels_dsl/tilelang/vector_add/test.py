@@ -267,7 +267,7 @@ def test_all():
 def test_sp():
     torch.manual_seed(42)
     DEVICE = torch.device("cuda")
-    for n in [4096 * 4096, 4096 * 4096 + 1]:
+    for n in [4096 * 4096, 4096 * 4096 - 1, 4096 * 4096 + 1]:
         print("#" * 100)
         print(f"vector add, n: {n}")
         x = torch.randn(n, dtype=torch.float32, device=DEVICE)
@@ -311,15 +311,26 @@ def test_sp():
         )
         # print(add_tilelang_vectorized_eager.compile(N=n, A=x).get_kernel_source())
         # print(out[-1], out_my[-1])
+        if n%4096 == 0:
+            out_my = torch.zeros_like(out_my)
+            benchmark(
+                elementwise_add,
+                x,
+                y,
+                out_my,
+                prefix="elementwise_add",
+            )
+            # print(elementwise_add.compile(N=n).get_kernel_source())
+            diff_check(out, out_my)
         out_my = torch.zeros_like(out_my)
         benchmark(
-            elementwise_add,
+            elementwise_add_no_shared,
             x,
             y,
             out_my,
-            prefix="elementwise_add",
+            prefix="elementwise_add_no_shared",
         )
-        print(elementwise_add.compile(N=n).get_kernel_source())
+        # print(elementwise_add_no_shared.compile(N=n).get_kernel_source())
         diff_check(out, out_my)
         benchmark(
             lib.elementwise_add_fp16x8_packed,
