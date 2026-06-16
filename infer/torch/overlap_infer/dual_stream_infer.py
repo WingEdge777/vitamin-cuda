@@ -143,10 +143,10 @@ def benchmark():
     )
     print("-" * 88)
     print(
-        f"{'单次推理耗时 (ms)':<16} | {std_time:>14.2f} | {off_time:>14.2f} | 性能保持率: {speed_retention:.2f}%"
+        f"{'单次推理耗时 (ms)':<16} | {std_time:>20.2f} | {off_time:>14.2f} | 性能保持率: {speed_retention:.2f}%"
     )
     print(
-        f"{'峰值显存占用 (MB)':<16} | {std_mem:>14.2f} | {off_mem:>14.2f} | 降低占比: {mem_reduction_pct:.2f}%"
+        f"{'峰值显存占用 (MB)':<16} | {std_mem:>20.2f} | {off_mem:>14.2f} | 降低占比: {mem_reduction_pct:.2f}%"
     )
     print("-" * 88)
     print(
