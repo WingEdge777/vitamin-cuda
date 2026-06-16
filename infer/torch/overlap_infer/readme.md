@@ -24,7 +24,7 @@
 
 如下图，每个节点有名称和任务耗时：
 
-![DAG](image.png)
+![DAG](https://cdn.jsdelivr.net/gh/WingEdge777/CDN@main/images/vitamin_cuda/cpm.png)
 
 什么是关键路径？就是从起点到终点累计耗时最长的那条路径，即图中红色节点构成的 S-->B-->C-->D-->F-->T。
 
