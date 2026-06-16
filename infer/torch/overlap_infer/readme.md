@@ -4,7 +4,7 @@
 
 相信大家都听到过训练端 pytorch FSDP，zero 1/2/3, Deepspeed/Megatron 的 pipeline 优化、offloading 之类的， 推理端 vllm、sglang 等框架会提到 计算和通信重叠，零 cpu 开销调度（zero-overhead schedule, 当然这个有 cuda graph 巨大功劳），offloading 计算 等等。
 
-听起来有那么一点高大上，但究其实质，就是流水线优化（streaming/pipelining），而且流水线优化的核心思路十分简单。本将用不到 100 行核心 pytorch 代码，向大家阐述流水线优化的核心思想，展示计算和通信如何 overlap、streaming onload 的实操是什么样的。
+听起来有那么一点高大上，但究其实质，就是流水线优化（streaming/pipelining），而且流水线优化的核心思路十分简单。本文将用不到 100 行核心 pytorch 代码，向大家阐述流水线优化的核心思想，展示计算和通信如何 overlap、streaming onload 的实操是什么样的。
 
 ## 流水线优化 - Streaming/pipelining
 
@@ -107,22 +107,20 @@ def benchmark():
     std_mem = torch.cuda.max_memory_allocated(device) / (1024**2)
 ```
 
-## 双 buffer layer + double stream 推理
+## 双 buffer streaming onload layer 推理
 
-现在的 gpu 是支持 host->device、compute、device->host 三种操作并行，相同操作之间只能串行。为了表达方便，现在命名 host->device 为 0 操作，compute 为 1 操作，device->host 是 2 操作
+现在的 gpu 是支持 host->device、compute、device->host 三种操作并行，相同操作之间只能串行。
 
-在我们这个限定场景，layer 0 的任务就可以命名为为 A0、A1，layer 1 为 B0、B1, layer 2  为 C0、C1，等等
-只有最后计算完的结果，有一个 2 操作
-
-那么显而易见，这两条流水线（两层 layer 的 copy+计算）在时间序列下，可以放置为下图的样子：
+那么显而易见，在我们这个场景，只需要将 layer 权重搬运到 gpu，然后计算，再搬运+计算，划为两条流水线（两层 layer 的 copy+计算）后，在时间序列下，可以放置为下图的样子：
 
 ```yaml
-A0->A1->C0->C1->...
-    B0->B1->D0->D1->...
+时间轴：t0 ----> t1 ----> t2 ----> t3 ----> t4 ---->
+Copy 流：[Layer0] [Layer1] [Layer2] [Layer3] ...
+计算流：[Layer0] [Layer1] [Layer2] ...
 ```
 
-时间开销：这样就做到了 不同 layer 之间的权重 copy 和计算的重叠，减少了 min(0 操作，1 操作） 的时间开销，节省下的时间就是被流水线隐藏的时延。
-空间开销：特别的，要做到 copy 和计算重叠，那么显然他们操作就不能是同一块显存 buffer，因此两条流水线需要双 buffer，N 条流水线需要 N buffer
+时间开销：做到了 不同 layer 之间的权重 copy 和计算的重叠，减少了 min（copy，compute）的时间开销，节省下的时间就是被流水线隐藏的时延。
+空间开销：特别的，要做到 copy 和计算重叠，那么显然他们操作就不能是同一块显存 buffer，因此两条流水线需要双 buffer，N 条流水线需要 N buffer（多 buffer 还有个响亮的名字叫 ring buffer）
 
 更具体一点，利用 pytorch 提供的 cuda stream，我们可以实现双 buffer 双流水线逐层计算，流程如下：
 
@@ -202,6 +200,7 @@ def benchmark():
 
     # Xavier 初始化，防止多层叠乘数值爆炸
     scale = 1.0 / math.sqrt(8192)
+    # 注意：Host 端的 Tensor 必须使用 pin_memory() 锁页，配合 non_blocking=True 才能真正让 Copy 操作在后台流中异步执行，否则会退化为阻塞的同步传输
     pinned_cpu_weights = [
         (torch.randn(8192, 8192, dtype=DTYPE) * scale).pin_memory()
         for _ in range(NUM_LAYERS)
