@@ -12,8 +12,6 @@
 
 在工作多年后，我觉得有必要把这点提出来先给新人讲讲，什么是流水线优化。因为这实在太基础了，太贴近现实，使用得太广泛了。而学校里老师教不清，工作没人带。以至于让人无法有意识地把它主动加入系统分析中，或者自己已经用上了却不明就里。
 
-我记得之前部署 wan2.2 I2V pipeline，它的按高低噪声 时间步step 用不同的 dit，中间会切换一次模型，那个权重+视频激活值巨大，双卡 h20 都没法同时放下两个模型，所以官方 demo 也是给的 FSDP 推理实现。
-
 不管那些训推框架吹得多么天花乱坠，streaming 就是很简单的东西，它的核心思想是什么？没人点明，我就大言不惭一下，streaming 的核心思想是利用异步/多线程技术，让理论上的性能瓶颈成为现实系统中的真实瓶颈，使得系统整体性能达到理论上限。
 
 首先，肯定有人会说我这里把异步和多线程混为一谈了。当然，谁不知道异步和多线程不是一回事，但仔细想想，你说的异步确定不是靠多线程实现吗？如果说把工作留给系统内核/硬件驱动去干了，然后程序内部单线程作业，所以程序内只有异步没有多线程，那我勉强算你说得对。可深究一下，系统内核/硬件执行，那不就是另外的进程和线程吗（抱歉，不想再进一步说进程和线程的区别了，翻教科书看看吧）。真实运行环境中，99%的程序都不是单线程运行，你的程序就运行在 OS 之上，说什么单线程简直搞笑，用户程序一定会受其他进程的影响。（请写嵌入式 bootstraper 和 BIOS 的大佬略过）
@@ -193,6 +191,57 @@ class DualStreamModel(nn.Module):
             write_idx ^= 1
 
         return x
+
+@torch.inference_mode()
+def benchmark():
+    device = torch.device("cuda:0")
+
+    x = torch.randn(8192, 8192, dtype=DTYPE, device=device)
+
+    # Xavier 初始化，防止多层叠乘数值爆炸
+    scale = 1.0 / math.sqrt(8192)
+    pinned_cpu_weights = [
+        (torch.randn(8192, 8192, dtype=DTYPE) * scale).pin_memory()
+        for _ in range(NUM_LAYERS)
+    ]
+
+    model_base = BaseMLPModel(NUM_LAYERS, pinned_cpu_weights, device)
+    model_stream = DualStreamModel(NUM_LAYERS, pinned_cpu_weights, device)
+
+    # warmup
+    for _ in range(2):
+        out_std = model_base(x)
+        out_stream = model_stream(x)
+    torch.cuda.synchronize()
+
+    iters = 5
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+
+    # 1. base model
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats(device)
+    start.record()
+    for _ in range(iters):
+        out_std = model_base(x)
+    end.record()
+    torch.cuda.synchronize()
+    std_time = start.elapsed_time(end) / iters
+    std_mem = torch.cuda.max_memory_allocated(device) / (1024**2)
+
+    # 2. double stream model
+    del model_base
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats(device)
+    start.record()
+    for _ in range(iters):
+        out_stream = model_stream(x)
+    end.record()
+    torch.cuda.synchronize()
+    off_time = start.elapsed_time(end) / iters
+    off_mem = torch.cuda.max_memory_allocated(device) / (1024**2)
+
+    assert torch.allclose(out_std, out_stream, rtol=1e-2, atol=1e-2), "diff error"
 ```
 
 ## benchmark 输出
@@ -217,6 +266,8 @@ class DualStreamModel(nn.Module):
 - 我们使用 pytorch cuda stream 完成了一个 double buffer + double stream 的 计算 和 copy overlap 前向推理
   - 在几乎不损失推理性能的前提下，做到了 75%空间节约。
 - 这个 case 是我凑出演示了多级流水线的空间复杂度优化能力的。在真实业务场景中，流水线本身就是优化时延开销利器（因为并行了嘛），但具体场景需要具体分析
+
+我记得之前部署 wan2.2 I2V pipeline，它会按高低噪声时间步用不同的 dit（就是diffusion step中间会切换一次模型），两个模型权重+视频激活值巨大，双卡 h20 都没法同时放下两个模型，所以官方 demo 也是给的 FSDP 推理实现。
 
 希望这个 case 能给大家一点收获
 
