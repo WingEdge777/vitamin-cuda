@@ -139,7 +139,7 @@ def benchmark():
     print(f"\n=== {NUM_LAYERS} 层网络 BF16 极限压测报告 (Batch: {MAX_BATCH_SIZE}) ===")
     print("-" * 88)
     print(
-        f"{'评估维度':<20} | {'Standard (全量驻留)':<14} | {'Zero-Offload (极限双缓冲)':<20} | {'对比差值 / 收益'}"
+        f"{'评估维度':<20} | {'BaseModel (全量驻留)':<14} | {'Streaming Onload (双缓冲)':<20} | {'对比差值 / 收益'}"
     )
     print("-" * 88)
     print(
