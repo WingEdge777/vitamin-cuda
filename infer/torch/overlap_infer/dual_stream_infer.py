@@ -93,12 +93,12 @@ def benchmark():
         for _ in range(NUM_LAYERS)
     ]
 
-    model_std = BaseMLPModel(NUM_LAYERS, pinned_cpu_weights, device)
+    model_base = BaseMLPModel(NUM_LAYERS, pinned_cpu_weights, device)
     model_stream = DualStreamModel(NUM_LAYERS, pinned_cpu_weights, device)
 
     # warmup
     for _ in range(2):
-        out_std = model_std(x)
+        out_std = model_base(x)
         out_stream = model_stream(x)
     torch.cuda.synchronize()
 
@@ -111,14 +111,14 @@ def benchmark():
     torch.cuda.reset_peak_memory_stats(device)
     start.record()
     for _ in range(iters):
-        out_std = model_std(x)
+        out_std = model_base(x)
     end.record()
     torch.cuda.synchronize()
     std_time = start.elapsed_time(end) / iters
     std_mem = torch.cuda.max_memory_allocated(device) / (1024**2)
 
     # 2. double stream model
-    del model_std
+    del model_base
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
     start.record()
