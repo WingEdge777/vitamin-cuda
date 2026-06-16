@@ -2,7 +2,7 @@
 
 ## 序
 
-相信大家都听到过训练端 pytorch FSDP，zero 1/2/3, Deepspeed/Megatron 的 pipeline 优化、offloading 之类的， 推理端 vllm、sglang 等框架会提到 计算和通信重叠，零 cpu 开销调度（zero-overhead schedule, 当然这个有 cuda graph 巨大功劳），offloading 计算 等等。
+相信大家都听到过训练端 pytorch FSDP，zero 1/2/3, Deepspeed/Megatron 的 pipeline 优化、offloading 之类的， 推理端 vllm、sglang 等框架会提到 计算和通信重叠，零 cpu 开销调度（zero-overhead schedule, 当然这个有 cuda graph 的巨大功劳），offloading 计算 等等。
 
 听起来有那么一点高大上，但究其实质，就是流水线优化（streaming/pipelining），而且流水线优化的核心思路十分简单。本文将用不到 100 行核心 pytorch 代码，向大家阐述流水线优化的核心思想，展示计算和通信如何 overlap、streaming onload 的实操是什么样的。
 
