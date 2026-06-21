@@ -1,4 +1,4 @@
-# 一文入门推理系统性能优化：流水线、计算通信 Overlap 与 Offload/Onload 实践
+# 一文入门推理系统性能优化：流水线、计算通信 Overlap 与 Onload 实践
 
 ## 0. 序
 
