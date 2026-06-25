@@ -67,8 +67,11 @@ if __name__ == "__main__":
         print(f"n: {n}")
         a = torch.randn(n).bfloat16().cuda()
         b = torch.empty(n).bfloat16().cuda()
+        # benchmark(torch.sort(), a, b)
+        # b_my = torch.zeros_like(b)
 
         benchmark(lib.cub_sort, a, b)
+        print(b)
         b_my = torch.zeros_like(b)
         benchmark(lib.sort, a, b, prefix="sort")
         diff_check(b, b_my, prefix="sort")
