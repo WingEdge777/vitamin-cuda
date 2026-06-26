@@ -4,8 +4,8 @@
 
 radix sort kernels.
 
-- [ ] cub_sort — BF16
-- [ ] radix_sort — BF16
+- [x] cub_sort — BF16
+- [ ] sort — BF16
 - [x] pytorch op bindings && diff check
 
 ## Run tests
