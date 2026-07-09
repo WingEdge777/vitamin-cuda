@@ -137,6 +137,10 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] `dot_product_fp16x2` — FP16 vectorized (×2)
   - [x] `dot_product_fp16x8` — FP16 vectorized (×8, packed r/w)
   - [x] PyTorch op binding & correctness check
+- [cumsum](./kernels/cumsum/) - Warp-shuffle-based reductions
+  - [x] naive Torch cumsum
+  - [x] cumsum — FP32
+  - [x] pytorch op bindings && diff check
 - [softmax](./kernels/softmax/) — Safe online softmax
   - [x] One-pass
     - [x] Safe online softmax — FP32 / FP16
