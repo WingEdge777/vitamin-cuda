@@ -52,7 +52,7 @@ __global__ void cumsum_fp32_kernel(float *a, float *b, int n) {
 
         if (warp_id == 0) {
             float tmp_v = tid < num_warp ? smem[tid] : 0.f;
-            tmp_v = _warp_cum_sum(lane_id, tmp_v);
+            tmp_v = _warp_cum_sum<num_warp>(lane_id, tmp_v);
             if (tid < num_warp)
                 smem[tid] = tmp_v;
         }
@@ -77,8 +77,76 @@ __global__ void cumsum_fp32_kernel(float *a, float *b, int n) {
     }
 }
 
+template <const int warp_size = WARP_SIZE>
+__device__ __forceinline__ pack128 _warp_cum_sum(int lane_id, pack128 val) {
+#pragma unroll
+    for (int offset = 1; offset < WARP_SIZE; offset <<= 1) {
+        float other_val = __shfl_up_sync(0xffffffff, val.h[3], offset);
+        if (lane_id >= offset) {
+#pragma unroll
+            for (int i = 0; i < 4; i++)
+                val.h[i] += other_val;
+        }
+    }
+    return val;
+}
+
 template <const int BLOCK_SIZE = 256, const int CHUNK_SIZE = 2048>
-__global__ void cumsum_fp32x4_kernel(float *a, float *b, int n) {}
+__global__ void cumsum_fp32x4_kernel(float *a, float *b, int n) {
+    int tid = threadIdx.x;
+    int row = blockIdx.x;
+
+    const int num_warp = BLOCK_SIZE / 32;
+    const int warp_id = tid / 32;
+    const int lane_id = tid % 32;
+
+    __shared__ float smem[num_warp];
+    __shared__ float block_delta;
+
+    float delta = 0.f;
+    int row_offset = row * n;
+    for (int i = 0; i < n; i += CHUNK_SIZE) {
+        int col = i + tid;
+        pack128 f4 = (col < n) ? FLOAT4(a[row_offset + col]) : 0.0f;
+        // warp
+        for (int i = 1; i < 4; i++)
+            f4.f[i] += f4.[i - 1];
+        float val = _warp_cum_sum<32>(lane_id, f4);
+
+        // block
+        if (lane_id == 32 - 1)
+            smem[warp_id] = val;
+        __syncthreads();
+
+        if (warp_id == 0) {
+            float tmp_v = tid < num_warp ? smem[tid] : 0.f;
+            tmp_v = _warp_cum_sum<num_warp>(lane_id, tmp_v);
+            if (tid < num_warp)
+                smem[tid] = tmp_v;
+        }
+        __syncthreads();
+
+        if (warp_id > 0) {
+#pragma unroll
+            for (int i = 0; i < 4; i++)
+                f4.f[i] += smem[warp_id - 1];
+        }
+#pragma unroll
+        for (int i = 0; i < 4; i++)
+            f4.f[i] += delta;
+
+        if (col < n) {
+            FLOAT4(b[row_offset + col]) = f4.f4;
+        }
+
+        if (tid == BLOCK_SIZE - 1) {
+            block_delta = val;
+        }
+        __syncthreads();
+
+        delta = block_delta;
+    }
+}
 
 #define CHECK_T(x) TORCH_CHECK(x.is_cuda() && x.is_contiguous(), #x " must be contiguous CUDA tensor")
 
