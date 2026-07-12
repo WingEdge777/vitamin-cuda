@@ -139,7 +139,8 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] PyTorch op binding & correctness check
 - [cumsum](./kernels/cumsum/) - Warp-shuffle-based reductions
   - [x] naive Torch cumsum
-  - [x] cumsum — FP32
+  - [x] `cumsum_fp32`
+  - [x] `cumsum_fp32x4` — FP32 vectorized (×4)
   - [x] pytorch op bindings && diff check
 - [softmax](./kernels/softmax/) — Safe online softmax
   - [x] One-pass
