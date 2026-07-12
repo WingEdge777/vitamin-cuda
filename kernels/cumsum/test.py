@@ -86,6 +86,6 @@ if __name__ == "__main__":
             benchmark(lib.cumsum_fp32, a, b_my, prefix="cumsum_fp32")
             diff_check(b, b_my, prefix="cumsum_fp32")
 
-            # b_my = torch.zeros_like(b)
-            # benchmark(lib.cumsum_fp32x4, a, b_my, prefix="cumsum_fp32x4")
-            # diff_check(b, b_my, prefix="cumsum_fp32x4")
+            b_my = torch.zeros_like(b)
+            benchmark(lib.cumsum_fp32x4, a, b_my, prefix="cumsum_fp32x4")
+            diff_check(b, b_my, prefix="cumsum_fp32x4")

@@ -78,20 +78,19 @@ __global__ void cumsum_fp32_kernel(float *a, float *b, int n) {
 }
 
 template <const int warp_size = WARP_SIZE>
-__device__ __forceinline__ pack128 _warp_cum_sum(int lane_id, pack128 val) {
+__device__ __forceinline__ void _warp_cum_sum(int lane_id, pack128 &val) {
 #pragma unroll
     for (int offset = 1; offset < WARP_SIZE; offset <<= 1) {
-        float other_val = __shfl_up_sync(0xffffffff, val.h[3], offset);
+        float other_val = __shfl_up_sync(0xffffffff, val.f[3], offset);
         if (lane_id >= offset) {
 #pragma unroll
-            for (int i = 0; i < 4; i++)
-                val.h[i] += other_val;
+            for (int k = 0; k < 4; k++)
+                val.f[k] += other_val;
         }
     }
-    return val;
 }
 
-template <const int BLOCK_SIZE = 256, const int CHUNK_SIZE = 2048>
+template <const int BLOCK_SIZE = 256, const int CHUNK_SIZE = 1024>
 __global__ void cumsum_fp32x4_kernel(float *a, float *b, int n) {
     int tid = threadIdx.x;
     int row = blockIdx.x;
@@ -106,16 +105,16 @@ __global__ void cumsum_fp32x4_kernel(float *a, float *b, int n) {
     float delta = 0.f;
     int row_offset = row * n;
     for (int i = 0; i < n; i += CHUNK_SIZE) {
-        int col = i + tid;
-        pack128 f4 = (col < n) ? FLOAT4(a[row_offset + col]) : 0.0f;
-        // warp
-        for (int i = 1; i < 4; i++)
-            f4.f[i] += f4.[i - 1];
-        float val = _warp_cum_sum<32>(lane_id, f4);
+        int col = i + tid * 4;
+        pack128 f4;
+        f4.f4 = (col < n) ? FLOAT4(a[row_offset + col]) : make_float4(0.f, 0.f, 0.f, 0.f);
+#pragma unroll
+        for (int k = 1; k < 4; k++)
+            f4.f[k] += f4.f[k - 1];
+        _warp_cum_sum<32>(lane_id, f4);
 
-        // block
         if (lane_id == 32 - 1)
-            smem[warp_id] = val;
+            smem[warp_id] = f4.f[3];
         __syncthreads();
 
         if (warp_id == 0) {
@@ -126,22 +125,19 @@ __global__ void cumsum_fp32x4_kernel(float *a, float *b, int n) {
         }
         __syncthreads();
 
-        if (warp_id > 0) {
+        float prefix = delta + (warp_id > 0 ? smem[warp_id - 1] : 0.f);
 #pragma unroll
-            for (int i = 0; i < 4; i++)
-                f4.f[i] += smem[warp_id - 1];
-        }
-#pragma unroll
-        for (int i = 0; i < 4; i++)
-            f4.f[i] += delta;
+        for (int k = 0; k < 4; k++)
+            f4.f[k] += prefix;
 
         if (col < n) {
             FLOAT4(b[row_offset + col]) = f4.f4;
         }
 
         if (tid == BLOCK_SIZE - 1) {
-            block_delta = val;
+            block_delta = f4.f[3];
         }
+
         __syncthreads();
 
         delta = block_delta;
