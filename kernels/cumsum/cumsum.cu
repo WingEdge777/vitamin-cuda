@@ -25,7 +25,7 @@ __device__ __forceinline__ float _warp_cum_sum(int lane_id, float val) {
 }
 
 // 1 cta for one row
-template <const int BLOCK_SIZE = 256, const int CHUNK_SIZE = 206>
+template <const int BLOCK_SIZE = 256, const int CHUNK_SIZE = 256>
 __global__ void cumsum_fp32_kernel(float *a, float *b, int n) {
     int tid = threadIdx.x;
     int row = blockIdx.x;
