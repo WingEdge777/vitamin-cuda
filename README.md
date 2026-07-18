@@ -142,6 +142,11 @@ All kernels were tested on an RTX 5060 Laptop GPU (unless otherwise noted) and b
   - [x] `cumsum_fp32`
   - [x] `cumsum_fp32x4` — FP32 vectorized (×4)
   - [x] pytorch op bindings && diff check
+- [normalization](./kernels/normalization/) - (x - mean) / std
+  - [x] naive Torch norm
+  - [x] norm — FP32
+  - [x] norm — FP32x4
+  - [x] pytorch op bindings && diff check
 - [softmax](./kernels/softmax/) — Safe online softmax
   - [x] One-pass
     - [x] Safe online softmax — FP32 / FP16

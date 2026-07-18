@@ -33,7 +33,7 @@ baseline = None
 
 @torch.compile()
 def norm(x : torch.Tensor):
-    return (x - x.mean(dim=-1, keepdim=True)) / x.std(dim=-1, keepdim=True, unbiased=True)
+    return (x - x.mean(dim=-1, keepdim=True)) / x.std(dim=-1, keepdim=True, unbiased=False)
 
 
 def benchmark(op, a, b=None, warmup=10, rep=100, prefix="torch"):
@@ -90,6 +90,6 @@ if __name__ == "__main__":
             benchmark(lib.norm_fp32, a, b_my, prefix="norm_fp32")
             diff_check(b, b_my, prefix="norm_fp32")
 
-            # b_my = torch.zeros_like(b)
-            # benchmark(lib.norm_fp32x4, a, b_my, prefix="norm_fp32x4")
-            # diff_check(b, b_my, prefix="norm_fp32x4")
+            b_my = torch.zeros_like(b)
+            benchmark(lib.norm_fp32x4, a, b_my, prefix="norm_fp32x4")
+            diff_check(b, b_my, prefix="norm_fp32x4")
