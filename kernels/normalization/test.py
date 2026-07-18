@@ -84,7 +84,7 @@ if __name__ == "__main__":
             a = torch.randn(n, m).float().cuda()
             b = torch.randn(n, m).float().cuda()
 
-            benchmark(norm, a, b)
+            b = benchmark(norm, a)
 
             # b_my = torch.zeros_like(b)
             # benchmark(lib.norm_fp32, a, b_my, prefix="norm_fp32")
