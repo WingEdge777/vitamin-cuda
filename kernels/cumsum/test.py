@@ -71,7 +71,7 @@ if __name__ == "__main__":
     # test the kernel
     device = torch.device("cuda")
     bs = [1, 32, 64, 128]
-    sz = [2048, 4096, 8192, 12800]
+    sz = [2048, 4096, 8192, 12800, 32768, 65536]
     torch.manual_seed(42)
     for n in bs:
         for m in sz:
@@ -89,3 +89,10 @@ if __name__ == "__main__":
             b_my = torch.zeros_like(b)
             benchmark(lib.cumsum_fp32x4, a, b_my, prefix="cumsum_fp32x4")
             diff_check(b, b_my, prefix="cumsum_fp32x4")
+
+            b_my = torch.zeros_like(b)
+            benchmark(lib.cumsum_fp32x4_multi_cta_scan, a, b_my, prefix="cumsum_fp32x4_multi_cta_scan")
+            # Fresh launch for correctness (avoid relying on last bench iteration).
+            b_my.zero_()
+            lib.cumsum_fp32x4_multi_cta_scan(a, b_my)
+            diff_check(b, b_my, prefix="cumsum_fp32x4_multi_cta_scan")
